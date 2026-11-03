@@ -1,0 +1,36 @@
+{
+  "name": "skkg-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server for the SKKG Sammlung digital collection (Stiftung für Kunst, Kultur und Geschichte, Winterthur)",
+  "license": "MIT",
+  "author": {
+    "name": "Arno Bosse"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24.22.1 <25"
+  },
+  "bin": {
+    "skkg-mcp": "src/index.js"
+  },
+  "files": [
+    "src/"
+  ],
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test \"test/*.test.js\"",
+    "lint": "eslint .",
+    "inspector": "npx @modelcontextprotocol/inspector node src/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "~2.4.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@modelcontextprotocol/client": "~2.4.0",
+    "eslint": "10.6.0",
+    "globals": "17.7.0"
+  }
+}

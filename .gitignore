@@ -1,0 +1,40 @@
+# Node
+node_modules/
+*.tgz
+
+# MCPB bundle build output
+*.mcpb
+dist/
+
+# macOS
+.DS_Store
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# Claude Code (local agent state + throwaway git worktrees)
+.claude/
+.codex/
+AGENTS.md
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# OS / temp
+Thumbs.db
+
+# Project (local-only working notes)
+research/
+plans/
+
+# SQLite databases are built in glamhack (scripts/build_db.py), never committed
+*.sqlite
+*.sqlite-*
+*.sqlite.tmp
