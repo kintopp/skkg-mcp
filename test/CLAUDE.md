@@ -14,7 +14,7 @@ Extends the root `CLAUDE.md`: the offline suite is the only continuous layer, so
 
 ## Harness
 
-- **No network, no full database in `npm test`.** Unit tests build a throwaway database with `makeTestDb` (`test/helpers.js`), holding only the tables and rows the test needs. Tool tests will use a fixture database built by glamhack's `build_db.py` from the partial dump, so its schema cannot drift from the real one.
+- **No network, no full database in `npm test`.** Unit tests build a throwaway database with `makeTestDb` (`test/helpers.js`), holding only the tables and rows the test needs. Tool tests will use a fixture database built by `scripts/build_db.py` from the partial dump, so its schema cannot drift from the real one.
 - **Gates use exact equality, never truthiness:** `process.env.SKKG_LIVE === '1'` for tests that call SKKG (`live: true`, IIIF), and a set `SKKG_FULL_DB` path for tests against the full database. A test that reaches the network or the full database without its gate is a bug.
 - **Query-plan assertions belong to the full-database gate.** A query that scans a table passes on a small fixture and is slow only on the full database. Such tests check `EXPLAIN QUERY PLAN` for the index the query must use, and each names the invariant it guards.
 - **Privacy is a behaviour.** The build enforces it, but tool tests still assert that results keep SKKG's anonymisation ("Privatperson", "Unbekannte:r Eigentümer:in") and that private addresses carry no coordinates.

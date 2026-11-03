@@ -24,6 +24,10 @@ AGENTS.md
 .env.*
 !.env.example
 
+# Python
+__pycache__/
+.venv/
+
 # Logs
 *.log
 
@@ -34,7 +38,8 @@ Thumbs.db
 research/
 plans/
 
-# SQLite databases are built in glamhack (scripts/build_db.py), never committed
+# Dumps, the Oxigraph store and built databases are never committed
+data/
 *.sqlite
 *.sqlite-*
 *.sqlite.tmp

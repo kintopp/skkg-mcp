@@ -7,7 +7,7 @@ export const SERVER_NAME = 'skkg-mcp';
 // namespaced id from it and drops the tools from tool search.
 export const SERVER_VERSION = pkg.version;
 
-// The database is built in the glamhack repository by scripts/build_db.py.
+// The database is built by scripts/build_db.py.
 export const DB_PATH_ENV = 'SKKG_DB_PATH';
 export const SCHEMA_VERSION = 1;
 // Older than this, results warn that SKKG may have changed or withdrawn records.

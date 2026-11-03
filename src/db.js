@@ -1,4 +1,4 @@
-// The SQLite database built by glamhack's scripts/build_db.py, opened read-only once
+// The SQLite database built by scripts/build_db.py, opened read-only once
 // per process. The path comes from SKKG_DB_PATH until the download step exists (D3, D8).
 
 import { existsSync } from 'node:fs';
