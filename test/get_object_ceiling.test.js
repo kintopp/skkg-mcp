@@ -1,27 +1,29 @@
 // How the result size guard of skkg_get_object could fail (with SKKG_RESULT_CHAR_CEILING lowered):
-// - a result above the limit is returned anyway
+// - a result above the limit is returned anyway, or measured by its JSON alone though the text is sent too
 // - the warning gives the count after the first cut instead of the real total
 // - provenance periods are cut, leaving gaps and computed_previous_owner pointing at missing periods
 // - a result that cannot fit is returned too large instead of refused with what to do
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { withClient, callOk, callError, FIXTURE_DB } from './helpers.js';
+import { withClient, callSent, callError, FIXTURE_DB } from './helpers.js';
 import { outputSchema } from '../src/tools/get_object.js';
 
 const NAME = 'skkg_get_object';
-const CEILING = 6000;
-// The guard keeps results under 90% of the ceiling.
+// object/1014 sends about 7,600 characters with provenance and 9,500 with its images as well,
+// in both channels together; its JSON alone with images is about 6,000.
+const CEILING = 10000;
+// The guard keeps what is sent, JSON and text together, under 90% of the ceiling.
 const LIMIT = CEILING * 0.9;
 
 test('skkg_get_object keeps results under a lowered size limit', { skip: FIXTURE_DB.skip }, async (t) => {
   await withClient('get-object-ceiling-test', async (client) => {
-    const get = (args) => callOk(client, NAME, args, outputSchema);
+    const get = (args) => callSent(client, NAME, args, outputSchema);
 
     await t.test('a long image list is cut to fit, and the warning gives the real total', async () => {
       // object/4098 has 55 published images.
-      const r = await get({ id: 'object/4098', include: ['images'] });
-      assert.ok(JSON.stringify(r).length <= LIMIT);
+      const { structured: r, sent } = await get({ id: 'object/4098', include: ['images'] });
+      assert.ok(sent <= LIMIT, `${sent} characters sent`);
       assert.ok(r.images.length >= 1 && r.images.length < 50);
       assert.ok(r.warnings.includes(`images: cut to ${r.images.length} of 55 to fit the result size limit; ask for fewer sections.`),
         r.warnings.join(' | '));
@@ -29,8 +31,8 @@ test('skkg_get_object keeps results under a lowered size limit', { skip: FIXTURE
 
     await t.test('provenance periods are kept whole while other lists are cut', async () => {
       // object/1014 has a chain of 4 periods and 5 images.
-      const r = await get({ id: 'object/1014', include: ['provenance', 'images'] });
-      assert.ok(JSON.stringify(r).length <= LIMIT);
+      const { structured: r, sent } = await get({ id: 'object/1014', include: ['provenance', 'images'] });
+      assert.ok(sent <= LIMIT, `${sent} characters sent`);
       assert.equal(r.provenance.periods.length, 4);
       assert.ok(r.images.length < 5);
     });

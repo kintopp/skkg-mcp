@@ -63,6 +63,16 @@ export async function callOk(client, name, args, outputSchema) {
   return assertWireValid(outputSchema, res.structuredContent);
 }
 
+// Like callOk, plus the text channel and the size of what was sent in both channels.
+export async function callSent(client, name, args, outputSchema) {
+  const res = await client.callTool({ name, arguments: args });
+  assert.ok(!res.isError, res.content?.[0]?.text);
+  assert.equal(res.content.length, 1);
+  const structured = assertWireValid(outputSchema, res.structuredContent);
+  const text = res.content[0].text;
+  return { structured, text, sent: JSON.stringify(structured).length + text.length };
+}
+
 // Calls a tool that must fail; returns the error text the model sees.
 export async function callError(client, name, args) {
   const res = await client.callTool({ name, arguments: args });

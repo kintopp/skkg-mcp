@@ -10,8 +10,9 @@ import { stmt } from '../lib/sql.js';
 import { prune } from '../lib/prune.js';
 import { termLabel, actorRef, objectRef, termListLabels } from '../lib/labels.js';
 import { objectRights, imageRights, NOT_RECORDED } from '../lib/rights.js';
-import { objectCreators, objectFacetLabels, creatorsText } from '../lib/objects.js';
-import { fitList } from '../lib/fit.js';
+import { objectCreators, objectFacetLabels } from '../lib/objects.js';
+import { fitList, sentCost } from '../lib/fit.js';
+import { renderObjectText, ITEM_TEXT } from './object_text.js';
 import {
   actorOut, creatorOut, objectRefOut, objectRightsOut, imageRightsOut, langIn, str, int,
 } from './schemas.js';
@@ -398,47 +399,33 @@ export function getObject(db, meta, args) {
 const CUTTABLE = [['literature'], ['images'], ['exhibitions'], ['texts'], ['related', 'parts'], ['related', 'references'],
   ['physical', 'parts']];
 
-// Room left in a list's budget for the warning that reports its cut.
-const WARNING_ROOM = 200;
+// Room left in a list's budget for the warning that reports its cut, in both channels.
+const WARNING_ROOM = 300;
+
+const renderText = (s) => renderObjectText(s, SECTIONS);
+// What is sent: the structured result and its text rendering.
+const sentSize = (s) => JSON.stringify(s).length + renderText(s).length;
 
 function fitCeiling(result, totals) {
-  let size = JSON.stringify(result).length;
+  let size = sentSize(result);
   for (const path of CUTTABLE) {
     if (size <= RESULT_CHAR_LIMIT) break;
     const holder = path.length === 1 ? result : result[path[0]];
     const key = path.at(-1);
     const list = holder?.[key];
     if (!Array.isArray(list) || list.length < 2) continue;
-    // The list's JSON is replaced in place, so the rest of the result keeps its size.
-    const rest = size - JSON.stringify(list).length;
-    holder[key] = fitList(list, RESULT_CHAR_LIMIT - rest - WARNING_ROOM);
     const what = path.join('.');
+    holder[key] = [];
+    const rest = sentSize(result);
+    holder[key] = fitList(list, RESULT_CHAR_LIMIT - rest - WARNING_ROOM, sentCost(ITEM_TEXT[what]));
     (result.warnings ??= []).push(`${what}: cut to ${holder[key].length} of ${totals[what] ?? list.length} to fit the result size limit; ask for fewer sections.`);
-    size = JSON.stringify(result).length;
+    size = sentSize(result);
   }
   if (size > RESULT_CHAR_LIMIT) {
     throw new ToolError(`The result for ${result.id} is too large for the result size limit (${RESULT_CHAR_LIMIT} characters) even with its lists cut.`,
       'Ask for fewer sections in `include`, e.g. one at a time.');
   }
   return result;
-}
-
-function renderText(s) {
-  const sm = s.summary ?? {};
-  const creators = creatorsText(sm.creators);
-  const img = s.rights.primary_image;
-  const lines = [
-    `${s.inventory_number ?? ''} ${s.title ?? '(untitled)'} — ${s.id}`,
-    [sm.object_type, creators, sm.date].filter(Boolean).join(' · '),
-    `Object copyright: ${s.rights.object.object_copyright}` +
-      (img ? ` · Photo: ${img.image_license}${img.right_holder?.name ? `, ${img.right_holder.name}` : ''}` : ' · No published image'),
-    s.website_url,
-  ];
-  const sections = Object.fromEntries(SECTIONS.filter((k) => s[k] !== undefined).map((k) => [k, s[k]]));
-  if (Object.keys(sections).length) lines.push(JSON.stringify(sections));
-  for (const w of s.warnings ?? []) lines.push(`Warning: ${w}`);
-  if (s.data_as_of) lines.push(`Data as of ${s.data_as_of}.`);
-  return lines.filter(Boolean).join('\n');
 }
 
 export function registerGetObjectTool(server) {

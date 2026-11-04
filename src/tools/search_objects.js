@@ -6,7 +6,7 @@ import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
 import { objectRow } from '../lib/objects.js';
 import { prune } from '../lib/prune.js';
-import { fitList } from '../lib/fit.js';
+import { fitResult, sentCost } from '../lib/fit.js';
 import { objectQueryShape, objectFilterShape, hasObjectFilter, compileObjectQuery } from './object_filters.js';
 import { creatorOut, objectCopyrightOut, appliedOut, langIn, str } from './schemas.js';
 import { creatorsText } from '../lib/objects.js';
@@ -94,9 +94,6 @@ export function searchObjects(db, meta, args) {
   const total = db.prepare(`SELECT COUNT(*) AS n FROM ${q.from} ${q.where}`).get(...q.params).n;
   const ids = db.prepare(`SELECT o.id FROM ${q.from} ${q.where} ORDER BY ${ORDER[sort]} LIMIT ? OFFSET ?`)
     .all(...q.params, args.limit, args.offset).map((r) => r.id);
-  // Rows are small; the fit only guards a lowered SKKG_RESULT_CHAR_CEILING.
-  const results = fitList(ids.map((id) => prune(objectRow(db, id, args.lang))), RESULT_CHAR_LIMIT);
-
   if (total === 0 && args.query) {
     warnings.push(`No object matches "${args.query}"${q.clauseCount > 1 ? ' with these filters' : ''}. ` +
       'The data is German: check that the keywords are German, try a prefix (Uhr*), or drop a filter.');
@@ -106,32 +103,44 @@ export function searchObjects(db, meta, args) {
   const stale = staleWarning(meta);
   if (stale) warnings.push(stale);
 
-  const hasMore = args.offset + results.length < total;
-  const out = prune({
-    total,
-    returned: results.length,
-    offset: args.offset,
-    has_more: hasMore,
-    next_offset: hasMore ? args.offset + results.length : undefined,
-    sort,
-    results,
-    applied_filters: q.applied,
-    warnings,
-    data_as_of: meta.data_as_of,
+  const build = (results) => {
+    const hasMore = args.offset + results.length < total;
+    const out = prune({
+      total,
+      returned: results.length,
+      offset: args.offset,
+      has_more: hasMore,
+      next_offset: hasMore ? args.offset + results.length : undefined,
+      sort,
+      results,
+      applied_filters: q.applied,
+      warnings,
+      data_as_of: meta.data_as_of,
+    });
+    out.results ??= [];
+    return out;
+  };
+  // Rows are small; the fit only guards a lowered SKKG_RESULT_CHAR_CEILING.
+  return fitResult({
+    rows: ids.map((id) => prune(objectRow(db, id, args.lang))),
+    budget: RESULT_CHAR_LIMIT,
+    cost: sentCost((r) => resultLine(r, args.offset + args.limit)),
+    build,
+    render: renderText,
   });
-  out.results ??= [];
-  return out;
+}
+
+function resultLine(r, n) {
+  const what = [r.object_type, creatorsText(r.creators), r.date].filter(Boolean).join(' · ');
+  const rights = [r.has_image ? `photo: ${r.image_license}` : 'no image', `object: ${r.object_copyright}`].join(', ');
+  return `${n}. ${r.inventory_number ?? ''} ${r.title ?? '(untitled)'}${what ? ` — ${what}` : ''}\n` +
+    `   ${r.id} · ${rights} · ${r.website_url ?? ''}`;
 }
 
 function renderText(s) {
   const head = `${s.total} objects` + (s.total > s.returned ? `, showing ${s.offset + 1}–${s.offset + s.returned}` : '') +
     ` (sorted by ${s.sort}).`;
-  const lines = (s.results ?? []).map((r, i) => {
-    const what = [r.object_type, creatorsText(r.creators), r.date].filter(Boolean).join(' · ');
-    const rights = [r.has_image ? `photo: ${r.image_license}` : 'no image', `object: ${r.object_copyright}`].join(', ');
-    return `${s.offset + i + 1}. ${r.inventory_number ?? ''} ${r.title ?? '(untitled)'}${what ? ` — ${what}` : ''}\n` +
-      `   ${r.id} · ${rights} · ${r.website_url ?? ''}`;
-  });
+  const lines = (s.results ?? []).map((r, i) => resultLine(r, s.offset + i + 1));
   const tail = [
     s.has_more && `More: offset ${s.next_offset}.`,
     ...(s.warnings ?? []).map((w) => `Warning: ${w}`),

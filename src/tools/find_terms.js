@@ -10,7 +10,7 @@ import { stmt, perDb } from '../lib/sql.js';
 import { termLabel } from '../lib/labels.js';
 import { termsByLabel } from '../lib/terms.js';
 import { prune } from '../lib/prune.js';
-import { fitList } from '../lib/fit.js';
+import { fitResult, sentCost } from '../lib/fit.js';
 import { FIELD_OF_FACET } from './object_filters.js';
 import { langIn, str, int, termOut as termRefOut } from './schemas.js';
 import {
@@ -254,17 +254,18 @@ function list(db, args) {
   return { ids: rank(db, stmt(db, `SELECT ${CANDIDATE} FROM terms t WHERE t.facet = ?`).all(args.vocabulary)), warnings: [] };
 }
 
-function page(db, ids, args) {
-  const slice = ids.slice(args.offset, args.offset + args.limit);
-  const rows = fitList(slice.map((id) => termRow(db, getTerm(db, id), args.lang)), RESULT_CHAR_LIMIT);
-  const hasMore = args.offset + rows.length < ids.length;
+function pageRows(db, ids, args) {
+  return ids.slice(args.offset, args.offset + args.limit).map((id) => termRow(db, getTerm(db, id), args.lang));
+}
+
+function paging(total, rows, args) {
+  const hasMore = args.offset + rows.length < total;
   return {
-    total: ids.length,
+    total,
     returned: rows.length,
     offset: args.offset,
     has_more: hasMore,
     next_offset: hasMore ? args.offset + rows.length : undefined,
-    rows,
   };
 }
 
@@ -278,7 +279,10 @@ export function findTerms(db, meta, args) {
   }
   const applied = { query: args.query, id: args.id, vocabulary: args.vocabulary };
   const warnings = [];
-  let out;
+  let total;
+  let rows;
+  let head = {};
+  let listKey = 'results';
 
   if (args.id !== undefined) {
     const { id } = resolveId(db, args.id, { types: ['type'] });
@@ -291,29 +295,33 @@ export function findTerms(db, meta, args) {
       warnings.push(`"${id}" is a ${t.facet ?? schemeName(db, t.scheme_id)} term, not a ${args.vocabulary} term; returned anyway.`);
     }
     const narrowerIds = rank(db, stmt(db, `SELECT ${CANDIDATE} FROM terms t WHERE t.broader_id = ?`).all(id));
-    const { rows, ...p } = page(db, narrowerIds, args);
-    out = {
-      ...p,
+    total = narrowerIds.length;
+    rows = pageRows(db, narrowerIds, args);
+    head = {
       term: termRow(db, t, args.lang),
       broader: ancestors(db, id).map((a) => ({ id: a, label: termLabel(db, a, args.lang) })),
-      narrower: rows,
     };
+    listKey = 'narrower';
   } else {
     const found = args.query !== undefined ? search(db, args) : list(db, args);
     warnings.push(...found.warnings);
-    const { rows, ...p } = page(db, found.ids, args);
-    out = { ...p, results: rows };
+    total = found.ids.length;
+    rows = pageRows(db, found.ids, args);
   }
 
-  if (out.total > 0 && args.offset >= out.total) {
-    warnings.push(`\`offset\` ${args.offset} is past the end: there are ${out.total} ${args.id !== undefined ? 'narrower terms' : 'terms'}. ` +
+  if (total > 0 && args.offset >= total) {
+    warnings.push(`\`offset\` ${args.offset} is past the end: there are ${total} ${args.id !== undefined ? 'narrower terms' : 'terms'}. ` +
       'Start again at offset 0.');
   }
   const stale = staleWarning(meta);
   if (stale) warnings.push(stale);
-  const result = prune({ ...out, applied, warnings, data_as_of: meta.data_as_of });
-  if (args.id === undefined) result.results ??= [];
-  return result;
+  const build = (list) => {
+    const result = prune({ ...paging(total, list, args), ...head, [listKey]: list, applied, warnings, data_as_of: meta.data_as_of });
+    if (args.id === undefined) result.results ??= [];
+    return result;
+  };
+  const n = args.offset + args.limit;
+  return fitResult({ rows, budget: RESULT_CHAR_LIMIT, cost: sentCost((t) => `${n}. ${termLine(t)}`), build, render: renderText });
 }
 
 function termLine(t) {

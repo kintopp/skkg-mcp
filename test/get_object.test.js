@@ -11,10 +11,12 @@
 // - a price without a currency comes back without saying the currency is missing
 // - the physical section returns the current location, which SKKG's API and website do not publish
 // - results violate the output schema
+// - the text repeats structuredContent as JSON, or leaves out a requested section, its ids,
+//   the rights, or the warnings, so a host that shows the model only the text loses them
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { withClient, callOk, callError, FIXTURE_DB } from './helpers.js';
+import { withClient, callOk, callSent, callError, FIXTURE_DB } from './helpers.js';
 import { outputSchema } from '../src/tools/get_object.js';
 
 const NAME = 'skkg_get_object';
@@ -131,6 +133,28 @@ test('skkg_get_object against the fixture database', { skip: FIXTURE_DB.skip }, 
     await t.test('a price without a currency says the currency is not recorded', async () => {
       const { acquisition: a } = await get({ id: 'object/915c2b68-58c5-4f75-8033-ed0b1499c2b9', include: ['acquisition'] });
       assert.deepEqual([a.price.value, a.price.currency], [1000, 'not recorded']);
+    });
+
+    await t.test('the text renders every requested section with its ids and rights, never as JSON', async () => {
+      const { structured: r, text } = await callSent(client, NAME, { id: 'object/1014', include: ['all'] }, outputSchema);
+      assert.ok(!text.includes('{"'), 'no JSON in the text');
+      assert.ok(text.length < JSON.stringify(r).length, 'the text is more compact than the JSON');
+      assert.ok(text.includes(`\nObject copyright: ${r.rights.object.object_copyright}`));
+      assert.ok(text.includes(`\nPhoto: ${r.rights.primary_image.image_license}`));
+      for (const heading of ['Production:', 'Physical:', 'Provenance:', 'Images:']) assert.match(text, new RegExp(`^${heading}`, 'm'));
+      assert.match(text, /^Acquisition: /m);
+      const ids = [...r.provenance.periods.map((x) => x.id), ...r.images.map((x) => x.id), ...(r.literature ?? []).map((x) => x.id),
+        ...(r.exhibitions ?? []).map((x) => x.id), ...r.production.creators.map((x) => x.id)];
+      for (const id of ids) assert.ok(text.includes(id), id);
+      for (const img of r.images) assert.ok(text.includes(`${img.rights.image_license}`) && text.includes(img.rights.iiif_service), img.id);
+      assert.match(text, /unbekannte:r Eigentümer:in/i);
+      assert.match(text, /Previous owner \(computed\)/);
+    });
+
+    await t.test('warnings reach the text', async () => {
+      const { structured: r, text } = await callSent(client, NAME, { id: 'object/4098', include: ['images'] }, outputSchema);
+      for (const w of r.warnings) assert.ok(text.includes(`Warning: ${w}`), w);
+      assert.ok(r.warnings.length > 0);
     });
   }, { env: { SKKG_DB_PATH: FIXTURE_DB.path } });
 });

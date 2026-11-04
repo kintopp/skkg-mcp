@@ -8,7 +8,7 @@ import { getDatabase, staleWarning } from '../db.js';
 import { stmt } from '../lib/sql.js';
 import { termLabel, actorRef } from '../lib/labels.js';
 import { prune } from '../lib/prune.js';
-import { fitList } from '../lib/fit.js';
+import { fitResult, sentCost } from '../lib/fit.js';
 import {
   objectQueryShape, objectFilterShape, compileObjectQuery, VALUE_PAIRS, TERM_FILTER_FIELDS,
   ACQUISITION_YEAR, ACQUISITION_DATED,
@@ -232,14 +232,11 @@ export function collectionStats(db, meta, args) {
     });
   }
 
-  const fitted = fitList(buckets.map(prune), RESULT_CHAR_LIMIT);
-  if (fitted.length < buckets.length) {
-    warnings.push(`Cut to ${fitted.length} buckets to stay within the result size; page on with offset ${args.offset + fitted.length}.`);
-  }
+  const shown = buckets.map(prune);
   // include_narrower is one flag for every term filter, so a bucket's exact term also stops
   // the caller's own term filters from matching narrower terms.
   const ownTermFilters = TERM_FILTER_FIELDS.filter((f) => args[f] !== undefined && f !== args.dimension);
-  if (ownTermFilters.length && args.include_narrower !== false && fitted.some((b) => b.filter?.include_narrower === false)) {
+  if (ownTermFilters.length && args.include_narrower !== false && shown.some((b) => b.filter?.include_narrower === false)) {
     warnings.push('Buckets of terms with narrower terms carry include_narrower: false in `filter`. Added to this call\'s ' +
       `arguments, it also stops ${ownTermFilters.map((f) => `\`${f}\``).join(', ')} from matching narrower terms, ` +
       'so a search can list fewer objects than the bucket count.');
@@ -257,26 +254,40 @@ export function collectionStats(db, meta, args) {
   const stale = staleWarning(meta);
   if (stale) warnings.push(stale);
 
-  const hasMore = args.offset + fitted.length < sorted.length;
-  const out = prune({
-    dimension: args.dimension,
-    breakdown: args.breakdown,
-    total_objects: total,
-    with_value: withValue,
-    without_value: total - withValue,
-    total_buckets: sorted.length,
-    returned: fitted.length,
-    offset: args.offset,
-    has_more: hasMore,
-    next_offset: hasMore ? args.offset + fitted.length : undefined,
-    order,
-    buckets: fitted,
-    applied_filters: q.applied,
-    warnings,
-    data_as_of: meta.data_as_of,
-  });
-  out.buckets ??= [];
-  return out;
+  const build = (fitted) => {
+    const hasMore = args.offset + fitted.length < sorted.length;
+    const cut = fitted.length < shown.length
+      ? [`Cut to ${fitted.length} buckets to stay within the result size; page on with offset ${args.offset + fitted.length}.`]
+      : [];
+    const out = prune({
+      dimension: args.dimension,
+      breakdown: args.breakdown,
+      total_objects: total,
+      with_value: withValue,
+      without_value: total - withValue,
+      total_buckets: sorted.length,
+      returned: fitted.length,
+      offset: args.offset,
+      has_more: hasMore,
+      next_offset: hasMore ? args.offset + fitted.length : undefined,
+      order,
+      buckets: fitted,
+      applied_filters: q.applied,
+      warnings: [...cut, ...warnings],
+      data_as_of: meta.data_as_of,
+    });
+    out.buckets ??= [];
+    return out;
+  };
+  return fitResult({ rows: shown, budget: RESULT_CHAR_LIMIT, cost: sentCost(bucketText), build, render: renderText });
+}
+
+function bucketText(b) {
+  const lines = [`${b.count}\t${b.label ?? b.id ?? b.value}${b.id ? ` (${b.id})` : ''}`];
+  for (const x of b.breakdown ?? []) lines.push(`\t${x.count}\t${x.label ?? x.id ?? x.value}`);
+  if (b.breakdown_other) lines.push(`\t${b.breakdown_other}\tother values`);
+  if (b.breakdown_without_value) lines.push(`\t${b.breakdown_without_value}\twithout a value`);
+  return lines.join('\n');
 }
 
 function renderText(s) {
@@ -284,12 +295,7 @@ function renderText(s) {
     `${s.with_value} with a value, ${s.without_value} without; ${s.total_buckets} values` +
     (s.returned && s.total_buckets > s.returned ? `, showing ${s.offset + 1}–${s.offset + s.returned}` : '') + '.';
   const lines = [head];
-  for (const b of s.buckets) {
-    lines.push(`${b.count}\t${b.label ?? b.id ?? b.value}${b.id ? ` (${b.id})` : ''}`);
-    for (const x of b.breakdown ?? []) lines.push(`\t${x.count}\t${x.label ?? x.id ?? x.value}`);
-    if (b.breakdown_other) lines.push(`\t${b.breakdown_other}\tother values`);
-    if (b.breakdown_without_value) lines.push(`\t${b.breakdown_without_value}\twithout a value`);
-  }
+  for (const b of s.buckets) lines.push(bucketText(b));
   if (s.has_more) lines.push(`More: offset ${s.next_offset}.`);
   for (const w of s.warnings ?? []) lines.push(`Warning: ${w}`);
   if (s.data_as_of) lines.push(`Data as of ${s.data_as_of}.`);
