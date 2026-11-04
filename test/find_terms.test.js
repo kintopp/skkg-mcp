@@ -10,6 +10,7 @@
 // - a term found in another vocabulary than the one asked for is answered with "translate it"
 // - terms of literature, exhibitions, or persons show 0 objects instead of their record count
 // - object references show 0 objects because the build does not count their link table
+// - a term of an unnamed scheme shows no count, so "unused" and "not counted" look alike
 // - `id` drops the broader terms, returns them in the wrong order, or misses narrower terms
 // - an id of another record type returns something instead of naming the right tool
 // - `lang` changes the label but drops the German one
@@ -121,6 +122,20 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
       assert.ok(r.results[0].record_count > 0);
     });
 
+    await t.test('terms of unnamed schemes count the objects or records that use them', async () => {
+      const [sig] = (await find({ query: 'Signatur', limit: 50 })).results.filter((x) => x.vocabulary === 'ObjInscriptionTypeVgr');
+      assert.ok(sig.object_count > 0, JSON.stringify(sig));
+      const [name] = (await find({ query: 'andere Schreibweise', limit: 50 })).results.filter((x) => x.vocabulary === 'PerNameTypeVgr');
+      assert.equal(name.object_count, 0);
+      assert.equal(name.record_kind, 'persons');
+      assert.ok(name.record_count > 0, JSON.stringify(name));
+    });
+
+    await t.test('condition terms form a named vocabulary', async () => {
+      const r = await find({ vocabulary: 'condition' });
+      assert.ok(r.results.some((x) => x.label === 'Stabil' && x.object_count > 0), JSON.stringify(r.results));
+    });
+
     await t.test('object references count the objects that use them', async () => {
       const [ref] = (await find({ query: 'Teil von', vocabulary: 'object_reference_type' })).results;
       assert.equal(ref.label, 'Teil von');
@@ -219,7 +234,7 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
       assert.doesNotMatch(res.content[0].text, /showing/);
       const bare = await client.callTool({ name: NAME, arguments: { query: 'Katalogtext' } });
       assert.match(bare.content[0].text, /Katalogtext/);
-      assert.doesNotMatch(bare.content[0].text, /·\s*·/);
+      assert.doesNotMatch(bare.content[0].text, /·\s*·|·\s*$/m);
     });
 
     await t.test('pages neither repeat nor skip, and the last page has no more', async () => {

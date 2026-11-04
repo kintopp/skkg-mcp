@@ -5,11 +5,8 @@ import { termLabel, actorRef } from './labels.js';
 import { objectCopyright, primaryImageLicense } from './rights.js';
 import { websiteUrl } from './ids.js';
 
-// Numeric inventory numbers in numeric order ("884" before "1000"), then the others as text;
-// for queries that name the objects table `o`.
-export const INVENTORY_ORDER = "o.inventory_number GLOB '[0-9]*' DESC, CAST(o.inventory_number AS INTEGER), o.inventory_number";
-
-const RELATION = { carried_out_by: 'creator', influenced_by: 'influence' };
+// SKKG records attributions ("nach", "zugeschrieben", "Schule") as influenced_by.
+export const RELATION = Object.freeze({ carried_out_by: 'creator', influenced_by: 'influence' });
 
 export function objectCreators(db, objectId, lang) {
   return stmt(db, 'SELECT actor_id, relation, role_id, attribution_id FROM object_creators WHERE object_id = ? ORDER BY seq IS NULL, seq')

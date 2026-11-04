@@ -10,6 +10,9 @@
 // - the objects page has a wrong total, has_more, or next_offset, or an offset past the end is silent
 // - an object row lacks image_license or object_copyright
 // - the filter given for a list or a role lists other objects than the tool counted
+// - an influence ("nach", "Umkreis") is reported as the creator, or gets the website's filter on works
+// - the object count of the summary counts an object twice when it is linked twice
+// - an address's website is lost or is not a URL
 // - an actor's object is listed with the same link twice, or without the link at all
 // - a relation is reported in the wrong direction
 // - literature references lose their page, figure, or catalogue number, repeat the publication's
@@ -67,6 +70,31 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
       // type/21118/183989 is "Künstler:in" in SKKG's vocabulary of creator roles.
       assert.deepEqual(artist.filter, { creator: 'person/107', creator_role: 'type/21118/183989' });
       assert.equal(await searchTotal(artist.filter), artist.count);
+    });
+
+    await t.test('an influence is not reported as the creator', async () => {
+      // person/1047 is a "Tiziano Vecellio, Umkreis" entry: SKKG links it with influenced_by only.
+      const r = await get({ id: 'person/1047' });
+      assert.ok(!r.summary.roles.some((x) => x.as === 'creator'), JSON.stringify(r.summary.roles));
+      const infl = r.summary.roles.find((x) => x.as === 'influence' && !x.role);
+      assert.equal(await searchTotal(infl.filter), infl.count);
+      assert.equal(r.website_url, 'https://digital.skkg.ch/de/filter;actor;skkg%3Aperson%2F1047');
+    });
+
+    await t.test('an actor who is creator and influence gets no filter that would list both', async () => {
+      // person/146 (Liotard) made one fixture object and is the model of another.
+      const r = await get({ id: 'person/146' });
+      const creator = r.summary.roles.find((x) => x.as === 'creator' && !x.role);
+      const infl = r.summary.roles.find((x) => x.as === 'influence' && !x.role);
+      assert.ok(creator && infl, JSON.stringify(r.summary.roles));
+      assert.ok(r.summary.roles.every((x) => x.filter === undefined), JSON.stringify(r.summary.roles));
+      assert.equal(await searchTotal({ creator: 'person/146' }), creator.count + infl.count);
+    });
+
+    await t.test('the summary counts each object once, as the objects section lists it', async () => {
+      const summary = await get({ id: ANON_OWNER });
+      const listed = await get({ id: ANON_OWNER, include: ['objects'] });
+      assert.equal(summary.summary.counts.objects, listed.objects.total);
     });
 
     await t.test('"all" brings every section of the type, and the counts match them', async () => {
@@ -140,6 +168,9 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
       assert.equal(lugano.summary.website, undefined);
       const hamburg = await get({ id: 'address/0f132072-c2cd-4ce3-8d68-622d899a1b24' });
       assert.equal(hamburg.summary.website, 'https://www.hamburger-kunsthalle.de/');
+      // The build once stored the country here instead of this museum's website.
+      const masi = await get({ id: 'address/4477929f-4285-4e95-9c91-4c51200c0de0' });
+      assert.equal(masi.summary.website, 'https://www.masilugano.ch/');
     });
 
     await t.test('the objects page: rights per object, paging, and a filter that lists the same objects', async () => {

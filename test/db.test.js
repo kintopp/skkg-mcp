@@ -16,9 +16,9 @@ test('no path and a missing file give ToolErrors that name SKKG_DB_PATH', () => 
 });
 
 test('a database with another schema version is refused', () => {
-  const t = makeTestDb({ meta: { schema_version: '2' } });
+  const t = makeTestDb({ meta: { schema_version: '1' } });
   try {
-    assert.throws(() => openDatabase(t.path), /schema version 2/);
+    assert.throws(() => openDatabase(t.path), /schema version 1/);
   } finally {
     t.cleanup();
   }

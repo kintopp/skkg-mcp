@@ -8,6 +8,7 @@ import { getDatabase, staleWarning } from '../db.js';
 import { resolveId, websiteUrl } from '../lib/ids.js';
 import { stmt } from '../lib/sql.js';
 import { prune } from '../lib/prune.js';
+import { asStr } from '../lib/format.js';
 import { termLabel, actorRef, objectRef, termListLabels } from '../lib/labels.js';
 import { objectRights, imageRights } from '../lib/rights.js';
 import { objectCreators, objectFacetLabels } from '../lib/objects.js';
@@ -134,7 +135,6 @@ export const outputSchema = z.object({
   data_as_of: str(),
 });
 
-const asStr = (v) => (v === null || v === undefined ? undefined : String(v));
 
 function summary(db, o, lang, creators) {
   return {

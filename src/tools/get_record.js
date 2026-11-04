@@ -8,16 +8,17 @@ import { getDatabase, staleWarning } from '../db.js';
 import { resolveId, websiteUrl } from '../lib/ids.js';
 import { stmt } from '../lib/sql.js';
 import { prune } from '../lib/prune.js';
-import { termLabel, actorRef } from '../lib/labels.js';
+import { asStr, withArticle } from '../lib/format.js';
+import { termLabel, actorRef, recordLabel } from '../lib/labels.js';
 import { imageRights } from '../lib/rights.js';
-import { objectRow, INVENTORY_ORDER } from '../lib/objects.js';
+import { objectRow, RELATION } from '../lib/objects.js';
 import { period } from '../lib/provenance.js';
 import { capList, paging } from '../lib/results.js';
 import { fitLists } from '../lib/fit.js';
 import { renderRecordText } from './record_text.js';
 import { actorOut, imageRightsOut, objectRowShape, periodShape, langIn, str, int } from './schemas.js';
 import {
-  READ_ONLY_ANNOTATIONS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT,
+  READ_ONLY_ANNOTATIONS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT, INVENTORY_ORDER,
 } from '../config.js';
 
 export const GET_RECORD_TOOL_NAME = 'skkg_get_record';
@@ -191,12 +192,10 @@ export const outputSchema = z.object({
   data_as_of: str(),
 });
 
-const asStr = (v) => (v === null || v === undefined ? undefined : String(v));
 const count = (db, sql, ...params) => stmt(db, sql).get(...params).n;
 
-// The build flags SKKG's anonymisation by label, but misses the lowercase "unbekannte:r
-// Eigentümer:in" (notes/05, "For the next database rebuild"), so the label is checked here too.
-const isAnonymised = (a) => a.kind === 'anonymous' || a.is_anonymous === 1 || /^unbekannte:r\b/i.test(a.label ?? '');
+// The build flags SKKG's anonymisation: "Privatperson" and "Unbekannte:r Eigentümer:in" in either case.
+const isAnonymised = (a) => a.kind === 'anonymous' || a.is_anonymous === 1;
 
 const KIND = { person: 'person', group: 'group', actor: 'actor', author_stub: 'author', publisher_stub: 'publisher', anonymous: 'anonymised' };
 
@@ -219,14 +218,23 @@ function actorPlace(db, label, from, to, place, regionId, lang) {
   return { date: label, year_from: from ?? undefined, year_to: to ?? undefined, place, region: termLabel(db, regionId, lang) };
 }
 
-function actorRoles(db, id) {
+// Objects the actor made, or is an influence on, per relation and role. The `creator` filter of
+// skkg_search_objects matches both relations, so an actor with both gets no filter: it would list more.
+function actorRoles(db, id, lang) {
   const roles = [];
-  const creatorTotal = count(db, 'SELECT COUNT(DISTINCT object_id) AS n FROM object_creators WHERE actor_id = ?', id);
-  if (creatorTotal) {
-    roles.push({ as: 'creator', count: creatorTotal, count_of: 'objects', filter: { creator: id } });
-    for (const r of stmt(db, `SELECT role_id, COUNT(DISTINCT object_id) AS n FROM object_creators WHERE actor_id = ?
-        GROUP BY role_id ORDER BY n DESC`).all(id)) {
-      if (r.role_id) roles.push({ as: 'creator', role: termLabel(db, r.role_id), count: r.n, count_of: 'objects', filter: { creator: id, creator_role: r.role_id } });
+  const relations = stmt(db, `SELECT relation, COUNT(DISTINCT object_id) AS n FROM object_creators WHERE actor_id = ?
+      GROUP BY relation ORDER BY relation`).all(id);
+  const exact = relations.length === 1;
+  for (const { relation, n } of relations) {
+    const as = RELATION[relation];
+    roles.push({ as, count: n, count_of: 'objects', filter: exact ? { creator: id } : undefined });
+    for (const r of stmt(db, `SELECT role_id, COUNT(DISTINCT object_id) AS n FROM object_creators WHERE actor_id = ? AND relation = ?
+        GROUP BY role_id ORDER BY n DESC`).all(id, relation)) {
+      if (r.role_id) {
+        roles.push({
+          as, role: termLabel(db, r.role_id, lang), count: r.n, count_of: 'objects', filter: exact ? { creator: id, creator_role: r.role_id } : undefined,
+        });
+      }
     }
   }
   const counted = [
@@ -247,17 +255,23 @@ function actorRoles(db, id) {
   return roles;
 }
 
-// The objects an actor made, sold or gave to SKKG, or owned before it, in inventory order.
-function actorObjects(db, id) {
-  const rows = stmt(db, `WITH l(object_id, rel, role_id, attribution_id) AS (
-      SELECT object_id, CASE relation WHEN 'influenced_by' THEN 'influence' ELSE 'creator' END, role_id, attribution_id
-        FROM object_creators WHERE actor_id = ?
+// The links of an actor to the objects they made or influenced, sold or gave to SKKG, or owned before it.
+const ACTOR_LINKS = `WITH l(object_id, rel, role_id, attribution_id) AS (
+      SELECT object_id, relation, role_id, attribution_id FROM object_creators WHERE actor_id = ?
       UNION ALL SELECT object_id, 'acquired_from', NULL, NULL FROM acquisitions WHERE source_id = ?
       UNION ALL SELECT po.object_id, 'provenance_owner', NULL, NULL FROM provenance p
-        JOIN provenance_objects po ON po.provenance_id = p.id WHERE p.owner_id = ?)
+        JOIN provenance_objects po ON po.provenance_id = p.id WHERE p.owner_id = ?)`;
+
+const actorObjectCount = (db, id) => count(db, `${ACTOR_LINKS}
+    SELECT COUNT(DISTINCT l.object_id) AS n FROM l JOIN objects o ON o.id = l.object_id`, id, id, id);
+
+// The actor's objects in inventory order, each with its links.
+function actorObjects(db, id) {
+  const rows = stmt(db, `${ACTOR_LINKS}
     SELECT l.* FROM l JOIN objects o ON o.id = l.object_id ORDER BY ${INVENTORY_ORDER}`).all(id, id, id);
   const byObject = new Map();
   for (const r of rows) {
+    r.rel = RELATION[r.rel] ?? r.rel;
     if (!byObject.has(r.object_id)) byObject.set(r.object_id, { id: r.object_id, links: new Map() });
     // An owner of two periods of one chain, or a creator in two roles of one kind, is one link per kind and role.
     byObject.get(r.object_id).links.set(`${r.rel} ${r.role_id} ${r.attribution_id}`, r);
@@ -291,8 +305,7 @@ function getActor(db, id, want, args, ctx) {
     literature: count(db, 'SELECT COUNT(*) AS n FROM literature_actors WHERE actor_id = ?', id)
       + count(db, 'SELECT COUNT(*) AS n FROM literature_links WHERE target_id = ?', id),
   };
-  const objectIds = actorObjects(db, id);
-  counts.objects = objectIds.length;
+  counts.objects = actorObjectCount(db, id);
   const note = anonymised
     ? 'SKKG\'s anonymisation: it stands for persons SKKG does not name, often several. Never try to identify them.'
     : kind === 'author' || kind === 'publisher'
@@ -307,7 +320,7 @@ function getActor(db, id, want, args, ctx) {
       gender: termLabel(db, a.gender_id, lang),
       nationalities: stmt(db, 'SELECT country_id FROM actor_nationalities WHERE actor_id = ?').all(id)
         .map((r) => termLabel(db, r.country_id, lang)).filter(Boolean),
-      roles: actorRoles(db, id),
+      roles: actorRoles(db, id, lang),
       counts,
       note,
     },
@@ -343,7 +356,7 @@ function getActor(db, id, want, args, ctx) {
   }
   if (want.has('literature')) out.literature = capList(actorLiterature(db, id, lang), 'literature', ctx);
   if (want.has('objects')) {
-    out.objects = objectPage(db, objectIds, args, (x) => ({
+    out.objects = objectPage(db, actorObjects(db, id), args, (x) => ({
       links: x.links.map((l) => ({ as: l.rel, role: termLabel(db, l.role_id, lang), attribution: termLabel(db, l.attribution_id, lang) })),
     }));
   }
@@ -411,9 +424,7 @@ function getLiterature(db, id, want, args, ctx) {
   if (want.has('about')) {
     out.about = capList(about, 'about', ctx).map((r) => {
       const type = r.target_id.split('/')[0];
-      const label = type === 'exhibition'
-        ? stmt(db, 'SELECT label FROM exhibitions WHERE id = ?').get(r.target_id)?.label
-        : actorRef(db, r.target_id).name;
+      const label = type === 'exhibition' ? recordLabel(db, 'exhibitions', r.target_id) : actorRef(db, r.target_id).name;
       return { id: r.target_id, type: TYPE_OF[type] ?? type, label, role: termLabel(db, r.role_id, lang) };
     });
   }
@@ -428,7 +439,7 @@ function getExhibition(db, id, want, args, ctx) {
   const objectIds = stmt(db, `SELECT eo.object_id AS id FROM exhibition_objects eo JOIN objects o ON o.id = eo.object_id
       WHERE eo.exhibition_id = ? ORDER BY ${INVENTORY_ORDER}`).all(id);
   const lit = stmt(db, `SELECT ll.literature_id, ll.role_id FROM literature_links ll JOIN literature l ON l.id = ll.literature_id
-      WHERE ll.target_id = ? ORDER BY l.year_from`).all(id);
+      WHERE ll.target_id = ? ORDER BY l.year_from IS NULL, l.year_from`).all(id);
   // Only multimedia with a published IIIF image; the others are records SKKG did not publish.
   const images = stmt(db, `SELECT m.* FROM exhibition_multimedia em JOIN multimedia m ON m.id = em.multimedia_id
       WHERE em.exhibition_id = ? AND m.iiif_service IS NOT NULL ORDER BY m.id`).all(id);
@@ -470,7 +481,7 @@ function getProvenance(db, id, want, args, ctx) {
   const p = stmt(db, 'SELECT * FROM provenance WHERE id = ?').get(id);
   const lang = args.lang;
   const refs = stmt(db, `SELECT r.*, l.year_from FROM literature_refs r JOIN literature l ON l.id = r.literature_id
-      WHERE r.provenance_id = ? ORDER BY l.year_from`).all(id);
+      WHERE r.provenance_id = ? ORDER BY l.year_from IS NULL, l.year_from`).all(id);
   const fields = period(db, p, lang);
   delete fields.id;
   const out = {
@@ -513,14 +524,12 @@ function getGroup(db, id, want, args) {
 function getAddress(db, id, want, args, ctx) {
   const a = stmt(db, 'SELECT * FROM addresses WHERE id = ?').get(id);
   const lang = args.lang;
-  const rows = [
-    ...stmt(db, 'SELECT exhibition_id, kind, type_id FROM exhibition_venues WHERE address_id = ?').all(id)
-      .map((r) => ({ ...r, as: r.kind === 'main' ? 'venue' : 'other venue' })),
-    ...stmt(db, 'SELECT exhibition_id, role_id FROM exhibition_organisers WHERE address_id = ?').all(id)
-      .map((r) => ({ ...r, as: 'organiser' })),
-  ].map((r) => ({ ...r, e: stmt(db, 'SELECT title, label, date_from, date_to FROM exhibitions WHERE id = ?').get(r.exhibition_id) }))
-    .filter((r) => r.e)
-    .sort((x, y) => (x.e.date_from ?? '9999').localeCompare(y.e.date_from ?? '9999'));
+  const rows = stmt(db, `SELECT * FROM (
+      SELECT v.exhibition_id, CASE v.kind WHEN 'main' THEN 'venue' ELSE 'other venue' END AS link, v.type_id AS role_id,
+        e.title, e.label, e.date_from, e.date_to FROM exhibition_venues v JOIN exhibitions e ON e.id = v.exhibition_id WHERE v.address_id = ?
+      UNION ALL SELECT g.exhibition_id, 'organiser', g.role_id, e.title, e.label, e.date_from, e.date_to
+        FROM exhibition_organisers g JOIN exhibitions e ON e.id = g.exhibition_id WHERE g.address_id = ?)
+    ORDER BY date_from IS NULL, date_from`).all(id, id);
   const counts = { exhibitions: rows.length };
   // The build keeps only "Privatperson, {place}" of a private address; nothing else is returned.
   const summary = a.is_private_person
@@ -537,16 +546,15 @@ function getAddress(db, id, want, args, ctx) {
       address_type: termLabel(db, a.type_id, lang),
       latitude: a.latitude ?? undefined,
       longitude: a.longitude ?? undefined,
-      // The build also stores the country's IRI in `website` (notes/05), so only URLs are kept.
-      website: /^https?:\/\//.test(a.website ?? '') ? a.website : undefined,
+      website: a.website ?? undefined,
       is_private_person: false,
       counts,
     };
   const out = { label: a.label, summary };
   if (want.has('exhibitions')) {
     out.exhibitions = capList(rows, 'exhibitions', ctx).map((r) => ({
-      id: r.exhibition_id, title: r.e.title ?? r.e.label, date_from: r.e.date_from, date_to: r.e.date_to, as: r.as,
-      role: termLabel(db, r.role_id ?? r.type_id, lang),
+      id: r.exhibition_id, title: r.title ?? r.label, date_from: r.date_from, date_to: r.date_to, as: r.link,
+      role: termLabel(db, r.role_id, lang),
     }));
   }
   return out;
@@ -566,7 +574,7 @@ export function getRecord(db, meta, args) {
   const skipped = asked.filter((s) => !sections.includes(s));
   if (skipped.length) {
     warnings.push(`${skipped.map((s) => `"${s}"`).join(', ')} ${skipped.length > 1 ? 'are not sections' : 'is not a section'} of ` +
-      `${/^[aeiou]/.test(type) ? 'an' : 'a'} ${type} record; its sections are ${sections.join(', ')}.`);
+      `${withArticle(type)} record; its sections are ${sections.join(', ')}.`);
   }
   const want = new Set(asked.filter((s) => sections.includes(s)));
   const ctx = { warnings, totals: {} };

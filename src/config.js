@@ -9,7 +9,7 @@ export const SERVER_VERSION = pkg.version;
 
 // The database is built by scripts/build_db.py.
 export const DB_PATH_ENV = 'SKKG_DB_PATH';
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 // Older than this, results warn that SKKG may have changed or withdrawn records.
 export const STALE_AFTER_DAYS = 30;
 
@@ -30,6 +30,9 @@ export const BREAKDOWN_MAX_TOP = 50;
 // beyond it, reading every pair and filtering in JavaScript is faster (measured: 23 ms against
 // 70 ms at 5,000 ids, 278 ms against 76 ms at 60,000).
 export const STATS_SQL_RESTRICT_MAX = posIntEnv('SKKG_STATS_SQL_RESTRICT_MAX', 10_000, { min: 1, max: 1_000_000 });
+// Numeric inventory numbers in numeric order ("884" before "1000"), then the others as text;
+// an ORDER BY for queries that name the objects table `o`.
+export const INVENTORY_ORDER = "o.inventory_number GLOB '[0-9]*' DESC, CAST(o.inventory_number AS INTEGER), o.inventory_number";
 // Longest list per section of skkg_get_object.
 export const SECTION_LIMIT = 50;
 // More actors than this for one name filter is refused rather than OR-ed together.

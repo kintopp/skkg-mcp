@@ -14,7 +14,7 @@ never replaces a good database. Run from the project root, e.g.:
 Privacy rules (notes/06, notes/09) are enforced here, not in the server: the given names,
 surnames and alternative names of address records are never read, an address that has
 them gets a label built from its organisation (or "Privatperson") and place, and loses its
-coordinates. Stub objects and stub multimedia records (no skkg: class) are not loaded.
+coordinates and website. "Unbekannte:r" owners are flagged as anonymised in either case. Stub objects and stub multimedia records (no skkg: class) are not loaded.
 """
 import argparse
 import json
@@ -30,7 +30,7 @@ from pathlib import Path
 
 from pyoxigraph import BlankNode, Literal, NamedNode, Store
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 D = "https://data.skkg.ch/"
 AAT = "http://vocab.getty.edu/aat/"
 PREFIX = """PREFIX crm: <http://www.cidoc-crm.org/cidoc-crm/>
@@ -60,7 +60,17 @@ FACETS = {
     "42152": "date_basis", "54165": "date_qualifier", "20007": "country",
     "20088": "gender", "43087": "author_role", "26126": "exhibition_status",
     "43086": "internal_external", "21116": "object_reference_type", "42159": "literature_place",
+    "25086": "condition",
 }
+# Facets whose terms describe records other than objects: their terms get a record count and
+# no object count. The other facets get a record count only when listed in RECORD_KIND.
+RECORD_ONLY = {"literature_type", "literature_place", "author_role", "exhibition_type", "exhibition_status",
+               "internal_external", "gender", "country"}
+RECORD_KIND = {"literature_type": "literature", "literature_place": "literature", "author_role": "literature",
+               "exhibition_type": "exhibitions", "exhibition_status": "exhibitions", "internal_external": "exhibitions",
+               "gender": "persons", "country": "persons", "owner_type": "provenance periods",
+               "certainty": "provenance periods", "holding_kind": "provenance periods",
+               "transaction_type": "provenance periods", "source_type": "provenance periods"}
 # Getty AAT types that SKKG uses to tell text nodes apart.
 AAT_CREDIT = AAT + "300026687"
 AAT_EDITION = AAT + "300435435"
@@ -77,7 +87,8 @@ CREATE TABLE schemes (id TEXT PRIMARY KEY, name TEXT, facet TEXT);
 CREATE TABLE terms (
   id TEXT PRIMARY KEY, scheme_id TEXT, facet TEXT, label_de TEXT, label_en TEXT, label_fr TEXT,
   label TEXT, broader_id TEXT, year_from INTEGER, year_to INTEGER, matches TEXT,
-  object_count INTEGER DEFAULT 0);
+  object_count INTEGER, object_count_with_narrower INTEGER, narrower_count INTEGER DEFAULT 0,
+  record_count INTEGER, record_kind TEXT, use_rank INTEGER DEFAULT 0);
 CREATE TABLE term_labels (term_id TEXT, lang TEXT, label TEXT);
 CREATE TABLE term_ancestors (term_id TEXT, ancestor_id TEXT, depth INTEGER,
   PRIMARY KEY (term_id, ancestor_id)) WITHOUT ROWID;
@@ -288,6 +299,11 @@ def fts_text(*parts):
     return s if folded == s else s + "\n" + folded
 
 
+def is_anonymisation(label):
+    """SKKG's placeholder for owners it does not name, in either capitalisation."""
+    return (label or "").casefold().startswith("unbekannte:r")
+
+
 def scheme_of(term_id):
     m = re.match(r"type/([^/]+)/", term_id or "")
     return m.group(1) if m else None
@@ -378,7 +394,8 @@ def load_terms(src, db, used_terms):
     anc = []
     for t in labels:
         seen, cur, depth = set(), t, 0
-        while cur and cur not in seen:
+        # The walk stops at a broader id that is not a term, such as the scheme node.
+        while cur and cur not in seen and cur in labels:
             anc.append((t, cur, depth))
             seen.add(cur)
             cur = broader.get(cur)
@@ -401,7 +418,7 @@ def load_addresses(src, db, used):
     org = {a: v for a, v in q("address", f"""SELECT ?a ?v WHERE {{ ?a a skkg:Address ;
         crm:P1_is_identified_by ?n . ?n crm:P106_is_composed_of ?p .
         ?p crm:P2_has_type <{AAT_ORG}> ; crm:P190_has_symbolic_content ?v }}""")}
-    place, region, country = {}, {}, {}
+    place, region, country, website = {}, {}, {}, {}
     for a, part, v in q("address", """SELECT ?a ?p ?v WHERE { ?a a skkg:Address ;
         crm:P76_has_contact_point ?c . ?c crm:P106_is_composed_of ?p .
         OPTIONAL { ?p crm:P190_has_symbolic_content ?v } }"""):
@@ -412,9 +429,8 @@ def load_addresses(src, db, used):
         elif part.startswith("type/"):
             country[a] = part
         elif part.startswith("http"):
-            pass  # website of the institution, handled below
-    website = {a: w for a, w in q("address", """SELECT ?a ?w WHERE { ?a a skkg:Address ;
-        crm:P76_has_contact_point ?c . ?c crm:P106_is_composed_of ?w . FILTER(STRSTARTS(STR(?w), 'http')) }""")}
+            # sid() has shortened SKKG's own IRIs, so only an outside URL is left here.
+            website.setdefault(a, []).append(part)
     atype = {a: t for a, t in q("address", "SELECT ?a ?t WHERE { ?a a skkg:Address ; crm:P2_has_type ?t }")}
     coords = {a: (num(la), num(lo)) for a, la, lo in q("address", """SELECT ?a ?la ?lo WHERE {
         ?a a skkg:Address ; schema:latitude ?la ; schema:longitude ?lo }""")}
@@ -424,12 +440,13 @@ def load_addresses(src, db, used):
         is_private = a in private
         if is_private:
             label = ", ".join(x for x in (org.get(a) or "Privatperson", place.get(a)) if x)
-            lat = lon = None
+            lat = lon = url = None
         else:
             label = lab
             lat, lon = coords.get(a, (None, None))
+            url = min(website[a]) if a in website else None
         rows.append((a, label, org.get(a), place.get(a), region.get(a), country.get(a), atype.get(a),
-                     lat, lon, 1 if is_private else 0, website.get(a)))
+                     lat, lon, 1 if is_private else 0, url))
         used.update([country.get(a), atype.get(a)])
     db.executemany("INSERT INTO addresses VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows)
     return len(rows), len(private)
@@ -512,7 +529,7 @@ def load_actors(src, db, used):
         b = ev.get("birth") or ev.get("formation") or (None,) * 6
         dd = ev.get("death") or ev.get("dissolution") or (None,) * 6
         label = "Privatperson" if a == ANON_ACTOR else labels.get(a)
-        anon = 1 if a == ANON_ACTOR or label.startswith("Unbekannte:r") else 0
+        anon = 1 if a == ANON_ACTOR or is_anonymisation(label) else 0
         rows.append((a, kind, label, name.get(a), p.get("firstname"), p.get("lastname"),
                      p.get("corporatename"), gender.get(a), b[0], b[1], b[2], b[3], b[4],
                      dd[0], dd[1], dd[2], dd[3], dd[4], bio.get(a), anon))
@@ -1204,31 +1221,119 @@ def derive(db):
     UPDATE objects SET has_image = primary_multimedia_id IS NOT NULL,
         image_license_id = (SELECT license_id FROM multimedia WHERE id = objects.primary_multimedia_id);
     UPDATE objects SET has_provenance_chain = EXISTS (SELECT 1 FROM provenance_objects po WHERE po.object_id = objects.id);
-    -- Objects per term over every table that links a term to an object, for skkg_find_terms.
-    CREATE TEMP TABLE term_objects AS
-        SELECT term_id, object_id FROM object_terms
-        UNION ALL SELECT role_id, object_id FROM object_creators WHERE role_id IS NOT NULL
-        UNION ALL SELECT attribution_id, object_id FROM object_creators WHERE attribution_id IS NOT NULL
-        UNION ALL SELECT type_id, object_id FROM acquisitions WHERE type_id IS NOT NULL
-        UNION ALL SELECT currency_id, object_id FROM acquisitions WHERE currency_id IS NOT NULL
-        UNION ALL SELECT basis_id, object_id FROM object_dates WHERE basis_id IS NOT NULL
-        UNION ALL SELECT prefix_id, object_id FROM object_dates WHERE prefix_id IS NOT NULL
-        UNION ALL SELECT suffix_id, object_id FROM object_dates WHERE suffix_id IS NOT NULL
-        UNION ALL SELECT p.certainty_id, po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id WHERE p.certainty_id IS NOT NULL
-        UNION ALL SELECT p.holding_kind_id, po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id WHERE p.holding_kind_id IS NOT NULL
-        UNION ALL SELECT p.transaction_type_id, po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id WHERE p.transaction_type_id IS NOT NULL
-        UNION ALL SELECT p.owner_type_id, po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id WHERE p.owner_type_id IS NOT NULL
-        UNION ALL SELECT p.currency_id, po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id WHERE p.currency_id IS NOT NULL
-        UNION ALL SELECT p.begin_qualifier_id, po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id WHERE p.begin_qualifier_id IS NOT NULL
-        UNION ALL SELECT p.end_qualifier_id, po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id WHERE p.end_qualifier_id IS NOT NULL
-        UNION ALL SELECT ps.type_id, po.object_id FROM provenance_sources ps JOIN provenance_objects po ON po.provenance_id = ps.provenance_id WHERE ps.type_id IS NOT NULL
-        UNION ALL SELECT m.license_id, om.object_id FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id WHERE m.license_id IS NOT NULL;
-    CREATE TEMP TABLE term_counts AS SELECT term_id, COUNT(DISTINCT object_id) AS n FROM term_objects GROUP BY term_id;
-    DROP TABLE term_objects;
-    CREATE INDEX temp.ix_tc ON term_counts(term_id);
-    UPDATE terms SET object_count = COALESCE((SELECT n FROM term_counts WHERE term_id = terms.id), 0);
-    DROP TABLE term_counts;
     """)
+    count_terms(db)
+
+
+# Every (term, record) link, by the kind of record, for the counts of skkg_find_terms. Object
+# links include those through provenance periods and multimedia. A term absent here is unused.
+TERM_USES = """
+CREATE TEMP TABLE term_uses AS
+    SELECT term_id, 'objects' AS kind, object_id AS rid FROM object_terms
+    UNION ALL SELECT role_id, 'objects', object_id FROM object_creators
+    UNION ALL SELECT attribution_id, 'objects', object_id FROM object_creators
+    UNION ALL SELECT type_id, 'objects', object_id FROM acquisitions
+    UNION ALL SELECT currency_id, 'objects', object_id FROM acquisitions
+    UNION ALL SELECT basis_id, 'objects', object_id FROM object_dates
+    UNION ALL SELECT prefix_id, 'objects', object_id FROM object_dates
+    UNION ALL SELECT suffix_id, 'objects', object_id FROM object_dates
+    UNION ALL SELECT epoch_id, 'objects', object_id FROM object_dates
+    UNION ALL SELECT type_id, 'objects', object_id FROM object_relations
+    UNION ALL SELECT type_id, 'objects', object_id FROM object_titles
+    UNION ALL SELECT language_id, 'objects', object_id FROM object_titles
+    UNION ALL SELECT type_id, 'objects', object_id FROM object_texts
+    UNION ALL SELECT type_id, 'objects', object_id FROM object_identifiers
+    UNION ALL SELECT type_id, 'objects', object_id FROM object_links
+    UNION ALL SELECT type_id, 'objects', object_id FROM object_parts
+    UNION ALL SELECT unit_id, 'objects', object_id FROM object_dimensions
+    UNION ALL SELECT j.value, 'objects', i.object_id FROM object_inscriptions i, json_each(i.type_ids) j
+    UNION ALL SELECT p.certainty_id, 'objects', po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id
+    UNION ALL SELECT p.holding_kind_id, 'objects', po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id
+    UNION ALL SELECT p.transaction_type_id, 'objects', po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id
+    UNION ALL SELECT p.owner_type_id, 'objects', po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id
+    UNION ALL SELECT p.currency_id, 'objects', po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id
+    UNION ALL SELECT p.begin_qualifier_id, 'objects', po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id
+    UNION ALL SELECT p.end_qualifier_id, 'objects', po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id
+    UNION ALL SELECT ps.type_id, 'objects', po.object_id FROM provenance_sources ps JOIN provenance_objects po ON po.provenance_id = ps.provenance_id
+    UNION ALL SELECT m.license_id, 'objects', om.object_id FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id
+    UNION ALL SELECT m.usage_id, 'objects', om.object_id FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id
+    UNION ALL SELECT m.type_id, 'objects', om.object_id FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id
+    UNION ALL SELECT m.category_id, 'objects', om.object_id FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id
+    UNION ALL SELECT gender_id, 'persons', id FROM actors
+    UNION ALL SELECT birth_place_id, 'persons', id FROM actors
+    UNION ALL SELECT death_place_id, 'persons', id FROM actors
+    UNION ALL SELECT country_id, 'persons', actor_id FROM actor_nationalities
+    UNION ALL SELECT type_id, 'persons', actor_id FROM actor_names
+    UNION ALL SELECT type_id, 'persons', actor_id FROM actor_events
+    UNION ALL SELECT place_id, 'persons', actor_id FROM actor_events
+    UNION ALL SELECT type_id, 'persons', actor_id FROM actor_links
+    UNION ALL SELECT type_id, 'persons', subject_id FROM actor_relations
+    UNION ALL SELECT type_id, 'literature', id FROM literature
+    UNION ALL SELECT place_id, 'literature', id FROM literature
+    UNION ALL SELECT language_id, 'literature', id FROM literature
+    UNION ALL SELECT role_id, 'literature', literature_id FROM literature_actors
+    UNION ALL SELECT role_id, 'literature', literature_id FROM literature_links
+    UNION ALL SELECT exhibition_type_id, 'exhibitions', id FROM exhibitions
+    UNION ALL SELECT status_id, 'exhibitions', id FROM exhibitions
+    UNION ALL SELECT internal_external_id, 'exhibitions', id FROM exhibitions
+    UNION ALL SELECT type_id, 'exhibitions', exhibition_id FROM exhibition_venues
+    UNION ALL SELECT role_id, 'exhibitions', exhibition_id FROM exhibition_organisers
+    UNION ALL SELECT certainty_id, 'provenance periods', id FROM provenance
+    UNION ALL SELECT holding_kind_id, 'provenance periods', id FROM provenance
+    UNION ALL SELECT transaction_type_id, 'provenance periods', id FROM provenance
+    UNION ALL SELECT owner_type_id, 'provenance periods', id FROM provenance
+    UNION ALL SELECT currency_id, 'provenance periods', id FROM provenance
+    UNION ALL SELECT begin_qualifier_id, 'provenance periods', id FROM provenance
+    UNION ALL SELECT end_qualifier_id, 'provenance periods', id FROM provenance
+    UNION ALL SELECT status_id, 'provenance periods', id FROM provenance
+    UNION ALL SELECT type_id, 'provenance periods', provenance_id FROM provenance_sources
+    UNION ALL SELECT j.value, 'provenance periods', c.provenance_id FROM provenance_characteristics c, json_each(c.type_ids) j
+    UNION ALL SELECT country_id, 'addresses', id FROM addresses
+    UNION ALL SELECT type_id, 'addresses', id FROM addresses
+    UNION ALL SELECT usage_id, 'images', id FROM multimedia
+    UNION ALL SELECT type_id, 'images', id FROM multimedia
+    UNION ALL SELECT category_id, 'images', id FROM multimedia
+    UNION ALL SELECT license_id, 'images', id FROM multimedia;
+DELETE FROM term_uses WHERE term_id IS NULL OR term_id NOT IN (SELECT id FROM terms);
+CREATE INDEX temp.ix_tu ON term_uses(term_id, kind);
+"""
+
+
+def count_terms(db):
+    """Store each term's counts and rank key, so that skkg_find_terms reads them instead of
+    counting at runtime. object_count is NULL for facets of other records (RECORD_ONLY); the
+    record count is that of the facet's kind (RECORD_KIND), or for SKKG's unnamed schemes the
+    kind of record that uses the term most."""
+    db.executescript(TERM_USES)
+    objects = dict(db.execute("SELECT term_id, COUNT(DISTINCT rid) FROM term_uses WHERE kind = 'objects' GROUP BY term_id"))
+    # A term's subtree counts each object once, as a filter with include_narrower matches it.
+    subtree = dict(db.execute("""SELECT a.ancestor_id, COUNT(DISTINCT u.rid) FROM term_ancestors a
+        JOIN term_uses u ON u.term_id = a.term_id AND u.kind = 'objects' GROUP BY a.ancestor_id"""))
+    records = defaultdict(dict)
+    for t, kind, n in db.execute("SELECT term_id, kind, COUNT(DISTINCT rid) FROM term_uses WHERE kind != 'objects' GROUP BY term_id, kind"):
+        records[t][kind] = n
+    narrower = dict(db.execute("SELECT broader_id, COUNT(*) FROM terms WHERE broader_id IS NOT NULL GROUP BY broader_id"))
+    rows = []
+    for t, facet in db.execute("SELECT id, facet FROM terms").fetchall():
+        if facet in RECORD_KIND:
+            kind = RECORD_KIND[facet]
+        elif facet is None and records.get(t):
+            kind = min(records[t], key=lambda k: (-records[t][k], k))
+        else:
+            kind = None
+        rec = records.get(t, {}).get(kind, 0) if kind else None
+        if facet in RECORD_ONLY:
+            obj = with_narrower = None
+            rank = rec
+        else:
+            obj, with_narrower = objects.get(t, 0), subtree.get(t, 0)
+            # Object vocabularies rank by objects, never by provenance periods; an unnamed
+            # scheme's term that no object uses ranks by its records.
+            rank = with_narrower or (rec or 0 if facet is None else 0)
+        rows.append((obj, with_narrower, narrower.get(t, 0), rec, kind, rank, t))
+    db.executemany("""UPDATE terms SET object_count = ?, object_count_with_narrower = ?, narrower_count = ?,
+        record_count = ?, record_kind = ?, use_rank = ? WHERE id = ?""", rows)
+    db.execute("DROP TABLE term_uses")
 
 
 def build_fts(db):
@@ -1264,6 +1369,11 @@ def privacy_checks(src, db):
     out.append(("address table has no name columns", not ({"first_name", "surname", "given_name", "last_name"} & cols), ""))
     n = db.execute("SELECT COUNT(*) FROM addresses WHERE is_private_person = 1 AND (latitude IS NOT NULL OR longitude IS NOT NULL)").fetchone()[0]
     out.append(("no private address has coordinates", n == 0, f"{n} rows"))
+    n = db.execute("SELECT COUNT(*) FROM addresses WHERE is_private_person = 1 AND website IS NOT NULL").fetchone()[0]
+    out.append(("no private address has a website", n == 0, f"{n} rows"))
+    # LIKE ignores ASCII case, so this also catches the lowercase "unbekannte:r Eigentümer:in".
+    n = db.execute("SELECT COUNT(*) FROM actors WHERE label LIKE 'unbekannte:r%' AND is_anonymous = 0").fetchone()[0]
+    out.append(("every \"Unbekannte:r\" actor is flagged as SKKG's anonymisation", n == 0, f"{n} rows"))
     # Compare each private address label with its own name parts, read here only for the check.
     leaks = 0
     for a, v in src.q("check", f"""SELECT ?a ?v WHERE {{ ?a a skkg:Address ; crm:P1_is_identified_by ?n .

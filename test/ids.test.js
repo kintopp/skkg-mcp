@@ -6,6 +6,7 @@
 // - an id of the wrong record type is accepted by a tool that cannot show it
 // - a malformed percent-escape in a link throws a URIError instead of a ToolError
 // - uppercase UUIDs (actor/…) are lowercased and miss
+// - a link naming two records resolves to one of them
 
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -98,4 +99,10 @@ test('the website links of persons and of an owner beside an object resolve', ()
   assert.equal(resolveId(t.db, 'https://digital.skkg.ch/de/filter;actor;skkg%3Aperson%2F77').id, 'person/77');
   // An owner's panel opened beside an object names the object last: the link is the object's.
   assert.equal(resolveId(t.db, 'https://digital.skkg.ch/de/intro;person;skkg%3Aperson%2F77/skkg%3Aobject%2F2432').id, 'object/2432');
+});
+
+test('a website link that names two records is refused, not resolved to the last', () => {
+  const link = 'https://digital.skkg.ch/de/filter;actor;skkg%3Aperson%2F77;exhibition;skkg%3Aexhibition%2F152';
+  assert.throws(() => resolveId(t.db, link), (e) => e instanceof ToolError
+    && /more than one record: "person\/77", "exhibition\/152"/.test(formatErrorText(e)) && /the one you mean/.test(formatErrorText(e)));
 });

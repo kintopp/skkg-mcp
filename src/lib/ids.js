@@ -4,6 +4,7 @@
 
 import { DATA_BASE, WEBSITE_BASE } from '../config.js';
 import { ToolError } from './errors.js';
+import { withArticle } from './format.js';
 
 // Id prefix → table. `actor/` ids are publishers and editors of literature.
 export const RECORD_TABLES = Object.freeze({
@@ -21,17 +22,27 @@ export const RECORD_TABLES = Object.freeze({
 
 const PREFIXED = new RegExp(`^(${Object.keys(RECORD_TABLES).join('|')})/(.+)$`);
 
+const decode = (p) => {
+  try {
+    return decodeURIComponent(p);
+  } catch {
+    return p;
+  }
+};
+
 // Strips the link and IRI forms down to a bare or prefixed id.
 function normalise(input) {
   let s = String(input ?? '').trim();
   if (/^https?:\/\/digital\.skkg\.ch\//.test(s)) {
     // The record is the last path segment, after any panel prefix ("filter;actor;skkg%3Aperson%2F107").
-    const last = s.split(/[?#]/)[0].replace(/\/+$/, '').split('/').pop().split(';').pop();
-    try {
-      s = decodeURIComponent(last);
-    } catch {
-      s = last;
+    // A segment naming several records ("…;actor;skkg%3Aperson%2F77;exhibition;…") is refused, not guessed.
+    const parts = s.split(/[?#]/)[0].replace(/\/+$/, '').split('/').pop().split(';').map(decode);
+    const records = parts.filter((p) => p.startsWith('skkg:'));
+    if (records.length > 1) {
+      throw new ToolError(`The link names more than one record: ${records.map((r) => `"${r.slice('skkg:'.length)}"`).join(', ')}.`,
+        'Pass the id of the one you mean.');
     }
+    s = records[0] ?? parts.at(-1);
   }
   if (s.startsWith(DATA_BASE)) s = s.slice(DATA_BASE.length);
   if (s.startsWith('http://data.skkg.ch/')) s = s.slice('http://data.skkg.ch/'.length);
@@ -55,7 +66,7 @@ export function resolveId(db, input, { types = Object.keys(RECORD_TABLES) } = {}
   if (m) {
     const [, type] = m;
     if (!types.includes(type)) {
-      throw new ToolError(`"${s}" is ${/^[aeiou]/.test(type) ? 'an' : 'a'} ${type} id; this tool takes ${accepted} ids.`, toolHint(type, s));
+      throw new ToolError(`"${s}" is ${withArticle(type)} id; this tool takes ${accepted} ids.`, toolHint(type, s));
     }
     if (!exists(db, RECORD_TABLES[type], s)) {
       throw new ToolError(`No ${type} record "${s}" in the database.`,

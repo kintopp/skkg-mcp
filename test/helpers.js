@@ -83,7 +83,7 @@ export async function callError(client, name, args) {
 
 // A throwaway database file with `meta` and the given tables, each created with an
 // `id` column plus any extra columns. Returns { path, db, cleanup }.
-export function makeTestDb({ meta = { schema_version: '1', data_as_of: '2026-10-28' }, tables = {} } = {}) {
+export function makeTestDb({ meta = { schema_version: '2', data_as_of: '2026-10-28' }, tables = {} } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'skkg-mcp-test-'));
   const path = join(dir, 'test.sqlite');
   const db = new DatabaseSync(path);
