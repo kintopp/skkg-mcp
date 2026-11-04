@@ -2,7 +2,7 @@
 
 ## What this is
 
-A stdio MCP server over the SKKG Sammlung digital collection (Stiftung für Kunst, Kultur und Geschichte, Winterthur, `https://digital.skkg.ch`). Node 24, pure ESM, no build step; runtime dependencies are `@modelcontextprotocol/server` and `zod`. It reads one read-only SQLite database (`node:sqlite`) built by `scripts/build_db.py`. This repository stays local; any future GitHub remote must be private.
+A stdio MCP server over the SKKG Sammlung digital collection (Stiftung für Kunst, Kultur und Geschichte, Winterthur, `https://digital.skkg.ch`). Node 24, pure ESM, no build step; runtime dependencies are `@modelcontextprotocol/server` and `zod`. It reads one read-only SQLite database (`node:sqlite`) built by `scripts/build_db.py`. The GitHub remote, `kintopp/skkg-mcp`, is private and must stay private.
 
 The repository also holds the research behind the server:
 
