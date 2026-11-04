@@ -21,7 +21,8 @@
     "start": "node src/index.js",
     "test": "node --test \"test/*.test.js\"",
     "lint": "eslint .",
-    "inspector": "npx @modelcontextprotocol/inspector node src/index.js"
+    "inspector": "npx @modelcontextprotocol/inspector node src/index.js",
+    "mutate": "node test/mutations.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "~2.4.0",
