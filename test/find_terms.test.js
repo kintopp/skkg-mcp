@@ -14,6 +14,13 @@
 // - an id of another record type returns something instead of naming the right tool
 // - `lang` changes the label but drops the German one
 // - paging repeats or skips a term, or has_more is true on the last page
+// - a hierarchical vocabulary stored outside object_terms (literature places) gets a false
+//   object_count_with_narrower of 0
+// - the description promises an order the ranking does not follow
+// - a quote anywhere in the query turns off prefix matching for every word
+// - ranking mixes provenance-period counts with object counts, so "most used" disagrees with object_count
+// - an offset past the end prints an impossible range and gives no hint, or a term without
+//   counts renders an empty segment
 // - results violate the output schema
 
 import { test } from 'node:test';
@@ -144,6 +151,45 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
     await t.test('an id of another record type names the right tool', async () => {
       assert.match(await callError(client, NAME, { id: 'object/1014' }), /is an object id.*skkg_get_object/);
       assert.match(await callError(client, NAME, { id: 'type/0/0' }), /No type record/);
+    });
+
+    await t.test('a publication place with narrower places carries no object counts', async () => {
+      const r = await find({ id: 'type/42159/193158' });
+      assert.ok(r.term.narrower_count > 0);
+      assert.equal(r.term.object_count_with_narrower, undefined);
+      assert.equal(r.term.object_count, undefined);
+      assert.equal(r.term.record_kind, 'literature');
+    });
+
+    await t.test('the description states the order the ranking follows', async () => {
+      const { tools } = await client.listTools();
+      const d = tools.find((x) => x.name === NAME).description;
+      assert.match(d, /Terms in use come first; among them, exact label matches, then the terms used most/);
+      assert.doesNotMatch(d, /exact label matches come first/);
+    });
+
+    await t.test('words outside a quoted phrase still match as prefixes', async () => {
+      const r = await find({ query: 'Maler "auf Papier"', vocabulary: 'object_type' });
+      assert.ok(r.results.some((x) => x.label === 'Malerei auf Papier'), JSON.stringify(r.results));
+      const stray = await find({ query: 'Radier"' });
+      assert.ok(stray.results.some((x) => x.label === 'Radierung'), JSON.stringify(stray.results));
+    });
+
+    await t.test('provenance vocabularies rank by objects, not by periods', async () => {
+      for (const vocabulary of ['certainty', 'holding_kind', 'owner_type', 'transaction_type', 'source_type']) {
+        const uses = (await find({ vocabulary, limit: 50 })).results.map((x) => x.object_count);
+        assert.deepEqual(uses, [...uses].sort((a, b) => b - a), vocabulary);
+      }
+    });
+
+    await t.test('an offset past the end says so; the text has no impossible range or empty segment', async () => {
+      const res = await client.callTool({ name: NAME, arguments: { vocabulary: 'certainty', offset: 50 } });
+      assert.ok(!res.isError);
+      assert.match(res.structuredContent.warnings.join(' '), /`offset` 50 is past the end: there are 4 terms/);
+      assert.doesNotMatch(res.content[0].text, /showing/);
+      const bare = await client.callTool({ name: NAME, arguments: { query: 'Katalogtext' } });
+      assert.match(bare.content[0].text, /Katalogtext/);
+      assert.doesNotMatch(bare.content[0].text, /·\s*·/);
     });
 
     await t.test('pages neither repeat nor skip, and the last page has no more', async () => {

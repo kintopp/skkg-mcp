@@ -79,8 +79,8 @@ const RECORD_COUNTS = {
 const description =
   'Find terms of SKKG\'s vocabularies by label, to use as filter values. ' +
   'Labels are German; English and French labels match where SKKG has them. Each word matches ' +
-  'the start of a word in a label ("Radier" finds "Radierung"); exact label matches come first, then ' +
-  'the terms used most. Each term carries its id, its path in the hierarchy, its year range (epochs), ' +
+  'the start of a word in a label ("Radier" finds "Radierung"). Terms in use come first; among them, ' +
+  'exact label matches, then the terms used most. Each term carries its id, its path in the hierarchy, its year range (epochs), ' +
   'its matches in GND, AAT, or Wikidata, how many objects use it, and `filter`: the skkg_search_objects ' +
   'parameter that takes it. With `id`, returns one term with its broader and narrower terms. ' +
   'With only `vocabulary`, lists that vocabulary. To search objects, use skkg_search_objects; ' +
@@ -167,6 +167,20 @@ function objectCount(db, t) {
   return t.facet || t.object_count > 0 ? t.object_count : undefined;
 }
 
+// Objects that use the term or a narrower one, counted in object_terms, the link table of the
+// hierarchical object vocabularies. Undefined for vocabularies stored elsewhere (literature
+// places, roles), and for a zero in an unnamed scheme, which may be stored elsewhere too.
+const objectTermFacets = new WeakMap();
+function narrowerObjectCount(db, t) {
+  if (!objectTermFacets.has(db)) {
+    objectTermFacets.set(db, new Set(db.prepare('SELECT DISTINCT facet FROM object_terms').all().map((r) => r.facet)));
+  }
+  if (t.facet && !objectTermFacets.get(db).has(t.facet)) return undefined;
+  const n = stmt(db, `SELECT COUNT(DISTINCT object_id) AS n FROM object_terms
+      WHERE term_id IN (SELECT term_id FROM term_ancestors WHERE ancestor_id = ?)`).get(t.id).n;
+  return t.facet || n > 0 ? n : undefined;
+}
+
 function ancestors(db, id) {
   return stmt(db, `SELECT a.ancestor_id AS id FROM term_ancestors a WHERE a.term_id = ? AND a.depth > 0
       AND a.ancestor_id IN (SELECT id FROM terms) ORDER BY a.depth DESC`).all(id).map((r) => r.id);
@@ -176,11 +190,7 @@ function termRow(db, t, lang) {
   const up = ancestors(db, t.id);
   const label = termLabel(db, t.id, lang);
   const narrowerCount = stmt(db, 'SELECT COUNT(*) AS n FROM terms WHERE broader_id = ?').get(t.id).n;
-  // Only object_terms facets are hierarchical, so their link table is the one to count.
-  const withNarrower = narrowerCount
-    ? stmt(db, `SELECT COUNT(DISTINCT object_id) AS n FROM object_terms
-        WHERE term_id IN (SELECT term_id FROM term_ancestors WHERE ancestor_id = ?)`).get(t.id).n
-    : undefined;
+  const withNarrower = narrowerCount ? narrowerObjectCount(db, t) : undefined;
   const records = recordCounts(db, t.facet);
   const languages = [t.label_de, t.label_en, t.label_fr].filter(Boolean);
   const field = FIELD_OF_FACET[t.facet];
@@ -208,10 +218,11 @@ function schemeName(db, schemeId) {
 
 const getTerm = (db, id) => stmt(db, 'SELECT * FROM terms WHERE id = ?').get(id);
 
-// Each plain word matches as a prefix; phrases and starred words are kept as written.
+// Each word matches as a prefix; "phrases", starred words, and OR are kept as written.
+// A stray quote is left to ftsQuery, which drops it from the word.
 function prefixQuery(query) {
-  if (query.includes('"')) return ftsQuery(query);
-  return ftsQuery(query.split(/\s+/).map((w) => (w === 'OR' || w.endsWith('*') || !w ? w : `${w}*`)).join(' '));
+  return ftsQuery(query.replace(/"[^"]*"|\S+/g, (m) => (m.startsWith('"') && m.endsWith('"') && m.length > 1)
+    || m === 'OR' || m.endsWith('*') ? m : `${m}*`));
 }
 
 // How many objects a term reaches, counting narrower terms (an upper bound, for order only).
@@ -220,10 +231,13 @@ const CANDIDATE = `t.id, t.facet, t.object_count, ${REACH} AS reach, COALESCE(t.
 
 // Orders candidate rows: used terms first, so unused shelf labels ("A", "14") never push used
 // terms off the page; then the `first` ids (exact label matches); then by use and label.
-// Terms of literature, exhibitions, and persons are used by records, not objects.
+// Use is counted in objects, never mixed with provenance periods; terms of literature,
+// exhibitions, and persons, which describe no objects, are ranked by their records.
 function rank(db, rows, first = new Set()) {
   for (const r of rows) {
-    r.use = Math.max(r.reach ?? 0, objectCount(db, r) ?? 0, recordCounts(db, r.facet)?.counts.get(r.id) ?? 0);
+    r.use = NOT_OBJECT_VOCABULARIES.has(r.facet)
+      ? recordCounts(db, r.facet)?.counts.get(r.id) ?? 0
+      : Math.max(r.reach ?? 0, objectCount(db, r) ?? 0);
   }
   rows.sort((a, b) => (b.use > 0) - (a.use > 0) || first.has(b.id) - first.has(a.id) || b.use - a.use
     || String(a.sort_label).localeCompare(String(b.sort_label), 'de'));
@@ -305,6 +319,10 @@ export function findTerms(db, meta, args) {
     out = { ...p, rows: undefined, results: p.rows };
   }
 
+  if (out.total > 0 && args.offset >= out.total) {
+    warnings.push(`\`offset\` ${args.offset} is past the end: there are ${out.total} ${args.id !== undefined ? 'narrower terms' : 'terms'}. ` +
+      'Start again at offset 0.');
+  }
   const stale = staleWarning(meta);
   if (stale) warnings.push(stale);
   const result = prune({ ...out, applied, warnings, data_as_of: meta.data_as_of });
@@ -317,17 +335,20 @@ function termLine(t) {
     t.object_count_with_narrower !== undefined && `${t.object_count_with_narrower} with narrower`,
     t.record_count !== undefined && `${t.record_count} ${t.record_kind}`].filter(Boolean).join(', ');
   const years = t.year_from !== undefined || t.year_to !== undefined ? ` (${t.year_from ?? '?'}–${t.year_to ?? '?'})` : '';
-  return `${t.path ?? t.label ?? t.id}${years} — ${t.vocabulary} · ${counts} · ${t.id}${t.filter ? ` · filter: ${t.filter}` : ''}`;
+  return [`${t.path ?? t.label ?? t.id}${years} — ${t.vocabulary}`, counts, t.id, t.filter && `filter: ${t.filter}`]
+    .filter(Boolean).join(' · ');
 }
+
+const showing = (s) => (s.returned && s.total > s.returned ? `, showing ${s.offset + 1}–${s.offset + s.returned}` : '');
 
 function renderText(s) {
   const lines = [];
   if (s.term) {
     lines.push(termLine(s.term));
-    if (s.total) lines.push(`${s.total} narrower terms` + (s.total > s.returned ? `, showing ${s.offset + 1}–${s.offset + s.returned}:` : ':'));
+    if (s.total) lines.push(`${s.total} narrower terms${showing(s)}:`);
     (s.narrower ?? []).forEach((t, i) => lines.push(`${s.offset + i + 1}. ${termLine(t)}`));
   } else {
-    lines.push(`${s.total} terms` + (s.total > s.returned ? `, showing ${s.offset + 1}–${s.offset + s.returned}.` : '.'));
+    lines.push(`${s.total} terms${showing(s)}.`);
     (s.results ?? []).forEach((t, i) => lines.push(`${s.offset + i + 1}. ${termLine(t)}`));
   }
   if (s.has_more) lines.push(`More: offset ${s.next_offset}.`);

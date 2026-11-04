@@ -54,7 +54,7 @@ const MUTATIONS = [
   ['src/lib/rights.js', "return (r && termLabel(db, r.term_id, lang)) || NOT_RECORDED;", "return 'gemeinfrei';", 'object copyright'],
   ["src/tools/find_terms.js", "if (args.id === undefined && args.query === undefined && args.vocabulary === 'all') {", "if (false) {", "find_terms empty refusal"],
   ["src/tools/find_terms.js", "No term matches \"${args.query}\". The vocabularies are German: translate", "No term matches \"${args.query}\". Translate", "find_terms German hint"],
-  ["src/tools/find_terms.js", "w.endsWith('*') || !w ? w : `${w}*`", "w.endsWith('*') || !w ? w : w", "find_terms prefix match"],
+  ["src/tools/find_terms.js", "|| m === 'OR' || m.endsWith('*') ? m : `${m}*`", "|| m === 'OR' || m.endsWith('*') ? m : m", "find_terms prefix match"],
   ["src/tools/find_terms.js", "first.has(b.id) - first.has(a.id) || ", "", "find_terms exact first"],
   ["src/tools/find_terms.js", "(b.use > 0) - (a.use > 0) || ", "", "find_terms used first"],
   ["src/tools/find_terms.js", "WHERE term_id IN (SELECT term_id FROM term_ancestors WHERE ancestor_id = ?)`).get(t.id).n", "WHERE term_id = ?`).get(t.id).n", "find_terms narrower count"],
@@ -69,6 +69,13 @@ const MUTATIONS = [
   ["src/tools/find_terms.js", "    year_from: t.year_from,", "    year_from: undefined,", "find_terms epoch years"],
   ["src/tools/find_terms.js", "const hasMore = args.offset + rows.length < ids.length;", "const hasMore = args.offset + rows.length <= ids.length;", "find_terms has_more at end"],
   ["src/lib/ids.js", "/^[aeiou]/.test(type) ? 'an' : 'a'", "'a'", "id error article"],
+  ["src/tools/find_terms.js", "  if (t.facet && !objectTermFacets.get(db).has(t.facet)) return undefined;\n", "", "find_terms narrower count only in object_terms"],
+  ["src/tools/find_terms.js", "Terms in use come first; among them, ' +\n  'exact label matches", "Exact label matches come first, ' +\n  'then", "find_terms description order"],
+  ["src/tools/find_terms.js", "  return ftsQuery(query.replace(", "  if (query.includes('\"')) return ftsQuery(query);\n  return ftsQuery(query.replace(", "find_terms prefix outside phrases"],
+  ["src/tools/find_terms.js", ": Math.max(r.reach ?? 0, objectCount(db, r) ?? 0);", ": Math.max(r.reach ?? 0, objectCount(db, r) ?? 0, recordCounts(db, r.facet)?.counts.get(r.id) ?? 0);", "find_terms rank in objects"],
+  ["src/tools/find_terms.js", "if (out.total > 0 && args.offset >= out.total) {", "if (false) {", "find_terms past-end warning"],
+  ["src/tools/find_terms.js", "s.returned && s.total > s.returned ?", "s.total > s.returned ?", "find_terms past-end range"],
+  ["src/tools/find_terms.js", "    .filter(Boolean).join(' · ');", "    .join(' · ');", "find_terms empty text segment"],
 ];
 
 // Restore the mutated file if the run is interrupted.
