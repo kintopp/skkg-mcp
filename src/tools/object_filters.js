@@ -8,6 +8,7 @@ import { resolveId } from '../lib/ids.js';
 import { ftsQuery } from '../lib/fts.js';
 import { stmt, placeholders } from '../lib/sql.js';
 import { termLabel, actorRef, objectRef, recordLabel } from '../lib/labels.js';
+import { termsByLabel } from '../lib/terms.js';
 import { MAX_NAME_MATCHES } from '../config.js';
 
 // Term filters: the vocabulary facet, and the SQL that selects objects when the facet is
@@ -36,7 +37,7 @@ const YEAR_FILTERS = [
   ['acquisition_year_to', `${ACQUISITION_YEAR} <= ?)`],
 ];
 // The filter that takes a facet's terms, for errors that point to the right filter.
-const FIELD_OF_FACET = Object.fromEntries(Object.entries(TERM_FILTERS).map(([field, f]) => [f.facet, field]));
+export const FIELD_OF_FACET = Object.fromEntries(Object.entries(TERM_FILTERS).map(([field, f]) => [f.facet, field]));
 
 const termField = (what) => z.string().min(1).max(200).optional().describe(
   `${what}. A term id ("type/…") or a German label, matched exactly except for case.`);
@@ -81,29 +82,6 @@ export function objectFilterShape() {
 const FILTER_KEYS = Object.keys(objectFilterShape()).filter((k) => k !== 'include_narrower');
 export const hasObjectFilter = (args) => FILTER_KEYS.some((k) => args[k] !== undefined);
 
-// SQLite's NOCASE folds ASCII only, so "öl" would miss "Öl"; labels are folded here instead.
-const fold = (s) => s.normalize('NFC').toLocaleLowerCase('de').trim();
-
-// Folded label → [{ id, facet }], over every label of every term. Built once per database.
-const labelIndexes = new WeakMap();
-function labelIndex(db) {
-  let index = labelIndexes.get(db);
-  if (index) return index;
-  index = new Map();
-  const rows = db.prepare(`SELECT id AS term_id, label FROM terms UNION SELECT id, label_de FROM terms
-      UNION SELECT term_id, label FROM term_labels`).all();
-  const facetOf = new Map(db.prepare('SELECT id, facet FROM terms').all().map((r) => [r.id, r.facet]));
-  for (const { term_id: id, label } of rows) {
-    if (!label) continue;
-    const key = fold(label);
-    if (!index.has(key)) index.set(key, []);
-    const list = index.get(key);
-    if (!list.some((e) => e.id === id)) list.push({ id, facet: facetOf.get(id) });
-  }
-  labelIndexes.set(db, index);
-  return index;
-}
-
 // Points to the filters that take `facets`. Never for exclude_attributions: the filters it
 // would name include objects, so following the hint would invert the exclusion.
 function otherFilterHint(field, facets, wanted) {
@@ -125,7 +103,7 @@ export function resolveTerms(db, field, facet, value, narrower) {
     }
     ids = [v];
   } else {
-    const entries = labelIndex(db).get(fold(v)) ?? [];
+    const entries = termsByLabel(db, v);
     ids = entries.filter((e) => e.facet === facet).map((e) => e.id);
     if (!ids.length) {
       const elsewhere = [...new Set(entries.map((e) => e.facet).filter((f) => FIELD_OF_FACET[f]))];

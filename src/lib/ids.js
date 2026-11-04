@@ -54,7 +54,7 @@ export function resolveId(db, input, { types = Object.keys(RECORD_TABLES) } = {}
   if (m) {
     const [, type] = m;
     if (!types.includes(type)) {
-      throw new ToolError(`"${s}" is a ${type} id; this tool takes ${accepted} ids.`, toolHint(type));
+      throw new ToolError(`"${s}" is ${/^[aeiou]/.test(type) ? 'an' : 'a'} ${type} id; this tool takes ${accepted} ids.`, toolHint(type));
     }
     if (!exists(db, RECORD_TABLES[type], s)) {
       throw new ToolError(`No ${type} record "${s}" in the database.`,
