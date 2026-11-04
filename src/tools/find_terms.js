@@ -92,7 +92,8 @@ const termRowOut = () => z.object({
   object_count_with_narrower: int().describe(
     'Objects that use this term or a narrower one: what a filter with include_narrower (the default) matches'),
   narrower_count: int().describe('Number of narrower terms'),
-  record_count: int().describe('Records of `record_kind` that use this term, for vocabularies of other records and of provenance periods'),
+  record_count: int().describe('Records of `record_kind` that use this term, for vocabularies of other records and of provenance periods, ' +
+    'and for terms of SKKG\'s unnamed schemes, where record_kind is the kind of record that uses the term most'),
   record_kind: str(),
   filter: str().describe('The skkg_search_objects parameter that takes this term'),
 });

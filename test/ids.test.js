@@ -7,6 +7,7 @@
 // - a malformed percent-escape in a link throws a URIError instead of a ToolError
 // - uppercase UUIDs (actor/…) are lowercased and miss
 // - a link naming two records resolves to one of them
+// - a link naming the same record twice is refused as if it named two
 
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -82,11 +83,11 @@ test('unknown, empty, and malformed input give a ToolError, never another except
   }
 });
 
-// The forms the website itself links, checked in a browser on 4 November 2026 (notes/08).
+// The forms the website itself links (notes/08).
 test('websiteUrl links objects, persons, and exhibitions in the website\'s own forms', () => {
   assert.equal(websiteUrl('object/2432'), 'https://digital.skkg.ch/de/intro/skkg%3Aobject%2F2432');
   assert.equal(websiteUrl('person/77'), 'https://digital.skkg.ch/de/filter;actor;skkg%3Aperson%2F77');
-  assert.equal(websiteUrl('person/77', { creator: true }),
+  assert.equal(websiteUrl('person/77', { works: true }),
     'https://digital.skkg.ch/de/filter;actor;skkg%3Aperson%2F77?skkgapi:produced_by=skkg:person/77');
   assert.equal(websiteUrl('exhibition/152'),
     'https://digital.skkg.ch/de/filter;exhibition;skkg%3Aexhibition%2F152?skkgapi:exhibition=skkg:exhibition/152');
@@ -105,4 +106,9 @@ test('a website link that names two records is refused, not resolved to the last
   const link = 'https://digital.skkg.ch/de/filter;actor;skkg%3Aperson%2F77;exhibition;skkg%3Aexhibition%2F152';
   assert.throws(() => resolveId(t.db, link), (e) => e instanceof ToolError
     && /more than one record: "person\/77", "exhibition\/152"/.test(formatErrorText(e)) && /the one you mean/.test(formatErrorText(e)));
+});
+
+test('a website link that names one record twice resolves to it', () => {
+  const link = 'https://digital.skkg.ch/de/filter;actor;skkg%3Aperson%2F77;actor;skkg%3Aperson%2F77';
+  assert.equal(resolveId(t.db, link).id, 'person/77');
 });

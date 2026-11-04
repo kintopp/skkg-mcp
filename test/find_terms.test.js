@@ -9,6 +9,7 @@
 // - `filter` names the wrong skkg_search_objects parameter ("production_role" for creator_role)
 // - a term found in another vocabulary than the one asked for is answered with "translate it"
 // - terms of literature, exhibitions, or persons show 0 objects instead of their record count
+// - a country counts persons born, died, or active there under a kind that says nationality, or the reverse
 // - object references show 0 objects because the build does not count their link table
 // - a term of an unnamed scheme shows no count, so "unused" and "not counted" look alike
 // - `id` drops the broader terms, returns them in the wrong order, or misses narrower terms
@@ -120,6 +121,16 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
         assert.equal(x.record_kind, 'literature');
       }
       assert.ok(r.results[0].record_count > 0);
+    });
+
+    await t.test('a country counts the persons of that nationality', async () => {
+      // type/20007/20047 is Switzerland in SKKG's country vocabulary.
+      const ch = (await find({ id: 'type/20007/20047' })).term;
+      assert.equal(ch.record_kind, 'persons (nationality)');
+      const db = new DatabaseSync(FIXTURE_DB.path, { readOnly: true });
+      const { n } = db.prepare("SELECT COUNT(DISTINCT actor_id) AS n FROM actor_nationalities WHERE country_id = 'type/20007/20047'").get();
+      db.close();
+      assert.equal(ch.record_count, n);
     });
 
     await t.test('terms of unnamed schemes count the objects or records that use them', async () => {

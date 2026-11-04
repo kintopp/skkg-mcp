@@ -13,7 +13,7 @@ import { termLabel, actorRef, objectRef, termListLabels } from '../lib/labels.js
 import { objectRights, imageRights } from '../lib/rights.js';
 import { objectCreators, objectFacetLabels } from '../lib/objects.js';
 import { price, period } from '../lib/provenance.js';
-import { capList as capped } from '../lib/results.js';
+import { capList } from '../lib/results.js';
 import { fitLists } from '../lib/fit.js';
 import { renderObjectText, SECTIONS } from './object_text.js';
 import {
@@ -175,7 +175,7 @@ function physical(db, o, lang, ctx) {
   return {
     material_statement: o.material_statement,
     materials: objectFacetLabels(db, o.id, 'material', lang),
-    parts: capped([...parts.values()], 'physical.parts', ctx),
+    parts: capList([...parts.values()], 'physical.parts', ctx),
     inscriptions: stmt(db, 'SELECT text, type_ids, translation, note FROM object_inscriptions WHERE object_id = ? ORDER BY seq IS NULL, seq')
       .all(o.id).map((i) => ({ text: i.text, types: termListLabels(db, i.type_ids, lang), translation: i.translation, note: i.note })),
     condition: stmt(db, 'SELECT condition_ids, note, date FROM object_conditions WHERE object_id = ?').all(o.id)
@@ -238,7 +238,7 @@ function provenance(db, o, lang) {
 function exhibitions(db, o, lang, ctx) {
   const rows = stmt(db, `SELECT e.* FROM exhibition_objects eo JOIN exhibitions e ON e.id = eo.exhibition_id
       WHERE eo.object_id = ? ORDER BY e.date_from IS NULL, e.date_from`).all(o.id);
-  return capped(rows, 'exhibitions', ctx).map((e) => ({
+  return capList(rows, 'exhibitions', ctx).map((e) => ({
     id: e.id, title: e.title ?? e.label, type: termLabel(db, e.exhibition_type_id, lang),
     date_from: e.date_from, date_to: e.date_to, venue: actorRef(db, e.venue_id)?.name,
   }));
@@ -248,7 +248,7 @@ function literature(db, o, ctx) {
   const rows = stmt(db, `SELECT r.*, l.label AS lit_label, l.title AS lit_title, l.year_label FROM literature_refs r
       JOIN literature l ON l.id = r.literature_id WHERE r.object_id = ?
       ORDER BY l.year_from IS NULL, l.year_from, r.sort`).all(o.id);
-  return capped(rows, 'literature', ctx).map((r) => ({
+  return capList(rows, 'literature', ctx).map((r) => ({
     id: r.literature_id, title: r.lit_title ?? r.lit_label, year: asStr(r.year_label), page: asStr(r.page), figure: asStr(r.figure),
     catalogue: asStr(r.catalogue), shows_object: r.shows_object ? true : undefined, note: r.note, citation: r.citation,
   }));
@@ -258,8 +258,8 @@ function related(db, o, lang, ctx) {
   const parts = stmt(db, 'SELECT id FROM objects WHERE parent_id = ? ORDER BY inventory_number').all(o.id);
   return {
     parent: o.parent_id ? objectRef(db, o.parent_id) : undefined,
-    parts: capped(parts, 'related.parts', ctx).map((r) => objectRef(db, r.id)),
-    references: capped(stmt(db, 'SELECT target_id, type_id, label FROM object_relations WHERE object_id = ?').all(o.id), 'related.references', ctx)
+    parts: capList(parts, 'related.parts', ctx).map((r) => objectRef(db, r.id)),
+    references: capList(stmt(db, 'SELECT target_id, type_id, label FROM object_relations WHERE object_id = ?').all(o.id), 'related.references', ctx)
       .map((r) => ({ target: objectRef(db, r.target_id), type: termLabel(db, r.type_id, lang), label: r.label })),
     groups: stmt(db, `SELECT g.id, g.label FROM object_group_members m JOIN object_groups g ON g.id = m.group_id WHERE m.object_id = ?`).all(o.id)
       .map((g) => ({ id: g.id, label: g.label })),
@@ -272,7 +272,7 @@ function related(db, o, lang, ctx) {
 function images(db, o, lang, ctx) {
   const rows = stmt(db, `SELECT m.*, om.seq AS om_seq, om.is_primary FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id
       WHERE om.object_id = ? AND m.iiif_service IS NOT NULL ORDER BY m.id = ? DESC, om.seq IS NULL, om.seq`).all(o.id, o.primary_multimedia_id);
-  return capped(rows, 'images', ctx).map((m) => ({
+  return capList(rows, 'images', ctx).map((m) => ({
     id: m.id,
     is_primary: m.id === o.primary_multimedia_id ? true : undefined,
     seq: m.om_seq ?? undefined,

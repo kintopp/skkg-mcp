@@ -30,7 +30,7 @@ from pathlib import Path
 
 from pyoxigraph import BlankNode, Literal, NamedNode, Store
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 D = "https://data.skkg.ch/"
 AAT = "http://vocab.getty.edu/aat/"
 PREFIX = """PREFIX crm: <http://www.cidoc-crm.org/cidoc-crm/>
@@ -62,15 +62,14 @@ FACETS = {
     "43086": "internal_external", "21116": "object_reference_type", "42159": "literature_place",
     "25086": "condition",
 }
-# Facets whose terms describe records other than objects: their terms get a record count and
-# no object count. The other facets get a record count only when listed in RECORD_KIND.
-RECORD_ONLY = {"literature_type", "literature_place", "author_role", "exhibition_type", "exhibition_status",
-               "internal_external", "gender", "country"}
+# The kind of record a facet's record count counts. Facets of provenance periods also count
+# objects; the others describe records other than objects and get no object count (RECORD_ONLY).
 RECORD_KIND = {"literature_type": "literature", "literature_place": "literature", "author_role": "literature",
                "exhibition_type": "exhibitions", "exhibition_status": "exhibitions", "internal_external": "exhibitions",
-               "gender": "persons", "country": "persons", "owner_type": "provenance periods",
+               "gender": "persons", "country": "persons (nationality)", "owner_type": "provenance periods",
                "certainty": "provenance periods", "holding_kind": "provenance periods",
                "transaction_type": "provenance periods", "source_type": "provenance periods"}
+RECORD_ONLY = {f for f, kind in RECORD_KIND.items() if kind != "provenance periods"}
 # Getty AAT types that SKKG uses to tell text nodes apart.
 AAT_CREDIT = AAT + "300026687"
 AAT_EDITION = AAT + "300435435"
@@ -169,7 +168,7 @@ CREATE TABLE literature (
   year_label TEXT, year_from INTEGER, year_to INTEGER, place_id TEXT, series TEXT,
   series_id TEXT, volume TEXT, edition TEXT, pages TEXT, citation TEXT, language_id TEXT,
   urls TEXT);
-CREATE TABLE literature_actors (literature_id TEXT, actor_id TEXT, kind TEXT, role_id TEXT);
+CREATE TABLE literature_actors (literature_id TEXT, actor_id TEXT, kind TEXT, role_id TEXT, seq INTEGER);
 CREATE TABLE literature_refs (literature_id TEXT, ref_id TEXT, object_id TEXT,
   provenance_id TEXT, shows_object INTEGER DEFAULT 0, page TEXT, figure TEXT, catalogue TEXT,
   sort INTEGER, note TEXT, citation TEXT);
@@ -415,6 +414,7 @@ def load_addresses(src, db, used):
         ?p crm:P2_has_type ?t VALUES ?t {{ <{AAT_GIVEN}> <{AAT_SURNAME}> }} }}""")}
     private |= {a for (a,) in q("address", """SELECT DISTINCT ?a WHERE { ?a a skkg:Address ;
         crm:P1_is_identified_by ?n . FILTER(CONTAINS(STR(?n), '/altname/')) }""")}
+    private.add(ANON_ADDRESS)
     org = {a: v for a, v in q("address", f"""SELECT ?a ?v WHERE {{ ?a a skkg:Address ;
         crm:P1_is_identified_by ?n . ?n crm:P106_is_composed_of ?p .
         ?p crm:P2_has_type <{AAT_ORG}> ; crm:P190_has_symbolic_content ?v }}""")}
@@ -470,9 +470,9 @@ def load_actors(src, db, used):
                 labels[a] = lab
     for a, lab in q("person", "SELECT ?a ?l WHERE { ?a a skkg:Actor ; skos:prefLabel ?l }"):
         labels[a] = lab
+    # Actors with only a label; load_literature sets the kind from their part in literature.
     for a in labels:
-        if a not in kinds:
-            kinds[a] = "publisher_stub" if a.startswith("actor/") else "author_stub"
+        kinds.setdefault(a, "stub")
     kinds[ANON_ACTOR] = "anonymous"
 
     name, parts = {}, defaultdict(dict)
@@ -1098,9 +1098,26 @@ def load_literature(src, db, used):
         ?pub crm:P9_consists_of ?part . ?part crm:P14_carried_out_by ?a .
         OPTIONAL {{ ?part crm:P2_has_type ?r FILTER(STRSTARTS(STR(?r), 'https://data.skkg.ch/')) }} }}"""):
         kind = "editor" if part.endswith("/editing") else "publisher" if part.endswith("/publishing") else "author"
-        actors.append((l, a, kind, role))
+        actors.append([l, a, kind, role])
         used.add(role)
-    db.executemany("INSERT INTO literature_actors VALUES (?,?,?,?)", actors)
+    # The dump does not order the authors; the publication's label names them in citation order.
+    names = dict(db.execute("SELECT id, label FROM actors"))
+    by_lit = defaultdict(list)
+    for row in actors:
+        by_lit[row[0], row[2]].append(row)
+    for (l, _), rows in by_lit.items():
+        label = lit.get(l, {}).get("label") or ""
+
+        def pos(r):
+            i = label.find(names.get(r[1]) or "\0")
+            return (i if i >= 0 else len(label), r[1])
+        for i, r in enumerate(sorted(rows, key=pos)):
+            r.append(i)
+    db.executemany("INSERT INTO literature_actors VALUES (?,?,?,?,?)", actors)
+    # An actor known only from literature is a stub of its part there; publisher wins over editor.
+    db.execute("""UPDATE actors SET kind = (SELECT CASE WHEN SUM(kind = 'publisher') THEN 'publisher_stub'
+        WHEN SUM(kind = 'editor') THEN 'editor_stub' ELSE 'author_stub' END FROM literature_actors WHERE actor_id = actors.id)
+        WHERE kind = 'stub' AND id IN (SELECT actor_id FROM literature_actors)""")
     rows = [(l, d.get("label"), d.get("title"), d.get("type"), d.get("signature"), d.get("isbn"), d.get("year_label"),
              d.get("year_from"), d.get("year_to"), d.get("place"), d.get("series"), d.get("series_id"), d.get("volume"),
              d.get("edition"), d.get("pages"), d.get("citation"), d.get("language"),
@@ -1262,7 +1279,7 @@ CREATE TEMP TABLE term_uses AS
     UNION ALL SELECT gender_id, 'persons', id FROM actors
     UNION ALL SELECT birth_place_id, 'persons', id FROM actors
     UNION ALL SELECT death_place_id, 'persons', id FROM actors
-    UNION ALL SELECT country_id, 'persons', actor_id FROM actor_nationalities
+    UNION ALL SELECT country_id, 'persons (nationality)', actor_id FROM actor_nationalities
     UNION ALL SELECT type_id, 'persons', actor_id FROM actor_names
     UNION ALL SELECT type_id, 'persons', actor_id FROM actor_events
     UNION ALL SELECT place_id, 'persons', actor_id FROM actor_events
@@ -1329,7 +1346,10 @@ def count_terms(db):
             obj, with_narrower = objects.get(t, 0), subtree.get(t, 0)
             # Object vocabularies rank by objects, never by provenance periods; an unnamed
             # scheme's term that no object uses ranks by its records.
-            rank = with_narrower or (rec or 0 if facet is None else 0)
+            if with_narrower or facet is not None:
+                rank = with_narrower
+            else:
+                rank = rec or 0
         rows.append((obj, with_narrower, narrower.get(t, 0), rec, kind, rank, t))
     db.executemany("""UPDATE terms SET object_count = ?, object_count_with_narrower = ?, narrower_count = ?,
         record_count = ?, record_kind = ?, use_rank = ? WHERE id = ?""", rows)
@@ -1390,6 +1410,11 @@ def privacy_checks(src, db):
     for rid, table in ((ANON_ACTOR, "actors"), (ANON_ADDRESS, "addresses")):
         n = db.execute(f"SELECT COUNT(*) FROM {table} WHERE id = ?", (rid,)).fetchone()[0]
         out.append((f"anonymisation node {rid} present", n == 1, ""))
+    n = db.execute("SELECT COUNT(*) FROM addresses WHERE id = ? AND is_private_person = 1", (ANON_ADDRESS,)).fetchone()[0]
+    out.append((f"{ANON_ADDRESS} is flagged as a private person", n == 1, ""))
+    n = db.execute("""SELECT COUNT(*) FROM addresses WHERE website IS NOT NULL
+        AND (website NOT LIKE 'http%' OR website LIKE 'https://data.skkg.ch/%' OR website LIKE 'http://data.skkg.ch/%')""").fetchone()[0]
+    out.append(("every address website is an outside URL", n == 0, f"{n} rows"))
     n = db.execute("SELECT COUNT(*) FROM objects WHERE id NOT IN (SELECT id FROM objects WHERE inventory_number IS NOT NULL)").fetchone()[0]
     out.append(("every object has an inventory number (no stubs)", n == 0, f"{n} rows"))
     return out

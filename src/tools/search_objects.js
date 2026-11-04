@@ -19,7 +19,6 @@ export const SEARCH_OBJECTS_TOOL_NAME = 'skkg_search_objects';
 
 const ORDER = {
   relevance: 'bm25(objects_fts, 0, 5, 3, 1, 1, 10), ' + INVENTORY_ORDER,
-  // Numeric inventory numbers in numeric order ("884" before "1000"), then the others as text.
   inventory_number: INVENTORY_ORDER,
   date_asc: 'COALESCE(o.date_from, o.date_to) NULLS LAST, ' + INVENTORY_ORDER,
   date_desc: 'COALESCE(o.date_to, o.date_from) DESC NULLS LAST, ' + INVENTORY_ORDER,

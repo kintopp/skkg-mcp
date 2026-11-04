@@ -6,11 +6,18 @@
 // - the counts of the summary disagree with the sections they announce
 // - SKKG's anonymisation is replaced, or the lowercase "unbekannte:r Eigentümer:in" is not marked as one
 // - a private address returns more than its "Privatperson, {place}" label: coordinates, an organisation, a region
-// - an address's website is the country IRI the build stored there, not a URL
+// - an address's website is a country IRI, not a URL
 // - the objects page has a wrong total, has_more, or next_offset, or an offset past the end is silent
 // - an object row lacks image_license or object_copyright
-// - the filter given for a list or a role lists other objects than the tool counted
-// - an influence ("nach", "Umkreis") is reported as the creator, or gets the website's filter on works
+// - the filter given for a list or a role lists other objects than the tool counted, or a role
+//   that has an exact filter gets none
+// - an actor SKKG knows only from literature is called by the wrong part (an editor a "publisher")
+// - a publication's authors are listed out of citation order
+// - SKKG's placeholder address "Privatperson" is not flagged as a private person
+// - counts.external leaves out the links or GND rows that the section lists
+// - an exhibition that names an address as main and other venue is listed twice
+// - limit or offset without the objects section is ignored without a word
+// - an influence ("nach", "Umkreis") is reported as the creator, or loses the website's filter on works
 // - the object count of the summary counts an object twice when it is linked twice
 // - an address's website is lost or is not a URL
 // - an actor's object is listed with the same link twice, or without the link at all
@@ -24,6 +31,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { copyFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { withClient, callOk, callSent, callError, FIXTURE_DB } from './helpers.js';
 import { outputSchema } from '../src/tools/get_record.js';
 import { outputSchema as searchSchema } from '../src/tools/search_objects.js';
@@ -68,7 +79,7 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
       assert.equal(await searchTotal(creator.filter), creator.count);
       const artist = r.summary.roles.find((x) => x.role === 'Künstler:in');
       // type/21118/183989 is "Künstler:in" in SKKG's vocabulary of creator roles.
-      assert.deepEqual(artist.filter, { creator: 'person/107', creator_role: 'type/21118/183989' });
+      assert.deepEqual(artist.filter, { creator: 'person/107', creator_role: 'type/21118/183989', include_narrower: false });
       assert.equal(await searchTotal(artist.filter), artist.count);
     });
 
@@ -78,17 +89,48 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
       assert.ok(!r.summary.roles.some((x) => x.as === 'creator'), JSON.stringify(r.summary.roles));
       const infl = r.summary.roles.find((x) => x.as === 'influence' && !x.role);
       assert.equal(await searchTotal(infl.filter), infl.count);
-      assert.equal(r.website_url, 'https://digital.skkg.ch/de/filter;actor;skkg%3Aperson%2F1047');
+      // The website's "produced by" lists the objects a person is an influence on, too.
+      assert.equal(r.website_url, 'https://digital.skkg.ch/de/filter;actor;skkg%3Aperson%2F1047?skkgapi:produced_by=skkg:person/1047');
     });
 
     await t.test('an actor who is creator and influence gets no filter that would list both', async () => {
-      // person/146 (Liotard) made one fixture object and is the model of another.
+      // person/146 (Liotard) made one fixture object and is the model of another, both as "Künstler:in".
       const r = await get({ id: 'person/146' });
       const creator = r.summary.roles.find((x) => x.as === 'creator' && !x.role);
       const infl = r.summary.roles.find((x) => x.as === 'influence' && !x.role);
       assert.ok(creator && infl, JSON.stringify(r.summary.roles));
       assert.ok(r.summary.roles.every((x) => x.filter === undefined), JSON.stringify(r.summary.roles));
       assert.equal(await searchTotal({ creator: 'person/146' }), creator.count + infl.count);
+    });
+
+    await t.test('an actor known only from literature is named by its part there', async () => {
+      // actor/004D58F3… is only an editor, actor/5412749E… an editor and a publisher.
+      const editor = await get({ id: 'actor/004D58F3-3932-3E47-BC63-719C82D7E5D3' });
+      assert.equal(editor.summary.kind, 'editor');
+      assert.equal(editor.summary.note, 'SKKG records only the name of this editor, from its literature.');
+      const both = await get({ id: 'actor/5412749E-E5B1-358D-AB2D-FA598F77886E' });
+      assert.equal(both.summary.kind, 'publisher');
+      assert.equal(both.summary.note, 'SKKG records only the name of this editor and publisher, from its literature.');
+      // person/1047 has no skkg:Person record and is no author: it is an influence on objects.
+      const named = await get({ id: 'person/1047' });
+      assert.equal(named.summary.kind, 'actor');
+      assert.equal(named.summary.note, 'SKKG records only the name of this actor.');
+    });
+
+    await t.test('counts.external counts every row of the external section', async () => {
+      // person/0246e877… has two links and no other external row in the fixture.
+      const r = await get({ id: 'person/0246e877-d928-49e1-97e9-46c438f1767f', include: ['external'] });
+      const x = r.external;
+      assert.ok(x.links.length > 0, JSON.stringify(x));
+      assert.equal(r.summary.counts.external, (x.ids?.length ?? 0) + (x.links?.length ?? 0) + (x.gnd?.length ?? 0));
+    });
+
+    await t.test('limit and offset without the objects section are named in a warning', async () => {
+      const r = await get({ id: 'person/107', limit: 5 });
+      assert.ok(r.warnings.includes('limit and offset page the `objects` section, which was not requested; they were ignored.'),
+        r.warnings?.join(' | '));
+      const quiet = await get({ id: 'person/107' });
+      assert.equal(quiet.warnings, undefined);
     });
 
     await t.test('the summary counts each object once, as the objects section lists it', async () => {
@@ -157,18 +199,33 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
       }
     });
 
+    await t.test('SKKG\'s placeholder address "Privatperson" is a private person', async () => {
+      const r = await get({ id: 'address/privateIndividual' });
+      assert.equal(r.label, 'Privatperson');
+      assert.equal(r.summary.is_private_person, true);
+      assert.match(r.summary.note, /never try to identify the person/);
+    });
+
+    await t.test('an exhibition that names an address as main and other venue is listed once, as its venue', async () => {
+      // exhibition/139 names address/7 as its main venue and, for part of its run, as another venue.
+      const r = await get({ id: 'address/7', include: ['exhibitions'] });
+      const rows = r.exhibitions.filter((e) => e.id === 'exhibition/139');
+      assert.deepEqual(rows.map((e) => e.as), ['venue']);
+      assert.equal(r.exhibitions.length, r.summary.counts.exhibitions);
+    });
+
     await t.test('an institution\'s address has its coordinates and exhibitions, and no country IRI as website', async () => {
       const r = await get({ id: 'address/9', include: ['exhibitions'] });
       assert.equal(r.summary.organisation, 'Kunstmuseum Bern');
       assert.equal(typeof r.summary.latitude, 'number');
       assert.ok(r.exhibitions.some((e) => e.id === 'exhibition/152' && e.as === 'venue'));
       assert.equal(r.exhibitions.length, r.summary.counts.exhibitions);
-      // The build stored the country IRI in this address's website field.
+      // This address's contact point holds a country IRI and no website.
       const lugano = await get({ id: 'address/00405f1a-1000-468d-9c46-891cc63cdb9c' });
       assert.equal(lugano.summary.website, undefined);
       const hamburg = await get({ id: 'address/0f132072-c2cd-4ce3-8d68-622d899a1b24' });
       assert.equal(hamburg.summary.website, 'https://www.hamburger-kunsthalle.de/');
-      // The build once stored the country here instead of this museum's website.
+      // This museum's contact point holds a country IRI beside its website.
       const masi = await get({ id: 'address/4477929f-4285-4e95-9c91-4c51200c0de0' });
       assert.equal(masi.summary.website, 'https://www.masilugano.ch/');
     });
@@ -209,7 +266,9 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
       assert.equal(r.summary.literature_type, 'Ausstellungskatalog');
       assert.equal(r.website_url, undefined, 'the website has no literature pages');
       assert.equal(r.summary.isbn, '978-3-906628-09-7');
-      assert.ok(r.summary.authors.some((a) => a.name === 'Isabelle Messerli'));
+      // In the order of the citation, "Bhattacharya-Stettler, Therese; Bott, Gian Casper; Messerli, Isabelle; et al."
+      assert.deepEqual(r.summary.authors.map((a) => a.name),
+        ['Therese Bhattacharya-Stettler', 'Gian Casper Bott', 'Isabelle Messerli', 'et al.']);
       const zelger = r.objects.items.find((x) => x.id === 'object/7292');
       assert.deepEqual([zelger.page, zelger.figure, zelger.catalogue, zelger.shows_object], ['39', '41', '1', true]);
       // Each reference's citation repeats the publication's with its page; that copy is left out.
@@ -276,6 +335,32 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
   }, { env: { SKKG_DB_PATH: FIXTURE_DB.path } });
 });
 
+test('with both relations, a role under one of them keeps its exact filter', { skip: FIXTURE_DB.skip }, async () => {
+  // No fixture creator with both relations has a role under one only, so a copy gets one:
+  // person/146 as "Druckerei" (type/21118/183988) of object/1635, which it made.
+  const dir = mkdtempSync(join(tmpdir(), 'skkg-roles-'));
+  const path = join(dir, 'fixture.sqlite');
+  copyFileSync(FIXTURE_DB.path, path);
+  const db = new DatabaseSync(path);
+  db.prepare(`INSERT INTO object_creators (object_id, seq, actor_id, relation, role_id)
+      VALUES ('object/1635', 9, 'person/146', 'carried_out_by', 'type/21118/183988')`).run();
+  db.close();
+  try {
+    await withClient('get-record-roles-test', async (client) => {
+      const r = await callOk(client, NAME, { id: 'person/146' }, outputSchema);
+      const roles = r.summary.roles.filter((x) => x.count_of === 'objects');
+      const print = roles.find((x) => x.role === 'Druckerei');
+      assert.deepEqual(print.filter, { creator: 'person/146', creator_role: 'type/21118/183988', include_narrower: false });
+      const listed = await callOk(client, 'skkg_search_objects', { ...print.filter, limit: 1 }, searchSchema);
+      assert.equal(listed.total, print.count);
+      // "Künstler:in" occurs under both relations, and the relations themselves have both: no filter.
+      for (const x of roles.filter((y) => y.role !== 'Druckerei')) assert.equal(x.filter, undefined, `${x.as} ${x.role}`);
+    }, { env: { SKKG_DB_PATH: path } });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('skkg_get_record keeps results under a lowered size limit', { skip: FIXTURE_DB.skip }, async (t) => {
   const CEILING = 6000;
   const LIMIT = CEILING * 0.9;
@@ -287,7 +372,9 @@ test('skkg_get_record keeps results under a lowered size limit', { skip: FIXTURE
       const o = r.objects;
       assert.ok(o.items.length >= 1 && o.items.length < 50);
       assert.deepEqual([o.returned, o.has_more, o.next_offset], [o.items.length, true, 10 + o.items.length]);
-      assert.ok(r.warnings.includes(`objects.items: cut to ${o.items.length} of ${o.total} to fit the result size limit; page on with offset ${o.next_offset}.`),
+      // The cut is of the page of 50, not of all the objects.
+      assert.ok(r.warnings.includes(`objects.items: cut to ${o.items.length} of 50 to fit the result size limit; ` +
+        `page on with offset ${o.next_offset} (${o.total} objects in all).`),
         r.warnings.join(' | '));
     });
 

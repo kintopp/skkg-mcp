@@ -37,7 +37,7 @@ function normalise(input) {
     // The record is the last path segment, after any panel prefix ("filter;actor;skkg%3Aperson%2F107").
     // A segment naming several records ("…;actor;skkg%3Aperson%2F77;exhibition;…") is refused, not guessed.
     const parts = s.split(/[?#]/)[0].replace(/\/+$/, '').split('/').pop().split(';').map(decode);
-    const records = parts.filter((p) => p.startsWith('skkg:'));
+    const records = [...new Set(parts.filter((p) => p.startsWith('skkg:')))];
     if (records.length > 1) {
       throw new ToolError(`The link names more than one record: ${records.map((r) => `"${r.slice('skkg:'.length)}"`).join(', ')}.`,
         'Pass the id of the one you mean.');
@@ -105,13 +105,14 @@ const TOOL_HINTS = {
 const toolHint = (type, s) => TOOL_HINTS[type]?.(s) ?? `Use skkg_get_record with id "${s}".`;
 
 // Website page of a record, in the forms the site itself links (notes/08). A person's panel
-// lists the collection's objects under it, so `creator` filters them to the person's works.
+// lists the collection's objects under it, so `works` filters them to the objects the person made
+// or is an influence on.
 // Literature has no page; provenance periods, object groups, addresses, and `actor/` ids are
 // unchecked, so they get none.
-export function websiteUrl(id, { creator = false } = {}) {
+export function websiteUrl(id, { works = false } = {}) {
   const enc = encodeURIComponent(`skkg:${id}`);
   if (id.startsWith('object/')) return `${WEBSITE_BASE}intro/${enc}`;
-  if (id.startsWith('person/')) return `${WEBSITE_BASE}filter;actor;${enc}${creator ? `?skkgapi:produced_by=skkg:${id}` : ''}`;
+  if (id.startsWith('person/')) return `${WEBSITE_BASE}filter;actor;${enc}${works ? `?skkgapi:produced_by=skkg:${id}` : ''}`;
   if (id.startsWith('exhibition/')) return `${WEBSITE_BASE}filter;exhibition;${enc}?skkgapi:exhibition=skkg:${id}`;
   return undefined;
 }

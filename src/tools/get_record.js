@@ -58,8 +58,8 @@ const inputSchema = z.object({
   include: z.array(z.enum([...ALL_SECTIONS, 'all'])).max(ALL_SECTIONS.length + 1).default([]).describe(
     'Sections besides the summary; which exist depends on the record type (see the description), or all. ' +
     'A section the type does not have is skipped with a warning. Default: none'),
-  limit: z.number().int().min(1).max(SEARCH_MAX_LIMIT).default(SEARCH_DEFAULT_LIMIT).describe('Objects per page of the `objects` section'),
-  offset: z.number().int().min(0).max(100_000).default(0).describe('First object of the `objects` page'),
+  limit: z.number().int().min(1).max(SEARCH_MAX_LIMIT).optional().describe(`Objects per page of the \`objects\` section. Default ${SEARCH_DEFAULT_LIMIT}`),
+  offset: z.number().int().min(0).max(100_000).optional().describe('First object of the `objects` page. Default 0'),
   lang: langIn(),
 }).strict();
 
@@ -80,12 +80,12 @@ export const outputSchema = z.object({
   id: z.string(),
   type: z.enum(Object.keys(SECTIONS_OF)),
   label: str(),
-  website_url: str().describe('The record\'s page on digital.skkg.ch: for persons (with their works, for creators) and exhibitions. ' +
+  website_url: str().describe('The record\'s page on digital.skkg.ch: for persons (with their works, for creators and influences) and exhibitions. ' +
     'Literature has no page there; the other types have none here'),
   summary: z.object({
     // actors
-    kind: z.enum(['person', 'group', 'actor', 'author', 'publisher', 'anonymised']).optional().describe(
-      'author and publisher: SKKG records only the name, from its literature. anonymised: SKKG\'s placeholder for persons it does not name'),
+    kind: z.enum(['person', 'group', 'actor', 'author', 'editor', 'publisher', 'anonymised']).optional().describe(
+      'author, editor, and publisher: SKKG records only the name, from its literature. anonymised: SKKG\'s placeholder for persons it does not name'),
     name: str(),
     birth: placeOut(),
     death: placeOut(),
@@ -197,7 +197,12 @@ const count = (db, sql, ...params) => stmt(db, sql).get(...params).n;
 // The build flags SKKG's anonymisation: "Privatperson" and "Unbekannte:r Eigentümer:in" in either case.
 const isAnonymised = (a) => a.kind === 'anonymous' || a.is_anonymous === 1;
 
-const KIND = { person: 'person', group: 'group', actor: 'actor', author_stub: 'author', publisher_stub: 'publisher', anonymous: 'anonymised' };
+// A stub is an actor SKKG records only by name; the build sets its kind from its part in literature.
+const KIND = {
+  person: 'person', group: 'group', actor: 'actor', stub: 'actor',
+  author_stub: 'author', editor_stub: 'editor', publisher_stub: 'publisher', anonymous: 'anonymised',
+};
+const LITERATURE_KINDS = ['author', 'editor', 'publisher'];
 
 // Paged object rows from `ids` (already in order), each with what `extra(id)` adds.
 function objectPage(db, ids, args, extra = () => ({}), filter = undefined) {
@@ -219,22 +224,24 @@ function actorPlace(db, label, from, to, place, regionId, lang) {
 }
 
 // Objects the actor made, or is an influence on, per relation and role. The `creator` filter of
-// skkg_search_objects matches both relations, so an actor with both gets no filter: it would list more.
+// skkg_search_objects matches both relations, so a filter is given only where it lists no more:
+// for the relation when the actor has one, for a role when it occurs under one relation.
 function actorRoles(db, id, lang) {
   const roles = [];
   const relations = stmt(db, `SELECT relation, COUNT(DISTINCT object_id) AS n FROM object_creators WHERE actor_id = ?
       GROUP BY relation ORDER BY relation`).all(id);
-  const exact = relations.length === 1;
+  const byRole = stmt(db, `SELECT relation, role_id, COUNT(DISTINCT object_id) AS n FROM object_creators
+      WHERE actor_id = ? AND role_id IS NOT NULL GROUP BY relation, role_id ORDER BY n DESC`).all(id);
+  const relationsOf = new Map();
+  for (const r of byRole) relationsOf.set(r.role_id, (relationsOf.get(r.role_id) ?? 0) + 1);
   for (const { relation, n } of relations) {
     const as = RELATION[relation];
-    roles.push({ as, count: n, count_of: 'objects', filter: exact ? { creator: id } : undefined });
-    for (const r of stmt(db, `SELECT role_id, COUNT(DISTINCT object_id) AS n FROM object_creators WHERE actor_id = ? AND relation = ?
-        GROUP BY role_id ORDER BY n DESC`).all(id, relation)) {
-      if (r.role_id) {
-        roles.push({
-          as, role: termLabel(db, r.role_id, lang), count: r.n, count_of: 'objects', filter: exact ? { creator: id, creator_role: r.role_id } : undefined,
-        });
-      }
+    roles.push({ as, count: n, count_of: 'objects', filter: relations.length === 1 ? { creator: id } : undefined });
+    for (const r of byRole.filter((x) => x.relation === relation)) {
+      roles.push({
+        as, role: termLabel(db, r.role_id, lang), count: r.n, count_of: 'objects',
+        filter: relationsOf.get(r.role_id) === 1 ? { creator: id, creator_role: r.role_id, include_narrower: false } : undefined,
+      });
     }
   }
   const counted = [
@@ -301,16 +308,21 @@ function getActor(db, id, want, args, ctx) {
     names: count(db, 'SELECT COUNT(*) AS n FROM actor_names WHERE actor_id = ?', id),
     events: count(db, 'SELECT COUNT(*) AS n FROM actor_events WHERE actor_id = ?', id),
     relations: count(db, 'SELECT COUNT(*) AS n FROM actor_relations WHERE subject_id = ? OR target_id = ?', id, id),
-    external: count(db, 'SELECT COUNT(*) AS n FROM actor_external WHERE actor_id = ?', id),
+    external: count(db, 'SELECT COUNT(*) AS n FROM actor_external WHERE actor_id = ?', id)
+      + count(db, 'SELECT COUNT(*) AS n FROM actor_links WHERE actor_id = ?', id)
+      + count(db, 'SELECT COUNT(*) AS n FROM actor_gnd WHERE actor_id = ?', id),
     literature: count(db, 'SELECT COUNT(*) AS n FROM literature_actors WHERE actor_id = ?', id)
       + count(db, 'SELECT COUNT(*) AS n FROM literature_links WHERE target_id = ?', id),
   };
-  counts.objects = actorObjectCount(db, id);
-  const note = anonymised
-    ? 'SKKG\'s anonymisation: it stands for persons SKKG does not name, often several. Never try to identify them.'
-    : kind === 'author' || kind === 'publisher'
-      ? `SKKG records only the name of this ${kind}, from its literature.`
-      : undefined;
+  const objects = want.has('objects') ? actorObjects(db, id) : undefined;
+  counts.objects = objects ? objects.length : actorObjectCount(db, id);
+  const roles = actorRoles(db, id, lang);
+  const parts = roles.filter((r) => LITERATURE_KINDS.includes(r.as)).map((r) => r.as);
+  let note;
+  if (anonymised) note = 'SKKG\'s anonymisation: it stands for persons SKKG does not name, often several. Never try to identify them.';
+  else if (a.kind?.endsWith('stub')) {
+    note = parts.length ? `SKKG records only the name of this ${parts.join(' and ')}, from its literature.` : 'SKKG records only the name of this actor.';
+  }
   const out = {
     summary: {
       kind,
@@ -320,7 +332,7 @@ function getActor(db, id, want, args, ctx) {
       gender: termLabel(db, a.gender_id, lang),
       nationalities: stmt(db, 'SELECT country_id FROM actor_nationalities WHERE actor_id = ?').all(id)
         .map((r) => termLabel(db, r.country_id, lang)).filter(Boolean),
-      roles: actorRoles(db, id, lang),
+      roles,
       counts,
       note,
     },
@@ -355,8 +367,8 @@ function getActor(db, id, want, args, ctx) {
     };
   }
   if (want.has('literature')) out.literature = capList(actorLiterature(db, id, lang), 'literature', ctx);
-  if (want.has('objects')) {
-    out.objects = objectPage(db, actorObjects(db, id), args, (x) => ({
+  if (objects) {
+    out.objects = objectPage(db, objects, args, (x) => ({
       links: x.links.map((l) => ({ as: l.rel, role: termLabel(db, l.role_id, lang), attribution: termLabel(db, l.attribution_id, lang) })),
     }));
   }
@@ -368,7 +380,7 @@ function getActor(db, id, want, args, ctx) {
 function getLiterature(db, id, want, args, ctx) {
   const l = stmt(db, 'SELECT * FROM literature WHERE id = ?').get(id);
   const lang = args.lang;
-  const actors = (kind) => stmt(db, 'SELECT actor_id, role_id FROM literature_actors WHERE literature_id = ? AND kind = ?').all(id, kind)
+  const actors = (kind) => stmt(db, 'SELECT actor_id, role_id FROM literature_actors WHERE literature_id = ? AND kind = ? ORDER BY seq').all(id, kind)
     .map((r) => ({ ...actorRef(db, r.actor_id), role: termLabel(db, r.role_id, lang) }));
   let urls;
   try {
@@ -530,7 +542,14 @@ function getAddress(db, id, want, args, ctx) {
       UNION ALL SELECT g.exhibition_id, 'organiser', g.role_id, e.title, e.label, e.date_from, e.date_to
         FROM exhibition_organisers g JOIN exhibitions e ON e.id = g.exhibition_id WHERE g.address_id = ?)
     ORDER BY date_from IS NULL, date_from`).all(id, id);
-  const counts = { exhibitions: rows.length };
+  // An address that is the main venue and another venue of one exhibition is listed once, as its venue.
+  const byRole = new Map();
+  for (const r of rows) {
+    const key = `${r.exhibition_id} ${r.link === 'organiser' ? 'organiser' : 'venue'}`;
+    if (!byRole.has(key) || r.link === 'venue') byRole.set(key, r);
+  }
+  const listed = [...byRole.values()];
+  const counts = { exhibitions: listed.length };
   // The build keeps only "Privatperson, {place}" of a private address; nothing else is returned.
   const summary = a.is_private_person
     ? {
@@ -552,7 +571,7 @@ function getAddress(db, id, want, args, ctx) {
     };
   const out = { label: a.label, summary };
   if (want.has('exhibitions')) {
-    out.exhibitions = capList(rows, 'exhibitions', ctx).map((r) => ({
+    out.exhibitions = capList(listed, 'exhibitions', ctx).map((r) => ({
       id: r.exhibition_id, title: r.title ?? r.label, date_from: r.date_from, date_to: r.date_to, as: r.link,
       role: termLabel(db, r.role_id, lang),
     }));
@@ -565,7 +584,8 @@ const GETTERS = {
   objectgroup: getGroup, address: getAddress,
 };
 
-export function getRecord(db, meta, args) {
+export function getRecord(db, meta, input) {
+  const args = { ...input, limit: input.limit ?? SEARCH_DEFAULT_LIMIT, offset: input.offset ?? 0 };
   const resolved = resolveId(db, args.id, { types: Object.keys(TYPE_OF) });
   const type = TYPE_OF[resolved.type];
   const sections = SECTIONS_OF[type];
@@ -577,6 +597,9 @@ export function getRecord(db, meta, args) {
       `${withArticle(type)} record; its sections are ${sections.join(', ')}.`);
   }
   const want = new Set(asked.filter((s) => sections.includes(s)));
+  if (!want.has('objects') && (input.limit !== undefined || input.offset !== undefined)) {
+    warnings.push('limit and offset page the `objects` section, which was not requested; they were ignored.');
+  }
   const ctx = { warnings, totals: {} };
   const body = GETTERS[type](db, resolved.id, want, args, ctx);
   if (body.objects && args.offset > 0 && body.objects.offset >= body.objects.total && body.objects.total > 0) {
@@ -584,9 +607,10 @@ export function getRecord(db, meta, args) {
   }
   const stale = staleWarning(meta);
   if (stale) warnings.push(stale);
-  const creator = body.summary.roles?.some((r) => r.as === 'creator') ?? false;
+  // The website's "produced by" filter lists the objects of both relations (notes/08).
+  const works = body.summary.roles?.some((r) => r.as === 'creator' || r.as === 'influence') ?? false;
   const result = prune({
-    id: resolved.id, type, label: body.label, website_url: websiteUrl(resolved.id, { creator }), ...body, warnings, data_as_of: meta.data_as_of,
+    id: resolved.id, type, label: body.label, website_url: websiteUrl(resolved.id, { works }), ...body, warnings, data_as_of: meta.data_as_of,
   });
   // The schema requires summary even when every value inside was empty.
   result.summary ??= {};
@@ -605,11 +629,11 @@ function fitCeiling(result, totals) {
     lists: CUTTABLE.map((path) => (path[0] === 'objects'
       ? {
         path,
-        advice: (k) => `page on with offset ${result.objects.offset + k}`,
+        advice: (k) => `page on with offset ${result.objects.offset + k} (${result.objects.total} objects in all)`,
         onCut: (holder, k) => Object.assign(holder, paging(holder.total, k, holder.offset)),
       }
       : { path })),
-    totals: { ...totals, 'objects.items': result.objects?.total },
+    totals,
     refusal: new ToolError(`The result for ${result.id} is too large for the result size limit (${RESULT_CHAR_LIMIT} characters) even with its lists cut.`,
       'Ask for fewer sections in `include`, or a smaller `limit`.'),
   });

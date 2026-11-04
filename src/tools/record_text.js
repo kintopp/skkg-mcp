@@ -35,7 +35,7 @@ function literatureSummary(s, label) {
     s.title && s.title !== label && `Title: ${s.title}`,
     s.literature_type && `Type: ${s.literature_type}`,
     people('Authors', s.authors), people('Editors', s.editors), people('Publishers', s.publishers),
-    (s.year || s.place) && `Published: ${join([s.place, s.year ?? point(s.year_from, s.year_to)])}`,
+    (s.year || s.place || s.year_from !== undefined) && `Published: ${join([s.place, s.year ?? point(s.year_from, s.year_to)])}`,
     line([s.series && `Series: ${s.series}`, s.volume && `vol. ${s.volume}`, s.edition && `edition ${s.edition}`,
       s.pages && `${s.pages} pages`, s.isbn && `ISBN ${s.isbn}`, s.language, s.signature && `shelf mark ${s.signature}`]),
     list('URLs', s.urls),
