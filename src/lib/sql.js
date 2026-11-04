@@ -1,13 +1,15 @@
-// Prepared statements, cached per database handle.
+// Per-database caches: prepared statements and values built once from the read-only data.
 
 const caches = new WeakMap();
 
-export function stmt(db, sql) {
+/** The value `build()` returns, built once per database handle and `key`. */
+export function perDb(db, key, build) {
   let cache = caches.get(db);
   if (!cache) caches.set(db, (cache = new Map()));
-  let s = cache.get(sql);
-  if (!s) cache.set(sql, (s = db.prepare(sql)));
-  return s;
+  if (!cache.has(key)) cache.set(key, build());
+  return cache.get(key);
 }
+
+export const stmt = (db, sql) => perDb(db, `stmt:${sql}`, () => db.prepare(sql));
 
 export const placeholders = (n) => Array(n).fill('?').join(', ');

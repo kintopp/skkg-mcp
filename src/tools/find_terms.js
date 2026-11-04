@@ -6,13 +6,13 @@ import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
 import { resolveId } from '../lib/ids.js';
 import { ftsQuery } from '../lib/fts.js';
-import { stmt } from '../lib/sql.js';
+import { stmt, perDb } from '../lib/sql.js';
 import { termLabel } from '../lib/labels.js';
 import { termsByLabel } from '../lib/terms.js';
 import { prune } from '../lib/prune.js';
 import { fitList } from '../lib/fit.js';
 import { FIELD_OF_FACET } from './object_filters.js';
-import { langIn, str, int } from './schemas.js';
+import { langIn, str, int, termOut as termRefOut } from './schemas.js';
 import {
   READ_ONLY_ANNOTATIONS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT,
 } from '../config.js';
@@ -53,28 +53,28 @@ const VOCABULARIES = {
   country: 'countries, e.g. nationalities of persons',
 };
 
-// The build counts objects per term only over the link tables of the named vocabularies
-// (derive() in build_db.py); object references are counted here instead.
-const OBJECT_COUNTS = {
-  object_reference_type: 'SELECT type_id AS t, COUNT(DISTINCT object_id) AS n FROM object_relations GROUP BY type_id',
+// What a term's counts mean, per vocabulary. The build stores object counts only for the link
+// tables of derive() in build_db.py; `objects` counts the others. `records` is [kind, SQL] for
+// vocabularies that describe other records; `noObjects` marks those that describe no objects.
+const per = (col, table, key = '*') => `SELECT ${col} AS t, COUNT(${key}) AS n FROM ${table} GROUP BY ${col}`;
+const COUNTS = {
+  object_reference_type: { objects: per('type_id', 'object_relations', 'DISTINCT object_id') },
+  literature_type: { records: ['literature', per('type_id', 'literature')], noObjects: true },
+  literature_place: { records: ['literature', per('place_id', 'literature')], noObjects: true },
+  author_role: { records: ['literature', per('role_id', 'literature_actors', 'DISTINCT literature_id')], noObjects: true },
+  exhibition_type: { records: ['exhibitions', per('exhibition_type_id', 'exhibitions')], noObjects: true },
+  exhibition_status: { records: ['exhibitions', per('status_id', 'exhibitions')], noObjects: true },
+  internal_external: { records: ['exhibitions', per('internal_external_id', 'exhibitions')], noObjects: true },
+  gender: { records: ['persons', per('gender_id', 'actors')], noObjects: true },
+  country: { records: ['persons (nationality)', per('country_id', 'actor_nationalities', 'DISTINCT actor_id')], noObjects: true },
+  owner_type: { records: ['provenance periods', per('owner_type_id', 'provenance')] },
+  certainty: { records: ['provenance periods', per('certainty_id', 'provenance')] },
+  holding_kind: { records: ['provenance periods', per('holding_kind_id', 'provenance')] },
+  transaction_type: { records: ['provenance periods', per('transaction_type_id', 'provenance')] },
+  source_type: { records: ['provenance periods', per('type_id', 'provenance_sources', 'DISTINCT provenance_id')] },
 };
-
-// Vocabularies that describe records other than objects: what their terms count.
-const RECORD_COUNTS = {
-  literature_type: ['literature', 'SELECT type_id AS t, COUNT(*) AS n FROM literature GROUP BY type_id'],
-  literature_place: ['literature', 'SELECT place_id AS t, COUNT(*) AS n FROM literature GROUP BY place_id'],
-  author_role: ['literature', 'SELECT role_id AS t, COUNT(DISTINCT literature_id) AS n FROM literature_actors GROUP BY role_id'],
-  exhibition_type: ['exhibitions', 'SELECT exhibition_type_id AS t, COUNT(*) AS n FROM exhibitions GROUP BY exhibition_type_id'],
-  exhibition_status: ['exhibitions', 'SELECT status_id AS t, COUNT(*) AS n FROM exhibitions GROUP BY status_id'],
-  internal_external: ['exhibitions', 'SELECT internal_external_id AS t, COUNT(*) AS n FROM exhibitions GROUP BY internal_external_id'],
-  gender: ['persons', 'SELECT gender_id AS t, COUNT(*) AS n FROM actors GROUP BY gender_id'],
-  country: ['persons (nationality)', 'SELECT country_id AS t, COUNT(DISTINCT actor_id) AS n FROM actor_nationalities GROUP BY country_id'],
-  owner_type: ['provenance periods', 'SELECT owner_type_id AS t, COUNT(*) AS n FROM provenance GROUP BY owner_type_id'],
-  certainty: ['provenance periods', 'SELECT certainty_id AS t, COUNT(*) AS n FROM provenance GROUP BY certainty_id'],
-  holding_kind: ['provenance periods', 'SELECT holding_kind_id AS t, COUNT(*) AS n FROM provenance GROUP BY holding_kind_id'],
-  transaction_type: ['provenance periods', 'SELECT transaction_type_id AS t, COUNT(*) AS n FROM provenance GROUP BY transaction_type_id'],
-  source_type: ['provenance periods', 'SELECT type_id AS t, COUNT(DISTINCT provenance_id) AS n FROM provenance_sources GROUP BY type_id'],
-};
+// term id → count, from a `SELECT … AS t, … AS n` query, once per database.
+const countMap = (db, sql) => perDb(db, sql, () => new Map(db.prepare(sql).all().map((r) => [r.t, r.n])));
 
 const description =
   'Find terms of SKKG\'s vocabularies by label, to use as filter values. ' +
@@ -100,9 +100,7 @@ const inputSchema = z.object({
   lang: langIn(),
 }).strict();
 
-const refOut = () => z.object({ id: z.string(), label: str() });
-
-const termOut = () => z.object({
+const termRowOut = () => z.object({
   id: z.string(),
   label: str(),
   labels: z.object({ de: str(), en: str(), fr: str() }).optional()
@@ -127,41 +125,25 @@ export const outputSchema = z.object({
   offset: z.number().int(),
   has_more: z.boolean(),
   next_offset: z.number().int().optional(),
-  results: z.array(termOut()).optional().describe('The terms found; absent with `id`'),
-  term: termOut().optional().describe('The term asked for with `id`'),
-  broader: z.array(refOut()).optional().describe('With `id`: the broader terms, top-level first'),
-  narrower: z.array(termOut()).optional().describe('With `id`: the narrower terms, most used first; `total` counts them'),
+  results: z.array(termRowOut()).optional().describe('The terms found; absent with `id`'),
+  term: termRowOut().optional().describe('The term asked for with `id`'),
+  broader: z.array(termRefOut()).optional().describe('With `id`: the broader terms, top-level first'),
+  narrower: z.array(termRowOut()).optional().describe('With `id`: the narrower terms, most used first; `total` counts them'),
   applied: z.object({ query: str(), id: str(), vocabulary: z.string() }),
   warnings: z.array(z.string()).optional(),
   data_as_of: z.string().optional(),
 });
 
-// Record counts per vocabulary, built once per database.
-const recordCountCache = new WeakMap();
 function recordCounts(db, facet) {
-  const spec = RECORD_COUNTS[facet];
-  if (!spec) return undefined;
-  let cache = recordCountCache.get(db);
-  if (!cache) recordCountCache.set(db, (cache = new Map()));
-  if (!cache.has(facet)) cache.set(facet, new Map(db.prepare(spec[1]).all().map((r) => [r.t, r.n])));
-  return { kind: spec[0], counts: cache.get(facet) };
+  const spec = COUNTS[facet]?.records;
+  return spec && { kind: spec[0], counts: countMap(db, spec[1]) };
 }
 
-// Vocabularies that never describe objects: their terms get a record count only.
-const NOT_OBJECT_VOCABULARIES = new Set(['literature_type', 'literature_place', 'author_role',
-  'exhibition_type', 'exhibition_status', 'internal_external', 'gender', 'country']);
-
-const objectCountCache = new WeakMap();
 // Objects that use the term itself, or undefined when the database does not count its scheme.
 function objectCount(db, t) {
-  if (NOT_OBJECT_VOCABULARIES.has(t.facet)) return undefined;
-  const sql = OBJECT_COUNTS[t.facet];
-  if (sql) {
-    let cache = objectCountCache.get(db);
-    if (!cache) objectCountCache.set(db, (cache = new Map()));
-    if (!cache.has(t.facet)) cache.set(t.facet, new Map(db.prepare(sql).all().map((r) => [r.t, r.n])));
-    return cache.get(t.facet).get(t.id) ?? 0;
-  }
+  const spec = COUNTS[t.facet];
+  if (spec?.noObjects) return undefined;
+  if (spec?.objects) return countMap(db, spec.objects).get(t.id) ?? 0;
   // Terms of the unnamed schemes are counted only where they link objects through a counted
   // table, e.g. condition terms; a zero there means "not counted", not "unused".
   return t.facet || t.object_count > 0 ? t.object_count : undefined;
@@ -170,14 +152,12 @@ function objectCount(db, t) {
 // Objects that use the term or a narrower one, counted in object_terms, the link table of the
 // hierarchical object vocabularies. Undefined for vocabularies stored elsewhere (literature
 // places, roles), and for a zero in an unnamed scheme, which may be stored elsewhere too.
-const objectTermFacets = new WeakMap();
+// Cached per term: a subtree count of a broad term takes tens of milliseconds.
 function narrowerObjectCount(db, t) {
-  if (!objectTermFacets.has(db)) {
-    objectTermFacets.set(db, new Set(db.prepare('SELECT DISTINCT facet FROM object_terms').all().map((r) => r.facet)));
-  }
-  if (t.facet && !objectTermFacets.get(db).has(t.facet)) return undefined;
-  const n = stmt(db, `SELECT COUNT(DISTINCT object_id) AS n FROM object_terms
-      WHERE term_id IN (SELECT term_id FROM term_ancestors WHERE ancestor_id = ?)`).get(t.id).n;
+  const facets = perDb(db, 'objectTermFacets', () => new Set(db.prepare('SELECT DISTINCT facet FROM object_terms').all().map((r) => r.facet)));
+  if (t.facet && !facets.has(t.facet)) return undefined;
+  const n = perDb(db, `narrower:${t.id}`, () => stmt(db, `SELECT COUNT(DISTINCT object_id) AS n FROM object_terms
+      WHERE term_id IN (SELECT term_id FROM term_ancestors WHERE ancestor_id = ?)`).get(t.id).n);
   return t.facet || n > 0 ? n : undefined;
 }
 
@@ -197,7 +177,7 @@ function termRow(db, t, lang) {
   return prune({
     id: t.id,
     label,
-    labels: languages.length > 1 && new Set(languages).size > 1 ? { de: t.label_de, en: t.label_en, fr: t.label_fr } : undefined,
+    labels: new Set(languages).size > 1 ? { de: t.label_de, en: t.label_en, fr: t.label_fr } : undefined,
     vocabulary: t.facet ?? schemeName(db, t.scheme_id),
     path: up.length ? [...up.map((a) => termLabel(db, a, lang) ?? a), label ?? t.id].join(' > ') : undefined,
     year_from: t.year_from,
@@ -225,9 +205,11 @@ function prefixQuery(query) {
     || m === 'OR' || m.endsWith('*') ? m : `${m}*`));
 }
 
-// How many objects a term reaches, counting narrower terms (an upper bound, for order only).
-const REACH = `(SELECT SUM(d.object_count) FROM term_ancestors a JOIN terms d ON d.id = a.term_id WHERE a.ancestor_id = t.id)`;
-const CANDIDATE = `t.id, t.facet, t.object_count, ${REACH} AS reach, COALESCE(t.label_de, t.label) AS sort_label`;
+const CANDIDATE = 't.id, t.facet, t.object_count, COALESCE(t.label_de, t.label) AS sort_label';
+// term id → objects it reaches with its narrower terms; an upper bound (an object with two
+// terms of one subtree counts twice), for order only. One query per database.
+const reachMap = (db) => countMap(db, `SELECT a.ancestor_id AS t, SUM(d.object_count) AS n
+    FROM term_ancestors a JOIN terms d ON d.id = a.term_id GROUP BY a.ancestor_id`);
 
 // Orders candidate rows: used terms first, so unused shelf labels ("A", "14") never push used
 // terms off the page; then the `first` ids (exact label matches); then by use and label.
@@ -235,9 +217,9 @@ const CANDIDATE = `t.id, t.facet, t.object_count, ${REACH} AS reach, COALESCE(t.
 // exhibitions, and persons, which describe no objects, are ranked by their records.
 function rank(db, rows, first = new Set()) {
   for (const r of rows) {
-    r.use = NOT_OBJECT_VOCABULARIES.has(r.facet)
-      ? recordCounts(db, r.facet)?.counts.get(r.id) ?? 0
-      : Math.max(r.reach ?? 0, objectCount(db, r) ?? 0);
+    r.use = COUNTS[r.facet]?.noObjects
+      ? recordCounts(db, r.facet).counts.get(r.id) ?? 0
+      : Math.max(reachMap(db).get(r.id) ?? 0, objectCount(db, r) ?? 0);
   }
   rows.sort((a, b) => (b.use > 0) - (a.use > 0) || first.has(b.id) - first.has(a.id) || b.use - a.use
     || String(a.sort_label).localeCompare(String(b.sort_label), 'de'));
@@ -304,19 +286,18 @@ export function findTerms(db, meta, args) {
       warnings.push(`"${id}" is a ${t.facet ?? schemeName(db, t.scheme_id)} term, not a ${args.vocabulary} term; returned anyway.`);
     }
     const narrowerIds = rank(db, stmt(db, `SELECT ${CANDIDATE} FROM terms t WHERE t.broader_id = ?`).all(id));
-    const p = page(db, narrowerIds, args);
+    const { rows, ...p } = page(db, narrowerIds, args);
     out = {
       ...p,
-      rows: undefined,
       term: termRow(db, t, args.lang),
       broader: ancestors(db, id).map((a) => ({ id: a, label: termLabel(db, a, args.lang) })),
-      narrower: p.rows,
+      narrower: rows,
     };
   } else {
     const found = args.query !== undefined ? search(db, args) : list(db, args);
     warnings.push(...found.warnings);
-    const p = page(db, found.ids, args);
-    out = { ...p, rows: undefined, results: p.rows };
+    const { rows, ...p } = page(db, found.ids, args);
+    out = { ...p, results: rows };
   }
 
   if (out.total > 0 && args.offset >= out.total) {
@@ -342,19 +323,14 @@ function termLine(t) {
 const showing = (s) => (s.returned && s.total > s.returned ? `, showing ${s.offset + 1}–${s.offset + s.returned}` : '');
 
 function renderText(s) {
-  const lines = [];
-  if (s.term) {
-    lines.push(termLine(s.term));
-    if (s.total) lines.push(`${s.total} narrower terms${showing(s)}:`);
-    (s.narrower ?? []).forEach((t, i) => lines.push(`${s.offset + i + 1}. ${termLine(t)}`));
-  } else {
-    lines.push(`${s.total} terms${showing(s)}.`);
-    (s.results ?? []).forEach((t, i) => lines.push(`${s.offset + i + 1}. ${termLine(t)}`));
-  }
+  const lines = s.term
+    ? [termLine(s.term), s.total && `${s.total} narrower terms${showing(s)}:`]
+    : [`${s.total} terms${showing(s)}.`];
+  (s.term ? s.narrower : s.results)?.forEach((t, i) => lines.push(`${s.offset + i + 1}. ${termLine(t)}`));
   if (s.has_more) lines.push(`More: offset ${s.next_offset}.`);
   for (const w of s.warnings ?? []) lines.push(`Warning: ${w}`);
   if (s.data_as_of) lines.push(`Data as of ${s.data_as_of}.`);
-  return lines.join('\n');
+  return lines.filter(Boolean).join('\n');
 }
 
 export function registerFindTermsTool(server) {

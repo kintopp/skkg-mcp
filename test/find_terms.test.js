@@ -21,10 +21,12 @@
 // - ranking mixes provenance-period counts with object counts, so "most used" disagrees with object_count
 // - an offset past the end prints an impossible range and gives no hint, or a term without
 //   counts renders an empty segment
+// - a vocabulary named by the build is missing from `vocabulary`, or one is offered that the build no longer has
 // - results violate the output schema
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
 import { withClient, callOk, callError, FIXTURE_DB } from './helpers.js';
 import { outputSchema } from '../src/tools/find_terms.js';
 import { outputSchema as searchSchema } from '../src/tools/search_objects.js';
@@ -159,6 +161,18 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
       assert.equal(r.term.object_count_with_narrower, undefined);
       assert.equal(r.term.object_count, undefined);
       assert.equal(r.term.record_kind, 'literature');
+    });
+
+    await t.test('`vocabulary` offers exactly the vocabularies the build names', async () => {
+      const { tools } = await client.listTools();
+      const offered = tools.find((x) => x.name === NAME).inputSchema.properties.vocabulary.enum.filter((v) => v !== 'all');
+      const db = new DatabaseSync(FIXTURE_DB.path, { readOnly: true });
+      try {
+        const built = db.prepare('SELECT DISTINCT facet FROM terms WHERE facet IS NOT NULL').all().map((r) => r.facet);
+        assert.deepEqual([...offered].sort(), built.sort());
+      } finally {
+        db.close();
+      }
     });
 
     await t.test('the description states the order the ranking follows', async () => {
