@@ -3,10 +3,9 @@
 
 import { tailLines } from '../lib/results.js';
 import {
-  present, join, span, point, nameOf, actor, obj, list, priceText, photoRights, periodLines,
+  present, join, span, point, actor, obj, list, priceText, photoRights, periodLines, creatorRef,
 } from '../lib/text.js';
 
-const creatorRef = (c) => `${join([nameOf(c), c.role, c.attribution, c.relation === 'influence' && 'influence'])} (${c.id})`;
 const creatorLine = (c) => `- ${creatorRef(c)}`;
 
 function dateLine(d) {

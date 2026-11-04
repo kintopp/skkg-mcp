@@ -1,8 +1,6 @@
 // Building blocks of the text channel. Hosts differ in which channel they show the model,
 // so the text stands on its own: short lines, never JSON.
 
-import { creatorsText } from './objects.js';
-
 export const present = (v) => v !== undefined && v !== null && v !== '' && v !== false;
 export const join = (parts, sep = ', ') => parts.filter(present).join(sep);
 // A range; one with only a start is open ("1950–?"), not a single date.
@@ -12,6 +10,8 @@ export const point = (a, b) => (b === undefined || b === null || a === b ? a : s
 
 export const nameOf = (a) => a.name ?? a.id;
 export const actor = (a) => a && `${nameOf(a)} (${a.id})`;
+// A creator with the id, and the attribution and influence that qualify the authorship.
+export const creatorRef = (c) => `${join([nameOf(c), c.role, c.attribution, c.relation === 'influence' && 'influence'])} (${c.id})`;
 export const obj = (r) => r && join([r.inventory_number, r.title ?? '(untitled)', r.id], ' · ');
 export const list = (label, items) => (items?.length ? `${label}: ${items.join(', ')}` : undefined);
 
@@ -48,7 +48,7 @@ export function periodLines(p, lead = '') {
 
 /** An object row of a search result or a record's object list, numbered `n`. */
 export function objectRowLines(r, n) {
-  const what = [r.object_type, creatorsText(r.creators), r.date].filter(Boolean).join(' · ');
+  const what = [r.object_type, (r.creators ?? []).map(creatorRef).join('; '), r.date].filter(Boolean).join(' · ');
   const rights = [r.has_image ? `photo: ${r.image_license}` : 'no image', `object: ${r.object_copyright}`].join(', ');
   return `${n}. ${r.inventory_number ?? ''} ${r.title ?? '(untitled)'}${what ? ` — ${what}` : ''}\n` +
     `   ${r.id} · ${rights} · ${r.website_url ?? ''}`;

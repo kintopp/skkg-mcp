@@ -35,8 +35,11 @@ export function objectQueryShape() {
 // the same pairs, so a bucket and the filter that lists it cannot drift apart. The creator
 // pairs also carry `row`, one per creator row, because those filters apply to one row together.
 const objectTermPairs = (facet) => `SELECT object_id AS oid, term_id AS k FROM object_terms WHERE facet = '${facet}'`;
-const creatorPairs = (col) => `SELECT object_id AS oid, object_id || '#' || rowid AS row, ${col} AS k
-    FROM object_creators WHERE ${col} IS NOT NULL`;
+const CREATOR_COLUMNS = { creator: 'actor_id', creator_role: 'role_id', attribution: 'attribution_id' };
+// `where` keeps only the creator rows (`oc`) that the caller's creator filters match.
+export const creatorRowPairs = (field, where) => `SELECT oc.object_id AS oid, oc.object_id || '#' || oc.rowid AS row,
+    oc.${CREATOR_COLUMNS[field]} AS k FROM object_creators oc
+    WHERE oc.${CREATOR_COLUMNS[field]} IS NOT NULL${where ? ` AND ${where}` : ''}`;
 export const VALUE_PAIRS = Object.freeze({
   object_type: objectTermPairs('object_type'),
   material: objectTermPairs('material'),
@@ -46,9 +49,9 @@ export const VALUE_PAIRS = Object.freeze({
   provenance_status: objectTermPairs('provenance_status'),
   image_license: 'SELECT id AS oid, image_license_id AS k FROM objects WHERE image_license_id IS NOT NULL',
   acquisition_type: 'SELECT object_id AS oid, type_id AS k FROM acquisitions WHERE type_id IS NOT NULL',
-  creator: creatorPairs('actor_id'),
-  creator_role: creatorPairs('role_id'),
-  attribution: creatorPairs('attribution_id'),
+  creator: creatorRowPairs('creator'),
+  creator_role: creatorRowPairs('creator_role'),
+  attribution: creatorRowPairs('attribution'),
 });
 // The year of SKKG's acquisition, for acquisitions whose date starts with one.
 export const ACQUISITION_YEAR = 'CAST(substr(date, 1, 4) AS INTEGER)';
@@ -195,8 +198,10 @@ export function resolveActors(db, field, value) {
 }
 
 /**
- * Compiles the filters in `args` to { clauses, params, applied, warnings }.
+ * Compiles the filters in `args` to { clauses, params, applied, warnings, creatorRow }.
  * `applied` echoes each filter with the terms, actors, and records it resolved to.
+ * `creatorRow` ({ sql, params } on `oc`) is the condition one creator row must meet, when a
+ * creator filter is given.
  */
 export function compileObjectFilters(db, args) {
   const clauses = [];
@@ -295,7 +300,8 @@ export function compileObjectFilters(db, args) {
     params.push(id);
   }
 
-  return { clauses, params, applied, warnings };
+  const creatorRow = creatorParts.length ? { sql: creatorParts.join(' AND '), params: creatorParams } : undefined;
+  return { clauses, params, applied, warnings, creatorRow };
 }
 
 /**
@@ -317,6 +323,7 @@ export function compileObjectQuery(db, args) {
     clauseCount: clauses.length,
     applied: filters.applied,
     warnings: filters.warnings,
+    creatorRow: filters.creatorRow,
   };
 }
 

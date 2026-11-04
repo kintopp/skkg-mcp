@@ -73,6 +73,14 @@ const litOut = () => z.array(z.object({
   page: str(), figure: str(), catalogue: str(), note: str(), citation: str(),
 })).optional();
 
+// A literature reference to an object.
+const refShape = () => ({
+  page: str(), figure: str(), catalogue: str(),
+  shows_object: z.boolean().optional().describe('The publication shows the object, not only mentions it'),
+  note: str(),
+  citation: str().describe('The reference\'s own citation, when it differs from the publication\'s'),
+});
+
 const LITERATURE_KINDS = ['author', 'editor', 'publisher'];
 const ROLE_KINDS = ['creator', 'influence', 'acquired_from', 'provenance_owner', 'photographer', 'photo_right_holder',
   ...LITERATURE_KINDS, 'subject_of_literature'];
@@ -183,10 +191,9 @@ export const outputSchema = z.object({
       ...objectRowShape(),
       links: z.array(z.object({ as: str(), role: str(), attribution: str() })).optional()
         .describe('How the object is linked to this actor'),
-      page: str(), figure: str(), catalogue: str(),
-      shows_object: z.boolean().optional().describe('The publication shows the object, not only mentions it'),
-      note: str(),
-      citation: str().describe('The reference\'s own citation, when it differs from the publication\'s'),
+      ...refShape(),
+      references: z.array(z.object(refShape())).optional()
+        .describe('Each reference, when the publication cites the object more than once; the fields above are then left out'),
     })).optional(),
   }).optional(),
   warnings: z.array(z.string()).optional(),
@@ -389,6 +396,9 @@ function getLiterature(db, id, want, args, ctx) {
   }
   const refs = stmt(db, `SELECT r.* FROM literature_refs r JOIN objects o ON o.id = r.object_id WHERE r.literature_id = ?
       ORDER BY r.sort IS NULL, r.sort, ${INVENTORY_ORDER}`).all(id);
+  // One item per object, as the `literature` filter lists them, at its first reference's place.
+  const refsOf = new Map();
+  for (const r of refs) refsOf.set(r.object_id, [...(refsOf.get(r.object_id) ?? []), r]);
   const provRefs = stmt(db, `SELECT r.* FROM literature_refs r JOIN provenance p ON p.id = r.provenance_id
       WHERE r.literature_id = ? ORDER BY r.sort IS NULL, r.sort`).all(id);
   const about = stmt(db, 'SELECT target_id, role_id FROM literature_links WHERE literature_id = ?').all(id);
@@ -414,14 +424,16 @@ function getLiterature(db, id, want, args, ctx) {
       language: termLabel(db, l.language_id, lang),
       urls,
       citation: l.citation,
-      counts: { objects: refs.length, provenance: provRefs.length, about: about.length },
+      counts: { objects: refsOf.size, provenance: provRefs.length, about: about.length },
     },
   };
   if (want.has('objects')) {
-    out.objects = objectPage(db, refs.map((r) => ({ id: r.object_id, r })), args, ({ r }) => ({
+    const ref = (r) => ({
       page: asStr(r.page), figure: asStr(r.figure), catalogue: asStr(r.catalogue), shows_object: r.shows_object ? true : undefined,
       note: r.note, citation: own(r.citation),
-    }), { literature: id });
+    });
+    out.objects = objectPage(db, [...refsOf].map(([oid, rs]) => ({ id: oid, rs })), args,
+      ({ rs }) => (rs.length === 1 ? ref(rs[0]) : { references: rs.map(ref) }), { literature: id });
   }
   if (want.has('provenance')) {
     out.provenance = capList(provRefs, 'provenance', ctx).map((r) => {

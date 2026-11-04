@@ -1241,6 +1241,7 @@ def derive(db):
 
 # Every (term, record) link, by the kind of record, for the counts of skkg_find_terms. Object
 # links include those through provenance periods and multimedia. A term absent here is unused.
+# A photo licence counts the objects whose primary photo has it, as the image_license filter does.
 TERM_USES = """
 CREATE TEMP TABLE term_uses AS
     SELECT term_id, 'objects' AS kind, object_id AS rid FROM object_terms
@@ -1269,7 +1270,7 @@ CREATE TEMP TABLE term_uses AS
     UNION ALL SELECT p.begin_qualifier_id, 'objects', po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id
     UNION ALL SELECT p.end_qualifier_id, 'objects', po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id
     UNION ALL SELECT ps.type_id, 'objects', po.object_id FROM provenance_sources ps JOIN provenance_objects po ON po.provenance_id = ps.provenance_id
-    UNION ALL SELECT m.license_id, 'objects', om.object_id FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id
+    UNION ALL SELECT image_license_id, 'objects', id FROM objects
     UNION ALL SELECT m.usage_id, 'objects', om.object_id FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id
     UNION ALL SELECT m.type_id, 'objects', om.object_id FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id
     UNION ALL SELECT m.category_id, 'objects', om.object_id FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id

@@ -84,6 +84,7 @@ const SUMMARY_TEXT = {
 };
 
 const refBits = (r) => [r.page && `p. ${r.page}`, r.figure && `fig. ${r.figure}`, r.catalogue && `cat. ${r.catalogue}`];
+const refRest = (r) => [...refBits(r), r.shows_object && 'shows the object', r.note, r.citation];
 const litLine = (l) => `- ${join([join([l.title ?? l.id, l.year && `(${l.year})`], ' '), join([l.as, l.role], ' '), ...refBits(l),
   l.note, l.citation, l.id], ' · ')}`;
 
@@ -109,8 +110,8 @@ function objectLines(o) {
     o.filter && `The same list: skkg_search_objects ${args(o.filter)}`,
     ...(o.items ?? []).map((r, i) => {
       const linked = (r.links ?? []).map((l) => join([l.as, join([l.role, l.attribution])], ' '));
-      const extra = join([...linked, ...refBits(r), r.shows_object && 'shows the object', r.note, r.citation], ' · ');
-      return objectRowLines(r, o.offset + i + 1) + (extra ? `\n   ${extra}` : '');
+      const extras = [join([...linked, ...refRest(r)], ' · '), ...(r.references ?? []).map((x) => join(refRest(x), ' · '))];
+      return [objectRowLines(r, o.offset + i + 1), ...extras.filter(present).map((x) => `   ${x}`)].join('\n');
     }),
     o.has_more && `More objects: offset ${o.next_offset}.`,
   ];

@@ -19,6 +19,8 @@
 // - limit or offset without the objects section is ignored without a word
 // - an influence ("nach", "Umkreis") is reported as the creator, or loses the website's filter on works
 // - the object count of the summary counts an object twice when it is linked twice
+// - a publication citing one object twice lists it twice, so its total and pages disagree with
+//   the `literature` filter, or one of the two references is lost
 // - an address's website is lost or is not a URL
 // - an actor's object is listed with the same link twice, or without the link at all
 // - a relation is reported in the wrong direction
@@ -350,6 +352,39 @@ test('with both relations, a role under one of them keeps its exact filter', { s
       // "Künstler:in" occurs under both relations, and the relations themselves have both: no filter.
       for (const x of roles.filter((y) => y.role !== 'Druckerei')) assert.equal(x.filter, undefined, `${x.as} ${x.role}`);
     }, { env: { SKKG_DB_PATH: path } });
+  } finally {
+    copy.cleanup();
+  }
+});
+
+test('a publication that cites one object twice lists it once, with both references', { skip: FIXTURE_DB.skip }, async () => {
+  // No fixture publication cites an object twice, so a copy gets a second reference to object/7292.
+  const copy = makeTestDb({ from: FIXTURE_DB.path });
+  copy.db.prepare(`INSERT INTO literature_refs (literature_id, ref_id, object_id, page, figure, sort)
+      VALUES ('literature/66', 'ref/test', 'object/7292', '120', '7', 0)`).run();
+  copy.db.close();
+  try {
+    await withClient('get-record-refs-test', async (client) => {
+      const all = await callOk(client, NAME, { id: 'literature/66', include: ['objects'], limit: 50 }, outputSchema);
+      const ids = all.objects.items.map((x) => x.id);
+      assert.equal(new Set(ids).size, ids.length);
+      const listed = await callOk(client, 'skkg_search_objects', { ...all.objects.filter, limit: 1 }, searchSchema);
+      assert.equal(all.objects.total, listed.total);
+      assert.equal(all.summary.counts.objects, listed.total);
+      const zelger = all.objects.items.find((x) => x.id === 'object/7292');
+      assert.deepEqual(zelger.references.map((r) => [r.page, r.figure]).sort(), [['120', '7'], ['39', '41']]);
+      assert.equal(zelger.page, undefined);
+      const { text } = await callSent(client, NAME, { id: 'literature/66', include: ['objects'], limit: 50 }, outputSchema);
+      assert.match(text, /p\. 39 · fig\. 41/);
+      assert.match(text, /p\. 120 · fig\. 7/);
+      // Paging by one object at a time neither repeats nor skips one.
+      const paged = [];
+      const n = Math.min(ids.length, 10);
+      for (let offset = 0; offset < n; offset++) {
+        paged.push(...(await callOk(client, NAME, { id: 'literature/66', include: ['objects'], limit: 1, offset }, outputSchema)).objects.items.map((x) => x.id));
+      }
+      assert.deepEqual(paged, ids.slice(0, n));
+    }, { env: { SKKG_DB_PATH: copy.path } });
   } finally {
     copy.cleanup();
   }

@@ -6,6 +6,7 @@
 // - unused terms (shelf labels "A", "14") push used terms off the first page
 // - object_count_with_narrower differs from what the skkg_search_objects filter matches,
 //   or object_count from what it matches with include_narrower: false
+//   in any vocabulary that offers a filter (photo licences counted over every image, not the primary one)
 // - `filter` names the wrong skkg_search_objects parameter ("production_role" for creator_role)
 // - a term found in another vocabulary than the one asked for is answered with "translate it"
 // - terms of literature, exhibitions, or persons show 0 objects instead of their record count
@@ -85,6 +86,22 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
       assert.equal(leaf.object_count_with_narrower, undefined);
       assert.ok(leaf.object_count > 0);
       assert.equal(leaf.object_count, await searchTotal({ material: leaf.id }));
+    });
+
+    await t.test('in every vocabulary with a filter, each count equals what the filter matches', async () => {
+      const { tools } = await client.listTools();
+      const vocabularies = tools.find((x) => x.name === NAME).inputSchema.properties.vocabulary.enum.filter((v) => v !== 'all');
+      let checked = 0;
+      for (const vocabulary of vocabularies) {
+        for (const x of (await find({ vocabulary, limit: 15 })).results.filter((y) => y.filter)) {
+          assert.equal(x.object_count, await searchTotal({ [x.filter]: x.id, include_narrower: false }), `${vocabulary} ${x.label}`);
+          if (x.object_count_with_narrower !== undefined) {
+            assert.equal(x.object_count_with_narrower, await searchTotal({ [x.filter]: x.id }), `${vocabulary} ${x.label} with narrower`);
+          }
+          checked++;
+        }
+      }
+      assert.ok(checked > 50, `${checked} terms checked`);
     });
 
     await t.test('filter names the skkg_search_objects parameter, not the vocabulary', async () => {

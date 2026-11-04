@@ -11,7 +11,7 @@ import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
 import { paging, tailLines } from '../lib/results.js';
 import {
-  objectQueryShape, objectFilterShape, compileObjectQuery, VALUE_PAIRS, TERM_FILTER_FIELDS,
+  objectQueryShape, objectFilterShape, compileObjectQuery, VALUE_PAIRS, TERM_FILTER_FIELDS, creatorRowPairs,
   ACQUISITION_YEAR, ACQUISITION_DATED,
 } from './object_filters.js';
 import { appliedOut, langIn, str } from './schemas.js';
@@ -28,8 +28,9 @@ const decade = (col) => `CAST(floor(${col} / 10.0) * 10 AS INTEGER)`;
 // Each dimension counts (oid, k) pairs. Term and actor dimensions use the pairs of the
 // skkg_search_objects filter of the same name, so a bucket's count is what its filter lists.
 // `row` dimensions pair one value per creator row; two of them are crossed row by row,
-// as their filters apply to one row together. `filter` builds a bucket's search arguments.
-const filterDim = (field, kind, about) => ({ kind, about, pairs: VALUE_PAIRS[field], filter: (k) => ({ [field]: k }) });
+// as their filters apply to one row together, and the caller's creator filters narrow their
+// rows the same way. `filter` builds a bucket's search arguments.
+const filterDim = (field, kind, about) => ({ field, kind, about, pairs: VALUE_PAIRS[field], filter: (k) => ({ [field]: k }) });
 const DIMENSIONS = {
   object_type: filterDim('object_type', 'term', 'object type, as recorded (not rolled up to broader types)'),
   material: filterDim('material', 'term', 'material; an object with several counts in each'),
@@ -68,7 +69,8 @@ const description =
   'can add up to more than total_objects; without_value counts the objects that have none. ' +
   '`breakdown` adds a second dimension per bucket (a cross table). Buckets carry `filter`, the ' +
   'skkg_search_objects arguments that list exactly their objects when added to this call\'s arguments ' +
-  '(production decades have none). With no query and no filter, the whole collection is counted.';
+  '(production decades have none). With a creator filter, the creator dimensions count only the creator rows it matches: ' +
+  'with `creator`, dimension creator_role gives that creator\'s roles. With no query and no filter, the whole collection is counted.';
 
 const dimensionEnum = (what) => z.enum(Object.keys(DIMENSIONS)).describe(
   `${what}: ${Object.entries(DIMENSIONS).map(([k, d]) => `${k} (${d.about})`).join('; ')}`);
@@ -100,7 +102,7 @@ const bucketOut = () => z.object({
   count: z.number().int(),
   filter: filterOut().optional(),
   breakdown: z.array(subOut()).optional(),
-  breakdown_other: z.number().int().optional().describe('Objects of this bucket counted under values beyond breakdown_top'),
+  breakdown_other: z.number().int().optional().describe('Objects of this bucket with a value beyond breakdown_top, each counted once'),
   breakdown_without_value: z.number().int().optional().describe('Objects of this bucket without a value for `breakdown`'),
 });
 
@@ -128,27 +130,30 @@ const hasNarrower = (db, id) => stmt(db, 'SELECT 1 FROM terms WHERE broader_id =
 
 // A bucket's id or value and label. A term bucket counts the term as recorded, so the filter
 // of a term with narrower terms switches their expansion off.
-function bucket(db, dim, k, count, lang) {
+function bucket(db, dim, k, count, lang, withFilter = true) {
   if (dim.kind === 'decade') return { value: k, label: decadeLabel(k), count, filter: dim.filter?.(k) };
   const narrower = dim.kind === 'term' && hasNarrower(db, k);
   return {
     id: k,
     label: dim.kind === 'actor' ? actorRef(db, k).name : termLabel(db, k, lang),
     count,
-    filter: { ...dim.filter(k), ...(narrower && { include_narrower: false }) },
+    filter: withFilter ? { ...dim.filter(k), ...(narrower && { include_narrower: false }) } : undefined,
   };
 }
 
 // (oid, unit, k) rows of a dimension: `unit` is the creator row for `row` dimensions when
 // crossed with another, else the object. `among` (a Set of ids, or undefined for all objects)
-// restricts the objects: in SQL for a short list, in JavaScript for a long one.
-function readPairs(db, dim, among, byRow) {
-  const sql = `SELECT oid, ${byRow ? 'row' : 'oid'} AS unit, k FROM (${dim.pairs})`;
-  if (among === undefined) return db.prepare(sql).all();
+// restricts the objects: in SQL for a short list, in JavaScript for a long one. `creatorRow`
+// restricts the rows of a `row` dimension.
+function readPairs(db, dim, among, byRow, creatorRow) {
+  const scoped = dim.row && creatorRow;
+  const params = scoped ? creatorRow.params : [];
+  const sql = `SELECT oid, ${byRow ? 'row' : 'oid'} AS unit, k FROM (${scoped ? creatorRowPairs(dim.field, creatorRow.sql) : dim.pairs})`;
+  if (among === undefined) return db.prepare(sql).all(...params);
   if (among.size <= STATS_SQL_RESTRICT_MAX) {
-    return db.prepare(`${sql} WHERE oid IN (SELECT value FROM json_each(?))`).all(JSON.stringify([...among]));
+    return db.prepare(`${sql} WHERE oid IN (SELECT value FROM json_each(?))`).all(...params, JSON.stringify([...among]));
   }
-  return db.prepare(sql).all().filter((r) => among.has(r.oid));
+  return db.prepare(sql).all(...params).filter((r) => among.has(r.oid));
 }
 
 export function collectionStats(db, meta, args) {
@@ -180,12 +185,21 @@ export function collectionStats(db, meta, args) {
     total = stmt(db, 'SELECT COUNT(*) AS n FROM objects').get().n;
   }
 
+  // Without a creator filter, exclude_attributions drops every object with a creator so
+  // attributed; a creator-row bucket's filter would move it to the matched row (see
+  // compileObjectFilters), so no filter lists such a bucket.
+  const rowFilters = !(dim.row && args.exclude_attributions !== undefined && !q.creatorRow);
+  if (!rowFilters) {
+    warnings.push('`exclude_attributions` without `creator`, `creator_role`, or `attribution` leaves out every object with a creator ' +
+      'so attributed, but added to a creator filter it applies to the matched creator only, so the buckets carry no `filter`.');
+  }
+
   // Counts are of distinct objects: a value can repeat on one object (a creator in two roles).
   const byRow = Boolean(sub && dim.row && sub.row);
   const unitsOf = new Map();
   const objectsOf = new Map();
   const oidOf = new Map();
-  for (const { oid, unit, k } of readPairs(db, dim, among, byRow)) {
+  for (const { oid, unit, k } of readPairs(db, dim, among, byRow, q.creatorRow)) {
     if (!unitsOf.has(k)) {
       unitsOf.set(k, new Set());
       objectsOf.set(k, new Set());
@@ -198,13 +212,13 @@ export function collectionStats(db, meta, args) {
   const sorted = [...objectsOf].map(([k, set]) => ({ k, n: set.size }))
     .sort(order === 'count' ? (a, b) => b.n - a.n || byKey(a, b) : (a, b) => a.k - b.k);
   const rows = sorted.slice(args.offset, args.offset + top);
-  let buckets = rows.map((r) => bucket(db, dim, r.k, r.n, args.lang));
+  let buckets = rows.map((r) => bucket(db, dim, r.k, r.n, args.lang, rowFilters));
 
   if (sub && rows.length) {
     // Only the objects of the buckets shown are read for the breakdown.
     const shown = new Set(rows.flatMap((r) => [...objectsOf.get(r.k)]));
     const valuesOf = new Map();
-    for (const { unit, k } of readPairs(db, sub, shown, byRow)) {
+    for (const { unit, k } of readPairs(db, sub, shown, byRow, q.creatorRow)) {
       if (!valuesOf.has(unit)) valuesOf.set(unit, new Set());
       valuesOf.get(unit).add(k);
     }
@@ -220,7 +234,8 @@ export function collectionStats(db, meta, args) {
         }
       }
       const list = [...cross].map(([k, set]) => ({ k, n: set.size })).sort((a, c) => c.n - a.n || byKey(a, c));
-      const other = list.slice(args.breakdown_top).reduce((sum, r) => sum + r.n, 0);
+      // An object with several omitted values counts once.
+      const other = new Set(list.slice(args.breakdown_top).flatMap((r) => [...cross.get(r.k)])).size;
       return {
         ...b,
         breakdown: list.slice(0, args.breakdown_top).map((r) => {

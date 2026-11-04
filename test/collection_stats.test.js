@@ -8,6 +8,11 @@
 // - breakdown equal to dimension, or order "value" for terms, is accepted and gives nonsense
 // - a creator bucket counts other rows than the creator filter matches ("influenced by")
 // - a cross of two creator-row dimensions pairs values of different creators on one object
+// - with a creator filter, a creator dimension counts the other creators' rows of the matched
+//   objects, which the bucket's filter, applied to the same row, does not list
+// - exclude_attributions without a creator filter drops whole objects, but a bucket's creator-row
+//   filter moves it to that row, so a bucket offers a filter that lists other objects
+// - breakdown_other adds up the omitted values' counts and counts an object once per value
 // - a bucket's include_narrower: false silently stops the caller's own term filters from expanding
 // - a leaf term's filter carries include_narrower: false, needlessly changing the caller's filters
 // - an acquisition decade bucket has no filter, or one that lists other objects
@@ -22,6 +27,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
 import { withClient, callOk, callError, FIXTURE_DB, makeTestDb } from './helpers.js';
 import { outputSchema, collectionStats } from '../src/tools/collection_stats.js';
 import { outputSchema as searchSchema } from '../src/tools/search_objects.js';
@@ -59,14 +65,47 @@ test('skkg_collection_stats against the fixture database', { skip: FIXTURE_DB.sk
     });
 
     await t.test('two creator-row dimensions are crossed row by row, as their filters match', async () => {
-      // person/36 shares objects with creators in other roles.
-      const r = await stats({ dimension: 'creator', breakdown: 'creator_role', creator: 'person/36', top: 50, breakdown_top: 50 });
+      const r = await stats({ dimension: 'creator', breakdown: 'creator_role', top: 50, breakdown_top: 50 });
       for (const b of r.buckets) {
         for (const x of b.breakdown ?? []) {
           assert.equal(x.count, await searchTotal({ creator: b.id, creator_role: x.id, include_narrower: false }), `${b.label} × ${x.label}`);
         }
       }
       assert.ok(r.buckets.length > 1);
+    });
+
+    await t.test('a creator filter narrows the creator rows that the creator dimensions count', async () => {
+      // person/36 and person/11 share objects with creators in other roles.
+      for (const creator of ['person/36', 'person/11']) {
+        for (const dimension of ['creator', 'creator_role', 'attribution']) {
+          const r = await stats({ dimension, creator, top: 50 });
+          for (const b of r.buckets) assert.equal(b.count, await searchTotal({ creator, ...b.filter }), `${creator} ${dimension} ${b.label}`);
+        }
+        const r = await stats({ dimension: 'object_type', breakdown: 'creator_role', creator, top: 10, breakdown_top: 50 });
+        for (const b of r.buckets) {
+          for (const x of b.breakdown ?? []) {
+            assert.equal(x.count, await searchTotal({ creator, ...b.filter, creator_role: x.id, include_narrower: false }), `${creator} ${b.label} × ${x.label}`);
+          }
+        }
+      }
+      const { tools } = await client.listTools();
+      assert.match(tools.find((x) => x.name === NAME).description, /creator filter, the creator dimensions count only the creator rows it matches/);
+    });
+
+    await t.test('an exclusion that a creator-row bucket would move to one row gives no filter, and says so', async () => {
+      const r = await stats({ dimension: 'creator_role', exclude_attributions: ['nach'], top: 10 });
+      assert.ok(r.buckets.length > 0);
+      assert.ok(r.buckets.every((b) => b.filter === undefined), JSON.stringify(r.buckets.map((b) => b.filter)));
+      assert.match(r.warnings.join(' '), /`exclude_attributions` without `creator`.*carry no `filter`/);
+      // With a creator filter the exclusion is already on the matched row, so filters stay.
+      const scoped = await stats({ dimension: 'creator_role', creator: 'person/36', exclude_attributions: ['nach'], top: 10 });
+      for (const b of scoped.buckets) {
+        assert.equal(b.count, await searchTotal({ creator: 'person/36', exclude_attributions: ['nach'], ...b.filter }), b.label);
+      }
+      assert.doesNotMatch((scoped.warnings ?? []).join(' '), /carry no `filter`/);
+      // A dimension outside the creator rows keeps its filters.
+      const other = await stats({ dimension: 'material', exclude_attributions: ['nach'], top: 3 });
+      assert.ok(other.buckets.every((b) => b.filter));
     });
 
     await t.test('only terms with narrower terms set include_narrower: false, and the clash is named', async () => {
@@ -104,11 +143,23 @@ test('skkg_collection_stats against the fixture database', { skip: FIXTURE_DB.sk
       assert.ok(r.buckets.some((b) => b.breakdown_without_value > 0));
     });
 
-    await t.test('breakdown_top keeps the largest values and sums the rest', async () => {
+    await t.test('breakdown_top keeps the largest values and counts the objects of the rest once', async () => {
       const r = await stats({ dimension: 'creator', breakdown: 'material', top: 3, breakdown_top: 1 });
       const b = r.buckets.find((x) => x.breakdown_other > 0);
       assert.ok(b, JSON.stringify(r.buckets));
       assert.equal(b.breakdown.length, 1);
+      // person/36 has objects with three or more materials.
+      const [p] = (await stats({ dimension: 'creator', creator: 'person/36', breakdown: 'material', breakdown_top: 1 })).buckets;
+      const db = new DatabaseSync(FIXTURE_DB.path, { readOnly: true });
+      try {
+        const { n } = db.prepare(`SELECT COUNT(DISTINCT oc.object_id) AS n FROM object_creators oc
+            JOIN object_terms ot ON ot.object_id = oc.object_id AND ot.facet = 'material'
+            WHERE oc.actor_id = 'person/36' AND ot.term_id != ?`).get(p.breakdown[0].id);
+        assert.ok(n > 0);
+        assert.equal(p.breakdown_other, n);
+      } finally {
+        db.close();
+      }
     });
 
     await t.test('nonsense combinations are refused', async () => {

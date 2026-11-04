@@ -20,11 +20,6 @@ export function objectCreators(db, objectId, lang) {
     }));
 }
 
-// "Name (role, attribution); …" for the text output.
-export function creatorsText(creators = []) {
-  return creators.map((c) => `${c.name ?? c.id}${c.role ? ` (${c.role}${c.attribution ? `, ${c.attribution}` : ''})` : ''}`).join('; ');
-}
-
 export function objectFacetLabels(db, objectId, facet, lang) {
   return stmt(db, 'SELECT term_id FROM object_terms WHERE object_id = ? AND facet = ? ORDER BY seq IS NULL, seq')
     .all(objectId, facet).map((r) => termLabel(db, r.term_id, lang)).filter(Boolean);
