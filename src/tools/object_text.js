@@ -1,31 +1,10 @@
 // Text channel of skkg_get_object: every section the caller asked for, as short lines, never
 // JSON. Hosts differ in which channel they show the model, so the text must stand on its own.
 
-const present = (v) => v !== undefined && v !== null && v !== '' && v !== false;
-const join = (parts, sep = ', ') => parts.filter(present).join(sep);
-// A range; one with only a start is open ("1950–?"), not a single date.
-const span = (a, b) => (a && b ? (a === b ? a : `${a}–${b}`) : a ? `${a}–?` : b && `?–${b}`);
-// A year or a bounded estimate, where a lone value is the value itself.
-const point = (a, b) => (b === undefined || b === null || a === b ? a : span(a, b));
 import { tailLines } from '../lib/results.js';
-
-const nameOf = (a) => a.name ?? a.id;
-const actor = (a) => a && `${nameOf(a)} (${a.id})`;
-const obj = (r) => r && join([r.inventory_number, r.title ?? '(untitled)', r.id], ' · ');
-const list = (label, items) => (items?.length ? `${label}: ${items.join(', ')}` : undefined);
-
-function priceText(p) {
-  if (!p) return undefined;
-  const amount = p.value !== undefined ? join([p.currency, p.value], ' ') : p.label;
-  return join([amount, p.value_chf !== undefined && `≈ CHF ${p.value_chf}`, p.is_batch_price && 'paid for a batch', p.note]);
-}
-
-function photoRights(r) {
-  return join([r.image_license, r.right_holder && `holder ${nameOf(r.right_holder)}`,
-    r.original_right_holder && `original holder ${nameOf(r.original_right_holder)}`,
-    r.rights_end_date && `rights until ${r.rights_end_date}`, r.rights_note,
-    r.photographer && `photo ${nameOf(r.photographer)}`, r.photo_date, r.credit_line && `credit: ${r.credit_line}`]);
-}
+import {
+  present, join, span, point, nameOf, actor, obj, list, priceText, photoRights, periodLines,
+} from '../lib/text.js';
 
 const creatorRef = (c) => `${join([nameOf(c), c.role, c.attribution, c.relation === 'influence' && 'influence'])} (${c.id})`;
 const creatorLine = (c) => `- ${creatorRef(c)}`;
@@ -63,25 +42,8 @@ function acquisition(a) {
   a.note && `  ${a.note}`];
 }
 
-function periodLines(p, i) {
-  const bound = (b) => b && join([b.qualifier, point(b.from, b.to)], ' ');
-  const date = p.date ?? span(p.date_from, p.date_to) ?? join([bound(p.begin), bound(p.end)], ' to ');
-  // Every field is shown even when SKKG's statement seems to hold it: a substring test
-  // cannot tell a period's date from an owner's life dates, or "Bern" from "Galerie Bernhard".
-  const head = [p.statement, date, p.owner && `owner ${actor(p.owner)}`, p.owner_type,
-    join([p.transaction?.type, p.transaction?.kind], ' '), p.place, p.price && `price ${priceText(p.price)}`,
-    p.certainty, p.holding_kind, p.status];
-  return [
-    `${i + 1}. ${join([...head, p.id], ' · ')}`,
-    p.date_note && `   Date: ${p.date_note}`,
-    ...(p.sources ?? []).map((s) => `   Source: ${join([s.type, s.note, s.url])}`),
-    ...(p.characteristics ?? []).map((c) => `   ${join([c.types?.join(', '), c.note], ': ')}`),
-    p.computed_previous_owner && `   Previous owner (computed): ${actor(p.computed_previous_owner)}`,
-  ];
-}
-
 function provenance(p) {
-  return [`Provenance: ${join([p.status, p.status_text], ' — ')}`, ...(p.periods ?? []).flatMap(periodLines),
+  return [`Provenance: ${join([p.status, p.status_text], ' — ')}`, ...(p.periods ?? []).flatMap((x, i) => periodLines(x, `${i + 1}. `)),
     ...(p.gaps ?? []).map((g) => `Gap (computed): ${span(g.from, g.to)}, between ${g.after} and ${g.before}`),
     p.note && `Note: ${p.note}`];
 }

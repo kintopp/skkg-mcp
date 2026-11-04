@@ -9,12 +9,14 @@ import { resolveId, websiteUrl } from '../lib/ids.js';
 import { stmt } from '../lib/sql.js';
 import { prune } from '../lib/prune.js';
 import { termLabel, actorRef, objectRef, termListLabels } from '../lib/labels.js';
-import { objectRights, imageRights, NOT_RECORDED } from '../lib/rights.js';
+import { objectRights, imageRights } from '../lib/rights.js';
 import { objectCreators, objectFacetLabels } from '../lib/objects.js';
-import { sent, longestPrefix } from '../lib/fit.js';
+import { price, period } from '../lib/provenance.js';
+import { capList as capped } from '../lib/results.js';
+import { fitLists } from '../lib/fit.js';
 import { renderObjectText, SECTIONS } from './object_text.js';
 import {
-  actorOut, creatorOut, objectRefOut, objectRightsOut, imageRightsOut, langIn, str, int,
+  actorOut, creatorOut, objectRefOut, objectRightsOut, imageRightsOut, priceOut, periodShape, langIn, str, int,
 } from './schemas.js';
 import { READ_ONLY_ANNOTATIONS, SECTION_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT } from '../config.js';
 
@@ -39,36 +41,10 @@ const inputSchema = z.object({
   lang: langIn(),
 }).strict();
 
-const priceOut = () => z.object({
-  value: z.number().optional(),
-  currency: str().describe('ISO code, or "not recorded" when the dump gives a value without a currency'),
-  label: str(),
-  note: str(),
-  is_batch_price: z.boolean().optional().describe('true: the price was paid for a batch of objects, not this one alone'),
-  value_chf: z.number().optional(),
-  conversion_rate: z.number().optional(),
-});
-const boundOut = () => z.object({ qualifier: str(), from: str(), to: str() }).optional();
 const periodOut = z.object({
   id: z.string(),
   seq: int(),
-  statement: str(),
-  certainty: str(),
-  holding_kind: str(),
-  date: str(),
-  date_from: str(),
-  date_to: str(),
-  begin: boundOut(),
-  end: boundOut(),
-  date_note: str(),
-  transaction: z.object({ kind: str(), type: str() }).optional(),
-  owner: actorOut().optional(),
-  owner_type: str(),
-  place: str(),
-  price: priceOut().optional(),
-  status: str(),
-  sources: z.array(z.object({ type: str(), note: str(), url: str() })).optional(),
-  characteristics: z.array(z.object({ types: z.array(z.string()).optional(), note: str() })).optional(),
+  ...periodShape(),
   computed_previous_owner: actorOut().optional().describe('Computed: the owner of the period before, i.e. who this owner most likely received the object from'),
 });
 
@@ -160,28 +136,6 @@ export const outputSchema = z.object({
 
 const asStr = (v) => (v === null || v === undefined ? undefined : String(v));
 
-function price(db, r, lang) {
-  if (r.price_value === null && !r.price_label) return undefined;
-  return {
-    value: r.price_value ?? undefined,
-    currency: r.currency_code || termLabel(db, r.currency_id, lang) || (r.price_value !== null ? NOT_RECORDED : undefined),
-    label: r.price_label,
-    note: r.price_note,
-    is_batch_price: r.is_batch_price ? true : undefined,
-    value_chf: r.price_chf ?? undefined,
-    conversion_rate: r.conversion_rate ?? undefined,
-  };
-}
-
-// Cuts a list to SECTION_LIMIT, records the cut in ctx.warnings, and keeps the real total in
-// ctx.totals for fitCeiling's warning.
-function capped(rows, what, ctx) {
-  ctx.totals[what] = rows.length;
-  if (rows.length <= SECTION_LIMIT) return rows;
-  ctx.warnings.push(`${what}: showing the first ${SECTION_LIMIT} of ${rows.length}.`);
-  return rows.slice(0, SECTION_LIMIT);
-}
-
 function summary(db, o, lang, creators) {
   return {
     titles: stmt(db, 'SELECT title, short_title, type_id, language_id, note FROM object_titles WHERE object_id = ? ORDER BY seq IS NULL, seq')
@@ -260,27 +214,8 @@ function provenance(db, o, lang) {
   const rows = stmt(db, `SELECT p.*, po.seq FROM provenance_objects po JOIN provenance p ON p.id = po.provenance_id
       WHERE po.object_id = ? ORDER BY po.seq IS NULL, po.seq, COALESCE(p.date_from, p.begin_from)`).all(o.id);
   const periods = rows.map((p, i) => ({
-    id: p.id,
+    ...period(db, p, lang),
     seq: p.seq ?? undefined,
-    statement: p.statement,
-    certainty: termLabel(db, p.certainty_id, lang),
-    holding_kind: termLabel(db, p.holding_kind_id, lang),
-    date: p.date_label,
-    date_from: p.date_from,
-    date_to: p.date_to,
-    begin: { qualifier: termLabel(db, p.begin_qualifier_id, lang), from: p.begin_from, to: p.begin_to },
-    end: { qualifier: termLabel(db, p.end_qualifier_id, lang), from: p.end_from, to: p.end_to },
-    date_note: p.date_note,
-    transaction: { kind: p.transaction_kind, type: termLabel(db, p.transaction_type_id, lang) },
-    owner: actorRef(db, p.owner_id),
-    owner_type: termLabel(db, p.owner_type_id, lang),
-    place: p.place,
-    price: price(db, p, lang),
-    status: termLabel(db, p.status_id, lang),
-    sources: stmt(db, 'SELECT type_id, note, url FROM provenance_sources WHERE provenance_id = ? ORDER BY seq IS NULL, seq').all(p.id)
-      .map((s) => ({ type: termLabel(db, s.type_id, lang), note: s.note, url: s.url })),
-    characteristics: stmt(db, 'SELECT type_ids, note FROM provenance_characteristics WHERE provenance_id = ? ORDER BY seq IS NULL, seq').all(p.id)
-      .map((c) => ({ types: termListLabels(db, c.type_ids, lang), note: c.note })),
     computed_previous_owner: i > 0 ? actorRef(db, rows[i - 1].owner_id) : undefined,
   }));
   const gaps = [];
@@ -399,32 +334,14 @@ const CUTTABLE = [['literature'], ['images'], ['exhibitions'], ['texts'], ['rela
   ['physical', 'parts']];
 
 function fitCeiling(result, totals) {
-  let r = sent(result, renderObjectText);
-  for (const path of CUTTABLE) {
-    if (r.size <= RESULT_CHAR_LIMIT) break;
-    const holder = path.length === 1 ? result : result[path[0]];
-    const key = path.at(-1);
-    const list = holder?.[key];
-    if (!Array.isArray(list) || list.length < 2) continue;
-    const what = path.join('.');
-    const warnings = result.warnings ?? [];
-    const cut = (k) => {
-      holder[key] = list.slice(0, k);
-      result.warnings = [...warnings,
-        `${what}: cut to ${k} of ${totals[what] ?? list.length} to fit the result size limit; ask for fewer sections.`];
-    };
-    const k = Math.max(1, longestPrefix(list.length - 1, (n) => {
-      cut(n);
-      return sent(result, renderObjectText).size <= RESULT_CHAR_LIMIT;
-    }));
-    cut(k);
-    r = sent(result, renderObjectText);
-  }
-  if (r.size > RESULT_CHAR_LIMIT) {
-    throw new ToolError(`The result for ${result.id} is too large for the result size limit (${RESULT_CHAR_LIMIT} characters) even with its lists cut.`,
-      'Ask for fewer sections in `include`, e.g. one at a time.');
-  }
-  return r;
+  return fitLists(result, {
+    render: renderObjectText,
+    limit: RESULT_CHAR_LIMIT,
+    lists: CUTTABLE.map((path) => ({ path })),
+    totals,
+    refusal: new ToolError(`The result for ${result.id} is too large for the result size limit (${RESULT_CHAR_LIMIT} characters) even with its lists cut.`,
+      'Ask for fewer sections in `include`, e.g. one at a time.'),
+  });
 }
 
 export function registerGetObjectTool(server) {

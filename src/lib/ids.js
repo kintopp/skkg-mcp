@@ -54,7 +54,7 @@ export function resolveId(db, input, { types = Object.keys(RECORD_TABLES) } = {}
   if (m) {
     const [, type] = m;
     if (!types.includes(type)) {
-      throw new ToolError(`"${s}" is ${/^[aeiou]/.test(type) ? 'an' : 'a'} ${type} id; this tool takes ${accepted} ids.`, toolHint(type));
+      throw new ToolError(`"${s}" is ${/^[aeiou]/.test(type) ? 'an' : 'a'} ${type} id; this tool takes ${accepted} ids.`, toolHint(type, s));
     }
     if (!exists(db, RECORD_TABLES[type], s)) {
       throw new ToolError(`No ${type} record "${s}" in the database.`,
@@ -85,9 +85,12 @@ export function resolveId(db, input, { types = Object.keys(RECORD_TABLES) } = {}
       : `This tool takes ${accepted} ids, e.g. "${types[0]}/…".`);
 }
 
-function toolHint(type) {
-  return type === 'object' ? 'Use skkg_get_object for objects.' : 'Use skkg_get_record for records that are not objects.';
-}
+const TOOL_HINTS = {
+  object: (s) => `Use skkg_get_object with id "${s}".`,
+  type: (s) => `For a vocabulary term, use skkg_find_terms with id "${s}".`,
+  multimedia: () => 'Images come with their object: skkg_get_object with include ["images"].',
+};
+const toolHint = (type, s) => TOOL_HINTS[type]?.(s) ?? `Use skkg_get_record with id "${s}".`;
 
 // Website link for an object. Other record types have pages too, but their URL form is
 // not checked yet, so only objects get one.

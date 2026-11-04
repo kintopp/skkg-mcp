@@ -4,20 +4,18 @@ import { z } from 'zod';
 import { withTool, toolResult } from '../lib/tool.js';
 import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
-import { objectRow } from '../lib/objects.js';
+import { objectRow, INVENTORY_ORDER } from '../lib/objects.js';
 import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
 import { paging, tailLines } from '../lib/results.js';
 import { objectQueryShape, objectFilterShape, hasObjectFilter, compileObjectQuery } from './object_filters.js';
-import { creatorOut, objectCopyrightOut, appliedOut, langIn, str } from './schemas.js';
-import { creatorsText } from '../lib/objects.js';
+import { objectRowShape, appliedOut, langIn } from './schemas.js';
+import { objectRowLines } from '../lib/text.js';
 import {
   READ_ONLY_ANNOTATIONS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT,
 } from '../config.js';
 
 export const SEARCH_OBJECTS_TOOL_NAME = 'skkg_search_objects';
-
-const INVENTORY_ORDER = "o.inventory_number GLOB '[0-9]*' DESC, CAST(o.inventory_number AS INTEGER), o.inventory_number";
 
 const ORDER = {
   relevance: 'bm25(objects_fts, 0, 5, 3, 1, 1, 10), ' + INVENTORY_ORDER,
@@ -48,20 +46,7 @@ const inputSchema = z.object({
   lang: langIn(),
 }).strict();
 
-const resultOut = z.object({
-  id: z.string(),
-  type: z.literal('object'),
-  inventory_number: str(),
-  title: str(),
-  object_type: str(),
-  creators: z.array(creatorOut()).optional(),
-  date: str(),
-  epoch: z.array(z.string()).optional(),
-  has_image: z.boolean(),
-  image_license: str().describe('Licence of the primary photo; absent when the object has no image'),
-  object_copyright: objectCopyrightOut(),
-  website_url: str(),
-});
+const resultOut = z.object(objectRowShape());
 
 export const outputSchema = z.object({
   total: z.number().int(),
@@ -127,17 +112,10 @@ export function searchObjects(db, meta, args) {
   });
 }
 
-function resultLine(r, n) {
-  const what = [r.object_type, creatorsText(r.creators), r.date].filter(Boolean).join(' · ');
-  const rights = [r.has_image ? `photo: ${r.image_license}` : 'no image', `object: ${r.object_copyright}`].join(', ');
-  return `${n}. ${r.inventory_number ?? ''} ${r.title ?? '(untitled)'}${what ? ` — ${what}` : ''}\n` +
-    `   ${r.id} · ${rights} · ${r.website_url ?? ''}`;
-}
-
 function renderText(s) {
   const head = `${s.total} objects` + (s.total > s.returned ? `, showing ${s.offset + 1}–${s.offset + s.returned}` : '') +
     ` (sorted by ${s.sort}).`;
-  const lines = (s.results ?? []).map((r, i) => resultLine(r, s.offset + i + 1));
+  const lines = (s.results ?? []).map((r, i) => objectRowLines(r, s.offset + i + 1));
   return [head, ...lines, ...tailLines(s)].join('\n');
 }
 

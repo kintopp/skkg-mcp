@@ -5,6 +5,10 @@ import { termLabel, actorRef } from './labels.js';
 import { objectCopyright, primaryImageLicense } from './rights.js';
 import { websiteUrl } from './ids.js';
 
+// Numeric inventory numbers in numeric order ("884" before "1000"), then the others as text;
+// for queries that name the objects table `o`.
+export const INVENTORY_ORDER = "o.inventory_number GLOB '[0-9]*' DESC, CAST(o.inventory_number AS INTEGER), o.inventory_number";
+
 const RELATION = { carried_out_by: 'creator', influenced_by: 'influence' };
 
 export function objectCreators(db, objectId, lang) {

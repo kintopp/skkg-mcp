@@ -6,6 +6,7 @@ import { McpServer } from '@modelcontextprotocol/server';
 import { SERVER_NAME, SERVER_VERSION, SERVER_INSTRUCTIONS, CACHE_HINTS, CHANNEL_PROBE_ENV } from './config.js';
 import { registerSearchObjectsTool } from './tools/search_objects.js';
 import { registerGetObjectTool } from './tools/get_object.js';
+import { registerGetRecordTool } from './tools/get_record.js';
 import { registerFindTermsTool } from './tools/find_terms.js';
 import { registerCollectionStatsTool } from './tools/collection_stats.js';
 import { registerChannelProbeTool } from './tools/channel_probe.js';
@@ -23,6 +24,7 @@ export function createServer() {
   );
   registerSearchObjectsTool(server);
   registerGetObjectTool(server);
+  registerGetRecordTool(server);
   registerFindTermsTool(server);
   registerCollectionStatsTool(server);
   if (process.env[CHANNEL_PROBE_ENV] === '1') registerChannelProbeTool(server);

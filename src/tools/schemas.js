@@ -40,6 +40,55 @@ export const imageRightsOut = () => z.object({
   iiif_service: str(),
 });
 
+// A result row of skkg_search_objects, also used for the object lists of skkg_get_record.
+export const objectRowShape = () => ({
+  id: z.string(),
+  type: z.literal('object'),
+  inventory_number: str(),
+  title: str(),
+  object_type: str(),
+  creators: z.array(creatorOut()).optional(),
+  date: str(),
+  epoch: z.array(z.string()).optional(),
+  has_image: z.boolean(),
+  image_license: str().describe('Licence of the primary photo; absent when the object has no image'),
+  object_copyright: objectCopyrightOut(),
+  website_url: str(),
+});
+
+export const priceOut = () => z.object({
+  value: z.number().optional(),
+  currency: str().describe('ISO code, or "not recorded" when the dump gives a value without a currency'),
+  label: str(),
+  note: str(),
+  is_batch_price: z.boolean().optional().describe('true: the price was paid for a batch of objects, not this one alone'),
+  value_chf: z.number().optional(),
+  conversion_rate: z.number().optional(),
+});
+
+const boundOut = () => z.object({ qualifier: str(), from: str(), to: str() }).optional();
+
+// The fields of a provenance period (src/lib/provenance.js `period`), without its id.
+export const periodShape = () => ({
+  statement: str(),
+  certainty: str(),
+  holding_kind: str(),
+  date: str(),
+  date_from: str(),
+  date_to: str(),
+  begin: boundOut(),
+  end: boundOut(),
+  date_note: str(),
+  transaction: z.object({ kind: str(), type: str() }).optional(),
+  owner: actorOut().optional(),
+  owner_type: str(),
+  place: str(),
+  price: priceOut().optional(),
+  status: str(),
+  sources: z.array(z.object({ type: str(), note: str(), url: str() })).optional(),
+  characteristics: z.array(z.object({ types: z.array(z.string()).optional(), note: str() })).optional(),
+});
+
 // Values in applied_filters are the resolved terms, actors, or records, or the scalar given.
 export const appliedOut = () => z.record(z.string(), z.union([
   z.array(z.object({ id: z.string(), label: str(), name: str() })),

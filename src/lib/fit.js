@@ -21,6 +21,42 @@ export function longestPrefix(n, fits) {
   return lo;
 }
 
+/**
+ * Cuts the lists of a one-record result until it and its text fit `limit`. `lists` is in
+ * order, most dispensable first: a list is cut to its longest prefix that fits while the later
+ * ones are whole, so it yields its room before they do. Each entry is
+ * `{ path, advice?, onCut? }`: `path` names the list (['related', 'parts']), `advice(k)` ends
+ * its warning, and `onCut(holder, k)` updates fields that depend on its length, e.g. paging.
+ * `totals[path.join('.')]` is the list's length before earlier caps. Throws `refusal` when
+ * the result does not fit with every list cut to one item.
+ */
+export function fitLists(result, { render, limit, lists, totals = {}, refusal }) {
+  let r = sent(result, render);
+  for (const { path, advice = () => 'ask for fewer sections', onCut } of lists) {
+    if (r.size <= limit) break;
+    const holder = path.slice(0, -1).reduce((o, k) => o?.[k], result);
+    const key = path.at(-1);
+    const list = holder?.[key];
+    if (!Array.isArray(list) || list.length < 2) continue;
+    const what = path.join('.');
+    const warnings = result.warnings ?? [];
+    const cut = (k) => {
+      holder[key] = list.slice(0, k);
+      onCut?.(holder, k);
+      result.warnings = [...warnings,
+        `${what}: cut to ${k} of ${totals[what] ?? list.length} to fit the result size limit; ${advice(k)}.`];
+    };
+    const k = Math.max(1, longestPrefix(list.length - 1, (n) => {
+      cut(n);
+      return sent(result, render).size <= limit;
+    }));
+    cut(k);
+    r = sent(result, render);
+  }
+  if (r.size > limit) throw refusal;
+  return r;
+}
+
 const tooLarge = (budget, what) => new ToolError(`The result is too large for the result size limit (${budget} characters) ${what}.`,
   'Ask for fewer rows (`limit`, `top`, `breakdown_top`), or narrow a name filter to one actor id: the matched actors and ' +
   'their warnings are part of the result.');
