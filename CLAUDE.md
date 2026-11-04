@@ -77,6 +77,7 @@ Summarized in `notes/02-open-data-policy-and-terms.md`. Metadata is free to reus
 - **The API docs pages are RapiDoc shells:** fetch the spec from `/graphs/{graph}/configuration/doc/data/`, not `/documentation/`.
 - **Record IDs in API paths:** `RetrieveObject` and `RetrieveProvenance` take the prefixed ID with each slash encoded twice, e.g., `skkg:provenance%252F{uuid}`. `RetrieveObjectByInventoryNumber/{n}/` takes a plain inventory number.
 - **Website object pages:** `https://digital.skkg.ch/de/intro/skkg%3Aobject%2F{id}`. Search results are not plain links; render with a browser tool.
+- **Website pages of other records:** persons are `/de/filter;actor;skkg%3Aperson%2F{id}`, exhibitions `/de/filter;exhibition;skkg%3Aexhibition%2F{id}?skkgapi:exhibition=skkg:exhibition/{id}`; literature has none, and `/de/intro/skkg%3Aperson%2F…` shows a 404 panel (`notes/08`).
 - **Intro pages need a login:** `cmsapi:ListIntroPages` returns 401; the Open Data Policy text is only in the rendered website.
 - **Slow string joins in Oxigraph:** `FILTER(STRSTARTS(STR(?a), STR(?b)))` compares every pair. Follow real graph links instead, e.g., `crm:P104_is_subject_to` for rights, `la:digitally_shown_by/la:digitally_available_via` for IIIF.
 - **`UNION` inside a join is very slow in Oxigraph** (one took 12 minutes). Run one query per branch.

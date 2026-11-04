@@ -138,6 +138,7 @@ export function renderRecordText(s) {
   const lines = [
     `${s.label ?? s.id} — ${s.id} (${join([s.type, sm.kind])})`,
     ...SUMMARY_TEXT[s.type](sm, s.label, s.id),
+    s.website_url,
     sm.counts && `Counts: ${Object.entries(sm.counts).map(([k, n]) => `${k} ${n}`).join(', ')}`,
     sm.note && `Note: ${sm.note}`,
   ];

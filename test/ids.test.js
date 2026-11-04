@@ -81,7 +81,21 @@ test('unknown, empty, and malformed input give a ToolError, never another except
   }
 });
 
-test('websiteUrl links objects and nothing else', () => {
+// The forms the website itself links, checked in a browser on 4 November 2026 (notes/08).
+test('websiteUrl links objects, persons, and exhibitions in the website\'s own forms', () => {
   assert.equal(websiteUrl('object/2432'), 'https://digital.skkg.ch/de/intro/skkg%3Aobject%2F2432');
-  assert.equal(websiteUrl('person/77'), undefined);
+  assert.equal(websiteUrl('person/77'), 'https://digital.skkg.ch/de/filter;actor;skkg%3Aperson%2F77');
+  assert.equal(websiteUrl('person/77', { creator: true }),
+    'https://digital.skkg.ch/de/filter;actor;skkg%3Aperson%2F77?skkgapi:produced_by=skkg:person/77');
+  assert.equal(websiteUrl('exhibition/152'),
+    'https://digital.skkg.ch/de/filter;exhibition;skkg%3Aexhibition%2F152?skkgapi:exhibition=skkg:exhibition/152');
+  // Literature has no page on the website; the other types are unchecked.
+  for (const id of ['literature/66', 'provenance/x', 'objectgroup/x', 'address/9', ACTOR]) assert.equal(websiteUrl(id), undefined, id);
+});
+
+test('the website links of persons and of an owner beside an object resolve', () => {
+  assert.equal(resolveId(t.db, 'https://digital.skkg.ch/de/filter;actor;skkg%3Aperson%2F77?skkgapi:produced_by=skkg:person/77').id, 'person/77');
+  assert.equal(resolveId(t.db, 'https://digital.skkg.ch/de/filter;actor;skkg%3Aperson%2F77').id, 'person/77');
+  // An owner's panel opened beside an object names the object last: the link is the object's.
+  assert.equal(resolveId(t.db, 'https://digital.skkg.ch/de/intro;person;skkg%3Aperson%2F77/skkg%3Aobject%2F2432').id, 'object/2432');
 });

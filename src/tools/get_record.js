@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { withTool, toolResult } from '../lib/tool.js';
 import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
-import { resolveId } from '../lib/ids.js';
+import { resolveId, websiteUrl } from '../lib/ids.js';
 import { stmt } from '../lib/sql.js';
 import { prune } from '../lib/prune.js';
 import { termLabel, actorRef } from '../lib/labels.js';
@@ -79,6 +79,8 @@ export const outputSchema = z.object({
   id: z.string(),
   type: z.enum(Object.keys(SECTIONS_OF)),
   label: str(),
+  website_url: str().describe('The record\'s page on digital.skkg.ch: for persons (with their works, for creators) and exhibitions. ' +
+    'Literature has no page there; the other types have none here'),
   summary: z.object({
     // actors
     kind: z.enum(['person', 'group', 'actor', 'author', 'publisher', 'anonymised']).optional().describe(
@@ -574,7 +576,10 @@ export function getRecord(db, meta, args) {
   }
   const stale = staleWarning(meta);
   if (stale) warnings.push(stale);
-  const result = prune({ id: resolved.id, type, ...body, warnings, data_as_of: meta.data_as_of });
+  const creator = body.summary.roles?.some((r) => r.as === 'creator') ?? false;
+  const result = prune({
+    id: resolved.id, type, label: body.label, website_url: websiteUrl(resolved.id, { creator }), ...body, warnings, data_as_of: meta.data_as_of,
+  });
   // The schema requires summary even when every value inside was empty.
   result.summary ??= {};
   return fitCeiling(result, ctx.totals);

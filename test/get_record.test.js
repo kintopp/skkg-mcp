@@ -56,6 +56,9 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
       assert.equal(r.summary.birth.date, '28.03.1868');
       assert.equal(r.summary.birth.place, 'Solothurn');
       for (const s of ['names', 'events', 'biography', 'relations', 'external', 'literature', 'objects']) assert.equal(r[s], undefined, s);
+      // A creator's page lists their works (the website's own link form, notes/08).
+      assert.equal(r.website_url, 'https://digital.skkg.ch/de/filter;actor;skkg%3Aperson%2F107?skkgapi:produced_by=skkg:person/107');
+      assert.deepEqual((await get({ id: r.website_url })).id, 'person/107');
       const creator = r.summary.roles.find((x) => x.as === 'creator' && !x.role);
       assert.deepEqual(creator.filter, { creator: 'person/107' });
       assert.equal(creator.count_of, 'objects');
@@ -109,6 +112,8 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
       const r = await get({ id: 'person/privateIndividual', include: ['objects'] });
       assert.equal(r.label, 'Privatperson');
       assert.equal(r.summary.kind, 'anonymised');
+      // Not a creator, so the page carries no filter on works.
+      assert.equal(r.website_url, 'https://digital.skkg.ch/de/filter;actor;skkg%3Aperson%2FprivateIndividual');
       const acquired = r.summary.roles.find((x) => x.as === 'acquired_from');
       assert.equal(await searchTotal(acquired.filter), acquired.count);
       assert.ok(r.objects.items.every((o) => o.links.some((l) => l.as === 'acquired_from')));
@@ -148,6 +153,7 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
         if (x.has_image) assert.ok(x.image_license, x.id);
       }
       assert.deepEqual(o.filter, { exhibition: 'exhibition/152' });
+      assert.equal(r.website_url, 'https://digital.skkg.ch/de/filter;exhibition;skkg%3Aexhibition%2F152?skkgapi:exhibition=skkg:exhibition/152');
       assert.equal(await searchTotal(o.filter), o.total);
       const last = await get({ id: 'exhibition/152', include: ['objects'], limit: 50, offset: o.total - 3 });
       assert.deepEqual([last.objects.returned, last.objects.has_more, last.objects.next_offset], [3, false, undefined]);
@@ -170,6 +176,7 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
     await t.test('literature: authors, references with page, figure, and number, and only citations of their own', async () => {
       const r = await get({ id: 'literature/66', include: ['objects', 'about'], limit: 50 });
       assert.equal(r.summary.literature_type, 'Ausstellungskatalog');
+      assert.equal(r.website_url, undefined, 'the website has no literature pages');
       assert.equal(r.summary.isbn, '978-3-906628-09-7');
       assert.ok(r.summary.authors.some((a) => a.name === 'Isabelle Messerli'));
       const zelger = r.objects.items.find((x) => x.id === 'object/7292');
@@ -219,6 +226,7 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
       }
       for (const o of r.objects.items) assert.ok(text.includes(`object: ${o.object_copyright}`), o.id);
       assert.ok(text.includes('skkg_search_objects creator: "person/107"'));
+      assert.match(text, new RegExp(`^${r.website_url.replace(/[.?+*()[\]]/g, '\\$&')}$`, 'm'));
       assert.ok(text.includes(`More objects: offset ${r.objects.next_offset}.`));
     });
 

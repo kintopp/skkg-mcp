@@ -145,7 +145,14 @@ const MUTATIONS = [
   ['src/tools/record_text.js', "const line = (parts, sep) => join(parts, sep) || undefined;", "const line = (parts, sep) => join(parts, sep);", 'record text no empty lines'],
   ['src/tools/record_text.js', "`   ${join([photoRights(m.rights), m.rights.iiif_service], ' · ')}`)],", "`   ${photoRights(m.rights)}`)],", 'record text image rights'],
   ['src/lib/ids.js', "type: (s) => `For a vocabulary term, use skkg_find_terms with id \"${s}\".`,", "", 'term id hint'],
+  // website links (notes/08)
+  ['src/lib/ids.js', "${creator ? `?skkgapi:produced_by=skkg:${id}` : ''}", "", 'website creator filter'],
+  ['src/lib/ids.js', "if (id.startsWith('exhibition/')) return", "if (false) return", 'website exhibition link'],
+  ['src/lib/ids.js', ".split('/').pop().split(';').pop();", ".split('/').pop();", 'website panel link resolves'],
+  ['src/tools/get_record.js', "const creator = body.summary.roles?.some((r) => r.as === 'creator') ?? false;", "const creator = true;", 'record creator link only for creators'],
+  ['src/tools/record_text.js', "    s.website_url,\n", "", 'record text website'],
 ];
+
 // Restore the mutated file if the run is interrupted.
 let pending;
 const restore = () => { if (pending) writeFileSync(pending.path, pending.text); pending = undefined; };

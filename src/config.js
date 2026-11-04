@@ -47,7 +47,7 @@ export const LANGS = Object.freeze(['de', 'en', 'fr']);
 export const CHANNEL_PROBE_ENV = 'SKKG_CHANNEL_PROBE';
 
 export const DATA_BASE = 'https://data.skkg.ch/';
-export const WEBSITE_OBJECT_BASE = 'https://digital.skkg.ch/de/intro/';
+export const WEBSITE_BASE = 'https://digital.skkg.ch/de/';
 export const IIIF_IMAGE_BASE = 'https://iiif.digital.skkg.ch/iiif/3/';
 
 // openWorldHint is false for tools that only read the local database; tools that

@@ -2,7 +2,7 @@
 // a plain number or UUID, a prefixed id (object/2432), a data.skkg.ch IRI, a website
 // link (…/skkg%3Aobject%2F2432), and for objects an inventory number (GB-0171.1).
 
-import { DATA_BASE, WEBSITE_OBJECT_BASE } from '../config.js';
+import { DATA_BASE, WEBSITE_BASE } from '../config.js';
 import { ToolError } from './errors.js';
 
 // Id prefix → table. `actor/` ids are publishers and editors of literature.
@@ -25,7 +25,8 @@ const PREFIXED = new RegExp(`^(${Object.keys(RECORD_TABLES).join('|')})/(.+)$`);
 function normalise(input) {
   let s = String(input ?? '').trim();
   if (/^https?:\/\/digital\.skkg\.ch\//.test(s)) {
-    const last = s.split(/[?#]/)[0].replace(/\/+$/, '').split('/').pop();
+    // The record is the last path segment, after any panel prefix ("filter;actor;skkg%3Aperson%2F107").
+    const last = s.split(/[?#]/)[0].replace(/\/+$/, '').split('/').pop().split(';').pop();
     try {
       s = decodeURIComponent(last);
     } catch {
@@ -92,8 +93,14 @@ const TOOL_HINTS = {
 };
 const toolHint = (type, s) => TOOL_HINTS[type]?.(s) ?? `Use skkg_get_record with id "${s}".`;
 
-// Website link for an object. Other record types have pages too, but their URL form is
-// not checked yet, so only objects get one.
-export function websiteUrl(id) {
-  return id.startsWith('object/') ? `${WEBSITE_OBJECT_BASE}${encodeURIComponent(`skkg:${id}`)}` : undefined;
+// Website page of a record, in the forms the site itself links (notes/08). A person's panel
+// lists the collection's objects under it, so `creator` filters them to the person's works.
+// Literature has no page; provenance periods, object groups, addresses, and `actor/` ids are
+// unchecked, so they get none.
+export function websiteUrl(id, { creator = false } = {}) {
+  const enc = encodeURIComponent(`skkg:${id}`);
+  if (id.startsWith('object/')) return `${WEBSITE_BASE}intro/${enc}`;
+  if (id.startsWith('person/')) return `${WEBSITE_BASE}filter;actor;${enc}${creator ? `?skkgapi:produced_by=skkg:${id}` : ''}`;
+  if (id.startsWith('exhibition/')) return `${WEBSITE_BASE}filter;exhibition;${enc}?skkgapi:exhibition=skkg:${id}`;
+  return undefined;
 }
