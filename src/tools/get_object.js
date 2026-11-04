@@ -3,6 +3,7 @@
 
 import { z } from 'zod';
 import { withTool } from '../lib/tool.js';
+import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
 import { resolveId, websiteUrl } from '../lib/ids.js';
 import { stmt } from '../lib/sql.js';
@@ -174,10 +175,12 @@ function price(db, r, lang) {
   };
 }
 
-// Cuts a list to SECTION_LIMIT and records the cut in `warnings`.
-function capped(rows, what, warnings) {
+// Cuts a list to SECTION_LIMIT, records the cut in ctx.warnings, and keeps the real total in
+// ctx.totals for fitCeiling's warning.
+function capped(rows, what, ctx) {
+  ctx.totals[what] = rows.length;
   if (rows.length <= SECTION_LIMIT) return rows;
-  warnings.push(`${what}: showing the first ${SECTION_LIMIT} of ${rows.length}.`);
+  ctx.warnings.push(`${what}: showing the first ${SECTION_LIMIT} of ${rows.length}.`);
   return rows.slice(0, SECTION_LIMIT);
 }
 
@@ -209,7 +212,7 @@ function production(db, o, lang) {
   };
 }
 
-function physical(db, o, lang, warnings) {
+function physical(db, o, lang, ctx) {
   const parts = new Map(stmt(db, 'SELECT part_id, label, type_id, note FROM object_parts WHERE object_id = ? ORDER BY seq IS NULL, seq')
     .all(o.id).map((p) => [p.part_id, { id: p.part_id, label: p.label, type: termLabel(db, p.type_id, lang), note: p.note, dimensions: [] }]));
   for (const d of stmt(db, 'SELECT part_id, dimension, value, unit_id FROM object_dimensions WHERE object_id = ?').all(o.id)) {
@@ -220,7 +223,7 @@ function physical(db, o, lang, warnings) {
   return {
     material_statement: o.material_statement,
     materials: objectFacetLabels(db, o.id, 'material', lang),
-    parts: capped([...parts.values()], 'physical.parts', warnings),
+    parts: capped([...parts.values()], 'physical.parts', ctx),
     inscriptions: stmt(db, 'SELECT text, type_ids, translation, note FROM object_inscriptions WHERE object_id = ? ORDER BY seq IS NULL, seq')
       .all(o.id).map((i) => ({ text: i.text, types: termListLabels(db, i.type_ids, lang), translation: i.translation, note: i.note })),
     condition: stmt(db, 'SELECT condition_ids, note, date FROM object_conditions WHERE object_id = ?').all(o.id)
@@ -300,31 +303,31 @@ function provenance(db, o, lang) {
   };
 }
 
-function exhibitions(db, o, lang, warnings) {
+function exhibitions(db, o, lang, ctx) {
   const rows = stmt(db, `SELECT e.* FROM exhibition_objects eo JOIN exhibitions e ON e.id = eo.exhibition_id
       WHERE eo.object_id = ? ORDER BY e.date_from IS NULL, e.date_from`).all(o.id);
-  return capped(rows, 'exhibitions', warnings).map((e) => ({
+  return capped(rows, 'exhibitions', ctx).map((e) => ({
     id: e.id, title: e.title ?? e.label, type: termLabel(db, e.exhibition_type_id, lang),
     date_from: e.date_from, date_to: e.date_to, venue: actorRef(db, e.venue_id)?.name,
   }));
 }
 
-function literature(db, o, warnings) {
+function literature(db, o, ctx) {
   const rows = stmt(db, `SELECT r.*, l.label AS lit_label, l.title AS lit_title, l.year_label FROM literature_refs r
       JOIN literature l ON l.id = r.literature_id WHERE r.object_id = ?
       ORDER BY l.year_from IS NULL, l.year_from, r.sort`).all(o.id);
-  return capped(rows, 'literature', warnings).map((r) => ({
+  return capped(rows, 'literature', ctx).map((r) => ({
     id: r.literature_id, title: r.lit_title ?? r.lit_label, year: asStr(r.year_label), page: asStr(r.page), figure: asStr(r.figure),
     catalogue: asStr(r.catalogue), shows_object: r.shows_object ? true : undefined, note: r.note, citation: r.citation,
   }));
 }
 
-function related(db, o, lang, warnings) {
+function related(db, o, lang, ctx) {
   const parts = stmt(db, 'SELECT id FROM objects WHERE parent_id = ? ORDER BY inventory_number').all(o.id);
   return {
     parent: o.parent_id ? objectRef(db, o.parent_id) : undefined,
-    parts: capped(parts, 'related.parts', warnings).map((r) => objectRef(db, r.id)),
-    references: capped(stmt(db, 'SELECT target_id, type_id, label FROM object_relations WHERE object_id = ?').all(o.id), 'related.references', warnings)
+    parts: capped(parts, 'related.parts', ctx).map((r) => objectRef(db, r.id)),
+    references: capped(stmt(db, 'SELECT target_id, type_id, label FROM object_relations WHERE object_id = ?').all(o.id), 'related.references', ctx)
       .map((r) => ({ target: objectRef(db, r.target_id), type: termLabel(db, r.type_id, lang), label: r.label })),
     groups: stmt(db, `SELECT g.id, g.label FROM object_group_members m JOIN object_groups g ON g.id = m.group_id WHERE m.object_id = ?`).all(o.id)
       .map((g) => ({ id: g.id, label: g.label })),
@@ -334,10 +337,10 @@ function related(db, o, lang, warnings) {
 }
 
 // Only multimedia with a published IIIF image; the others are records SKKG did not publish.
-function images(db, o, lang, warnings) {
+function images(db, o, lang, ctx) {
   const rows = stmt(db, `SELECT m.*, om.seq AS om_seq, om.is_primary FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id
       WHERE om.object_id = ? AND m.iiif_service IS NOT NULL ORDER BY m.id = ? DESC, om.seq IS NULL, om.seq`).all(o.id, o.primary_multimedia_id);
-  return capped(rows, 'images', warnings).map((m) => ({
+  return capped(rows, 'images', ctx).map((m) => ({
     id: m.id,
     is_primary: m.id === o.primary_multimedia_id ? true : undefined,
     seq: m.om_seq ?? undefined,
@@ -356,6 +359,7 @@ export function getObject(db, meta, args) {
   const lang = args.lang;
   const want = new Set(args.include.includes('all') ? SECTIONS : args.include);
   const warnings = [];
+  const ctx = { warnings, totals: {} };
   const primary = o.primary_multimedia_id && stmt(db, 'SELECT * FROM multimedia WHERE id = ?').get(o.primary_multimedia_id);
 
   const out = {
@@ -368,14 +372,14 @@ export function getObject(db, meta, args) {
     summary: summary(db, o, lang),
     rights: { object: objectRights(db, o, lang), primary_image: primary ? imageRights(db, primary, lang) : undefined },
     production: want.has('production') ? production(db, o, lang) : undefined,
-    physical: want.has('physical') ? physical(db, o, lang, warnings) : undefined,
+    physical: want.has('physical') ? physical(db, o, lang, ctx) : undefined,
     texts: want.has('texts') ? texts(db, o, lang) : undefined,
     acquisition: want.has('acquisition') ? acquisition(db, o, lang) : undefined,
     provenance: want.has('provenance') ? provenance(db, o, lang) : undefined,
-    exhibitions: want.has('exhibitions') ? exhibitions(db, o, lang, warnings) : undefined,
-    literature: want.has('literature') ? literature(db, o, warnings) : undefined,
-    related: want.has('related') ? related(db, o, lang, warnings) : undefined,
-    images: want.has('images') ? images(db, o, lang, warnings) : undefined,
+    exhibitions: want.has('exhibitions') ? exhibitions(db, o, lang, ctx) : undefined,
+    literature: want.has('literature') ? literature(db, o, ctx) : undefined,
+    related: want.has('related') ? related(db, o, lang, ctx) : undefined,
+    images: want.has('images') ? images(db, o, lang, ctx) : undefined,
   };
   if (want.has('acquisition') && !out.acquisition) warnings.push('SKKG records no acquisition for this object.');
   const stale = staleWarning(meta);
@@ -387,16 +391,18 @@ export function getObject(db, meta, args) {
   // Keys the schema requires even when every value inside was empty.
   result.summary ??= {};
   result.rights.object ??= { object_copyright: NOT_RECORDED };
-  return fitCeiling(result);
+  return fitCeiling(result, ctx.totals);
 }
 
 // The per-section caps keep results far below the ceiling; this guards a lowered ceiling
-// by halving the longest lists, most dispensable first.
+// by halving the longest lists, most dispensable first. Provenance periods are never cut:
+// gaps and computed_previous_owner refer to neighbouring periods, and a chain is short.
 const CUTTABLE = [['literature'], ['images'], ['exhibitions'], ['texts'], ['related', 'parts'], ['related', 'references'],
-  ['physical', 'parts'], ['provenance', 'periods']];
+  ['physical', 'parts']];
 
-function fitCeiling(result) {
-  const fits = () => JSON.stringify(result).length <= RESULT_CHAR_CEILING * 0.9;
+function fitCeiling(result, totals) {
+  const limit = Math.floor(RESULT_CHAR_CEILING * 0.9);
+  const fits = () => JSON.stringify(result).length <= limit;
   for (const path of CUTTABLE) {
     if (fits()) break;
     const holder = path.length === 1 ? result : result[path[0]];
@@ -404,7 +410,12 @@ function fitCeiling(result) {
     const list = holder?.[key];
     if (!Array.isArray(list) || list.length < 2) continue;
     while (holder[key].length > 1 && !fits()) holder[key] = holder[key].slice(0, Math.ceil(holder[key].length / 2));
-    (result.warnings ??= []).push(`${path.join('.')}: cut to ${holder[key].length} of ${list.length} to fit the result size limit; ask for this section alone.`);
+    const what = path.join('.');
+    (result.warnings ??= []).push(`${what}: cut to ${holder[key].length} of ${totals[what] ?? list.length} to fit the result size limit; ask for fewer sections.`);
+  }
+  if (!fits()) {
+    throw new ToolError(`The result for ${result.id} is too large for the result size limit (${limit} characters) even with its lists cut.`,
+      'Ask for fewer sections in `include`, e.g. one at a time.');
   }
   return result;
 }

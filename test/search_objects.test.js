@@ -12,7 +12,11 @@
 // - "a b OR c" is read as (a b) OR c, so results lack a
 // - an example value in a filter description is not a label of that filter's vocabulary
 // - a lower-case umlaut ("öl") misses its label ("Öl"), because SQLite folds ASCII only
-// - a label of another vocabulary is answered with "translate it" instead of the right filter
+// - a label of another vocabulary is answered with "translate it" instead of the right filter,
+//   or the hint names only one of several vocabularies
+// - with a creator filter, exclude_attributions drops an object through a creator row other than
+//   the one the filter matched
+// - the hint for a wrong exclude_attributions value names an inclusion filter, inverting the exclusion
 // - inventory numbers sort as text, so "10" comes after "04012"
 // - the date range matches by containment, not overlap, so a work of 1907 misses 1900–1910
 // - paging repeats or skips a record, or has_more is true on the last page
@@ -102,6 +106,14 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
       assert.ok(!ids(await search({ ...args, exclude_attributions: ['nach'] })).includes(id));
     });
 
+    await t.test('with a creator filter, the exclusion applies only to the creator row it matched', async () => {
+      // object/08c8b71e-…: a "Stecher:in" without attribution, and a "Künstler:in" "nach" someone.
+      const id = 'object/08c8b71e-9c5a-4fef-af3a-8545187a3079';
+      const args = { query: '30058.10', scope: 'inventory_number', exclude_attributions: ['nach'] };
+      assert.ok(ids(await search({ ...args, creator_role: 'Stecher:in' })).includes(id));
+      assert.ok(!ids(await search({ ...args, creator_role: 'Künstler:in' })).includes(id));
+    });
+
     await t.test('OR joins only its two neighbours: every result of "a b OR c" matches a', async () => {
       const stillleben = new Set(ids(await search({ query: 'Stillleben', limit: 50 })));
       const r = await search({ query: 'Stillleben Ofen OR Helm', limit: 50 });
@@ -131,10 +143,21 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
       assert.deepEqual((await search({ material: 'HOLZ' })).applied_filters.material, (await search({ material: 'Holz' })).applied_filters.material);
     });
 
-    await t.test('a label of another vocabulary is refused with the filter that takes it', async () => {
+    await t.test('a label of another vocabulary is refused with every filter that takes it', async () => {
       const text = await callError(client, NAME, { technique: 'Holz' });
       assert.match(text, /"Holz" is a material term, not a technique term/);
       assert.match(text, /Pass it as `material`/);
+      // "Fotografie" is an object type and a material.
+      const both = await callError(client, NAME, { epoch: 'Fotografie' });
+      assert.match(both, /`object_type`/);
+      assert.match(both, /`material`/);
+    });
+
+    await t.test('a wrong exclude_attributions value is never sent to an inclusion filter', async () => {
+      // "Verlag" is a creator role; creator_role would include publishers instead of excluding them.
+      const text = await callError(client, NAME, { exclude_attributions: ['Verlag'] });
+      assert.match(text, /`exclude_attributions` takes attribution terms only/);
+      assert.doesNotMatch(text, /creator_role/);
     });
 
     await t.test('inventory numbers sort numerically', async () => {

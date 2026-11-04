@@ -49,7 +49,8 @@ export function objectFilterShape() {
     creator_role: termField('Role of the creator, e.g. "Künstler:in", "Verlag", "Stecher:in". Applies to the same creator row as `creator`'),
     attribution: termField('Attribution qualifier, e.g. "zugeschrieben", "nach", "Kopie nach". Applies to the same creator row as `creator`'),
     exclude_attributions: z.array(z.string().min(1).max(200)).min(1).max(10).optional().describe(
-      'Attribution labels or ids; leaves out objects with a creator so attributed (with `creator`: that creator so attributed), ' +
+      'Attribution labels or ids; leaves out objects with a creator so attributed. With `creator`, `creator_role`, or `attribution`, ' +
+      'only the creator row those match counts, ' +
       'e.g. ["nach", "Kopie nach"] for works by the creator rather than after them'),
     acquisition_type: termField('How SKKG acquired the object, e.g. "Auktion", "Ankauf", "Schenkung"'),
     acquired_from: idField('Who SKKG acquired the object from: an actor id or a name, as for `creator`'),
@@ -95,9 +96,13 @@ function labelIndex(db) {
   return index;
 }
 
-const otherFilterHint = (facet, wanted) => (FIELD_OF_FACET[facet]
-  ? `Pass it as \`${FIELD_OF_FACET[facet]}\`, or pass a ${wanted} term.`
-  : `Pass a ${wanted} term.`);
+// Points to the filters that take `facets`. Never for exclude_attributions: the filters it
+// would name include objects, so following the hint would invert the exclusion.
+function otherFilterHint(field, facets, wanted) {
+  const fields = facets.map((f) => FIELD_OF_FACET[f]).filter(Boolean);
+  if (field === 'exclude_attributions' || !fields.length) return `\`${field}\` takes ${wanted} terms only.`;
+  return `Pass it as ${fields.map((f) => `\`${f}\``).join(' or ')}, or pass a ${wanted} term.`;
+}
 
 // Resolves a term filter value to term ids of `facet`. Throws a ToolError with suggestions.
 export function resolveTerms(db, field, facet, value, narrower) {
@@ -108,16 +113,17 @@ export function resolveTerms(db, field, facet, value, narrower) {
     if (!t) throw new ToolError(`\`${field}\`: no term "${v}".`, 'Pass a German label instead, or check the id.');
     if (t.facet !== facet) {
       throw new ToolError(`\`${field}\`: "${v}" (${termLabel(db, v) ?? 'unlabelled'}) belongs to the ${t.facet ?? 'other'} vocabulary, not to ${facet}.`,
-        otherFilterHint(t.facet, facet));
+        otherFilterHint(field, [t.facet], facet));
     }
     ids = [v];
   } else {
     const entries = labelIndex(db).get(fold(v)) ?? [];
     ids = entries.filter((e) => e.facet === facet).map((e) => e.id);
     if (!ids.length) {
-      const elsewhere = entries.find((e) => FIELD_OF_FACET[e.facet]);
-      if (elsewhere) {
-        throw new ToolError(`\`${field}\`: "${v}" is a ${elsewhere.facet} term, not a ${facet} term.`, otherFilterHint(elsewhere.facet, facet));
+      const elsewhere = [...new Set(entries.map((e) => e.facet).filter((f) => FIELD_OF_FACET[f]))];
+      if (elsewhere.length) {
+        throw new ToolError(`\`${field}\`: "${v}" is a ${elsewhere.join(' and ')} term, not a ${facet} term.`,
+          otherFilterHint(field, elsewhere, facet));
       }
       throw new ToolError(`\`${field}\`: no ${facet} term is labelled "${v}".`, suggestTerms(db, facet, v));
     }
@@ -182,11 +188,9 @@ export function compileObjectFilters(db, args) {
 
   const creatorParts = [];
   const creatorParams = [];
-  let creatorIds;
-  let exclusion;
+  let excluded;
   if (args.creator !== undefined) {
     const { ids, byName } = resolveActors(db, 'creator', args.creator);
-    creatorIds = ids;
     creatorParts.push(`oc.actor_id IN (${placeholders(ids.length)})`);
     creatorParams.push(...ids);
     applied.creator = ids.map((id) => actorRef(db, id));
@@ -200,26 +204,29 @@ export function compileObjectFilters(db, args) {
     applied[field] = matched;
   }
   if (args.exclude_attributions) {
-    const excluded = [];
+    excluded = [];
     const matched = [];
     for (const v of args.exclude_attributions) {
       const r = resolveTerms(db, 'exclude_attributions', 'attribution', v, narrower);
       excluded.push(...r.ids);
       matched.push(...r.matched);
     }
-    exclusion = { ids: excluded };
     applied.exclude_attributions = matched;
+  }
+  // With a creator filter, the exclusion applies to the creator row that matched it: another
+  // person's "nach" row, or the same person's row in another role, must not drop the object.
+  // Without one, any creator so attributed drops it; a condition on one row would let any
+  // other creator row through.
+  if (excluded && creatorParts.length) {
+    creatorParts.push(`(oc.attribution_id IS NULL OR oc.attribution_id NOT IN (${placeholders(excluded.length)}))`);
+    creatorParams.push(...excluded);
+  } else if (excluded) {
+    clauses.push(`NOT EXISTS (SELECT 1 FROM object_creators ox WHERE ox.object_id = o.id AND ox.attribution_id IN (${placeholders(excluded.length)}))`);
+    params.push(...excluded);
   }
   if (creatorParts.length) {
     clauses.push(`EXISTS (SELECT 1 FROM object_creators oc WHERE oc.object_id = o.id AND ${creatorParts.join(' AND ')})`);
     params.push(...creatorParams);
-  }
-  // A separate NOT EXISTS: inside the EXISTS above, any other creator row would let the object through.
-  if (exclusion) {
-    const scope = creatorIds ? ` AND ox.actor_id IN (${placeholders(creatorIds.length)})` : '';
-    clauses.push(`NOT EXISTS (SELECT 1 FROM object_creators ox WHERE ox.object_id = o.id
-        AND ox.attribution_id IN (${placeholders(exclusion.ids.length)})${scope})`);
-    params.push(...exclusion.ids, ...(creatorIds ?? []));
   }
 
   assertRange(args, 'date_from', 'date_to');
