@@ -10,34 +10,38 @@ import { stmt, placeholders } from '../lib/sql.js';
 import { termLabel, actorRef, objectRef } from '../lib/labels.js';
 import { MAX_NAME_MATCHES } from '../config.js';
 
-// Term filters: the input field, the vocabulary facet, and how it selects objects.
-// `?` stands for the (expanded) term ids.
+// Term filters: the vocabulary facet, and the SQL that selects objects when the facet is
+// not an object_terms facet. `?` stands for the (expanded) term ids.
 const TERM_FILTERS = {
-  object_type: { facet: 'object_type', example: 'Zeichnung', sql: "o.id IN (SELECT object_id FROM object_terms WHERE facet = 'object_type' AND term_id IN (?))" },
-  material: { facet: 'material', example: 'Holz', sql: "o.id IN (SELECT object_id FROM object_terms WHERE facet = 'material' AND term_id IN (?))" },
-  technique: { facet: 'technique', example: 'Radierung', sql: "o.id IN (SELECT object_id FROM object_terms WHERE facet = 'technique' AND term_id IN (?))" },
-  epoch: { facet: 'epoch', example: '19. Jh.', sql: "o.id IN (SELECT object_id FROM object_terms WHERE facet = 'epoch' AND term_id IN (?))" },
-  location: { facet: 'location', example: 'Depot', sql: "o.id IN (SELECT object_id FROM object_terms WHERE facet = 'location' AND term_id IN (?))" },
-  object_copyright: { facet: 'object_copyright', example: 'gemeinfrei', sql: "o.id IN (SELECT object_id FROM object_terms WHERE facet = 'object_copyright' AND term_id IN (?))" },
-  provenance_status: { facet: 'provenance_status', example: 'ungeklärt', sql: "o.id IN (SELECT object_id FROM object_terms WHERE facet = 'provenance_status' AND term_id IN (?))" },
-  image_license: { facet: 'image_license', example: 'CC0 1.0', sql: 'o.image_license_id IN (?)' },
-  acquisition_type: { facet: 'acquisition_type', example: 'Kauf', sql: 'o.id IN (SELECT object_id FROM acquisitions WHERE type_id IN (?))' },
+  object_type: { facet: 'object_type' },
+  material: { facet: 'material' },
+  technique: { facet: 'technique' },
+  epoch: { facet: 'epoch' },
+  location: { facet: 'location' },
+  object_copyright: { facet: 'object_copyright' },
+  provenance_status: { facet: 'provenance_status' },
+  image_license: { facet: 'image_license', sql: 'o.image_license_id IN (?)' },
+  acquisition_type: { facet: 'acquisition_type', sql: 'o.id IN (SELECT object_id FROM acquisitions WHERE type_id IN (?))' },
   // These two narrow the creator rows, so they are compiled together with `creator`.
-  creator_role: { facet: 'production_role', example: 'Künstler:in' },
-  attribution: { facet: 'attribution', example: 'zugeschrieben' },
+  creator_role: { facet: 'production_role', creatorColumn: 'role_id' },
+  attribution: { facet: 'attribution', creatorColumn: 'attribution_id' },
 };
+const filterSql = (f) => f.sql ?? `o.id IN (SELECT object_id FROM object_terms WHERE facet = '${f.facet}' AND term_id IN (?))`;
+// The filter that takes a facet's terms, for errors that point to the right filter.
+const FIELD_OF_FACET = Object.fromEntries(Object.entries(TERM_FILTERS).map(([field, f]) => [f.facet, field]));
 
 const termField = (what) => z.string().min(1).max(200).optional().describe(
-  `${what}. A term id ("type/…") or a German label, matched exactly.`);
+  `${what}. A term id ("type/…") or a German label, matched exactly except for case.`);
 const idField = (what) => z.string().min(1).max(300).optional().describe(what);
 const yearField = (what) => z.number().int().min(-5000).max(2100).optional().describe(what);
 
 // A fresh shape on every call: zod instances must not be shared between schemas.
+// Every quoted example in a term field must be a label of that field's vocabulary.
 export function objectFilterShape() {
   return {
-    object_type: termField(`Object type, e.g. "${TERM_FILTERS.object_type.example}" or "Malerei"`),
+    object_type: termField('Object type, e.g. "Zeichnung" or "Malerei"'),
     material: termField('Material, e.g. "Holz", "Papier", "Silber"'),
-    technique: termField('Technique, e.g. "Radierung", "Lithografie"'),
+    technique: termField('Technique, e.g. "bemalt", "vergoldet", "geschnitzt"'),
     epoch: termField('Epoch label as SKKG dates objects, e.g. "19. Jh.", "1. Hälfte 20. Jh."'),
     date_from: yearField('Earliest year of production. Matches objects whose dating overlaps the range; undated objects never match'),
     date_to: yearField('Latest year of production; see date_from'),
@@ -45,8 +49,9 @@ export function objectFilterShape() {
     creator_role: termField('Role of the creator, e.g. "Künstler:in", "Verlag", "Stecher:in". Applies to the same creator row as `creator`'),
     attribution: termField('Attribution qualifier, e.g. "zugeschrieben", "nach", "Kopie nach". Applies to the same creator row as `creator`'),
     exclude_attributions: z.array(z.string().min(1).max(200)).min(1).max(10).optional().describe(
-      'Attribution labels or ids to leave out, e.g. ["nach", "Kopie nach"] for works by the creator rather than after them'),
-    acquisition_type: termField('How SKKG acquired the object, e.g. "Kauf", "Schenkung"'),
+      'Attribution labels or ids; leaves out objects with a creator so attributed (with `creator`: that creator so attributed), ' +
+      'e.g. ["nach", "Kopie nach"] for works by the creator rather than after them'),
+    acquisition_type: termField('How SKKG acquired the object, e.g. "Auktion", "Ankauf", "Schenkung"'),
     acquired_from: idField('Who SKKG acquired the object from: an actor id or a name, as for `creator`'),
     acquisition_year_from: yearField('Earliest year of SKKG\'s acquisition'),
     acquisition_year_to: yearField('Latest year of SKKG\'s acquisition'),
@@ -67,6 +72,33 @@ export function objectFilterShape() {
 const FILTER_KEYS = Object.keys(objectFilterShape()).filter((k) => k !== 'include_narrower');
 export const hasObjectFilter = (args) => FILTER_KEYS.some((k) => args[k] !== undefined);
 
+// SQLite's NOCASE folds ASCII only, so "öl" would miss "Öl"; labels are folded here instead.
+const fold = (s) => s.normalize('NFC').toLocaleLowerCase('de').trim();
+
+// Folded label → [{ id, facet }], over every label of every term. Built once per database.
+const labelIndexes = new WeakMap();
+function labelIndex(db) {
+  let index = labelIndexes.get(db);
+  if (index) return index;
+  index = new Map();
+  const rows = db.prepare(`SELECT id AS term_id, label FROM terms UNION SELECT id, label_de FROM terms
+      UNION SELECT term_id, label FROM term_labels`).all();
+  const facetOf = new Map(db.prepare('SELECT id, facet FROM terms').all().map((r) => [r.id, r.facet]));
+  for (const { term_id: id, label } of rows) {
+    if (!label) continue;
+    const key = fold(label);
+    if (!index.has(key)) index.set(key, []);
+    const list = index.get(key);
+    if (!list.some((e) => e.id === id)) list.push({ id, facet: facetOf.get(id) });
+  }
+  labelIndexes.set(db, index);
+  return index;
+}
+
+const otherFilterHint = (facet, wanted) => (FIELD_OF_FACET[facet]
+  ? `Pass it as \`${FIELD_OF_FACET[facet]}\`, or pass a ${wanted} term.`
+  : `Pass a ${wanted} term.`);
+
 // Resolves a term filter value to term ids of `facet`. Throws a ToolError with suggestions.
 export function resolveTerms(db, field, facet, value, narrower) {
   const v = value.trim();
@@ -76,14 +108,19 @@ export function resolveTerms(db, field, facet, value, narrower) {
     if (!t) throw new ToolError(`\`${field}\`: no term "${v}".`, 'Pass a German label instead, or check the id.');
     if (t.facet !== facet) {
       throw new ToolError(`\`${field}\`: "${v}" (${termLabel(db, v) ?? 'unlabelled'}) belongs to the ${t.facet ?? 'other'} vocabulary, not to ${facet}.`,
-        t.facet ? `Pass it as \`${t.facet}\` if that filter exists, or pass a ${facet} term.` : `Pass a ${facet} term.`);
+        otherFilterHint(t.facet, facet));
     }
     ids = [v];
   } else {
-    ids = stmt(db, `SELECT id FROM terms WHERE facet = ?1 AND (label = ?2 COLLATE NOCASE OR label_de = ?2 COLLATE NOCASE
-        OR id IN (SELECT term_id FROM term_labels WHERE label = ?2 COLLATE NOCASE))`)
-      .all(facet, v).map((r) => r.id);
-    if (!ids.length) throw new ToolError(`\`${field}\`: no ${facet} term is labelled "${v}".`, suggestTerms(db, facet, v));
+    const entries = labelIndex(db).get(fold(v)) ?? [];
+    ids = entries.filter((e) => e.facet === facet).map((e) => e.id);
+    if (!ids.length) {
+      const elsewhere = entries.find((e) => FIELD_OF_FACET[e.facet]);
+      if (elsewhere) {
+        throw new ToolError(`\`${field}\`: "${v}" is a ${elsewhere.facet} term, not a ${facet} term.`, otherFilterHint(elsewhere.facet, facet));
+      }
+      throw new ToolError(`\`${field}\`: no ${facet} term is labelled "${v}".`, suggestTerms(db, facet, v));
+    }
   }
   const matched = ids.map((id) => ({ id, label: termLabel(db, id) }));
   if (narrower) {
@@ -136,17 +173,20 @@ export function compileObjectFilters(db, args) {
   const narrower = args.include_narrower !== false;
 
   for (const [field, f] of Object.entries(TERM_FILTERS)) {
-    if (args[field] === undefined || !f.sql) continue;
+    if (args[field] === undefined || f.creatorColumn) continue;
     const { ids, matched } = resolveTerms(db, field, f.facet, args[field], narrower);
-    clauses.push(f.sql.replace('(?)', `(${placeholders(ids.length)})`));
+    clauses.push(filterSql(f).replace('(?)', `(${placeholders(ids.length)})`));
     params.push(...ids);
     applied[field] = matched;
   }
 
   const creatorParts = [];
   const creatorParams = [];
+  let creatorIds;
+  let exclusion;
   if (args.creator !== undefined) {
     const { ids, byName } = resolveActors(db, 'creator', args.creator);
+    creatorIds = ids;
     creatorParts.push(`oc.actor_id IN (${placeholders(ids.length)})`);
     creatorParams.push(...ids);
     applied.creator = ids.map((id) => actorRef(db, id));
@@ -155,7 +195,7 @@ export function compileObjectFilters(db, args) {
   for (const field of ['creator_role', 'attribution']) {
     if (args[field] === undefined) continue;
     const { ids, matched } = resolveTerms(db, field, TERM_FILTERS[field].facet, args[field], narrower);
-    creatorParts.push(`oc.${field === 'creator_role' ? 'role_id' : 'attribution_id'} IN (${placeholders(ids.length)})`);
+    creatorParts.push(`oc.${TERM_FILTERS[field].creatorColumn} IN (${placeholders(ids.length)})`);
     creatorParams.push(...ids);
     applied[field] = matched;
   }
@@ -167,13 +207,19 @@ export function compileObjectFilters(db, args) {
       excluded.push(...r.ids);
       matched.push(...r.matched);
     }
-    creatorParts.push(`(oc.attribution_id IS NULL OR oc.attribution_id NOT IN (${placeholders(excluded.length)}))`);
-    creatorParams.push(...excluded);
+    exclusion = { ids: excluded };
     applied.exclude_attributions = matched;
   }
   if (creatorParts.length) {
     clauses.push(`EXISTS (SELECT 1 FROM object_creators oc WHERE oc.object_id = o.id AND ${creatorParts.join(' AND ')})`);
     params.push(...creatorParams);
+  }
+  // A separate NOT EXISTS: inside the EXISTS above, any other creator row would let the object through.
+  if (exclusion) {
+    const scope = creatorIds ? ` AND ox.actor_id IN (${placeholders(creatorIds.length)})` : '';
+    clauses.push(`NOT EXISTS (SELECT 1 FROM object_creators ox WHERE ox.object_id = o.id
+        AND ox.attribution_id IN (${placeholders(exclusion.ids.length)})${scope})`);
+    params.push(...exclusion.ids, ...(creatorIds ?? []));
   }
 
   assertRange(args, 'date_from', 'date_to');

@@ -1,7 +1,7 @@
 // Shared test utilities.
 
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,9 +13,16 @@ import { AjvJsonSchemaValidator } from '@modelcontextprotocol/client/validators/
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const SERVER_ENTRY = join(ROOT, 'src', 'index.js');
 
+// The newest skkg-partial-YYYYMMDD.sqlite in `dir`, so a rebuild from a newer partial dump
+// is picked up instead of leaving the tool tests skipped.
+export function latestFixture(dir) {
+  const names = existsSync(dir) ? readdirSync(dir).filter((n) => /^skkg-partial-\d{8}\.sqlite$/.test(n)).sort() : [];
+  return names.length ? join(dir, names.at(-1)) : join(dir, 'skkg-partial-YYYYMMDD.sqlite');
+}
+
 // The fixture database built from the partial dump. It is gitignored, so tool tests pass
 // `{ skip: FIXTURE_DB.skip }` and are skipped, not failed, on a checkout without it.
-const fixturePath = process.env.SKKG_FIXTURE_DB || join(ROOT, 'data', 'db', 'skkg-partial-20261028.sqlite');
+const fixturePath = process.env.SKKG_FIXTURE_DB || latestFixture(join(ROOT, 'data', 'db'));
 export const FIXTURE_DB = {
   path: fixturePath,
   skip: existsSync(fixturePath) ? false

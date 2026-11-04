@@ -7,7 +7,13 @@
 // - a term of another vocabulary is accepted as a filter value
 // - a broader term ("Malerei") misses objects typed with a narrower term, or include_narrower: false still expands
 // - a creator name that matches several persons silently picks one, or merges them without saying so
-// - exclude_attributions keeps works "nach" the creator
+// - exclude_attributions keeps works "nach" the creator, or, without `creator`, lets an object
+//   through because another of its creators has no attribution
+// - "a b OR c" is read as (a b) OR c, so results lack a
+// - an example value in a filter description is not a label of that filter's vocabulary
+// - a lower-case umlaut ("öl") misses its label ("Öl"), because SQLite folds ASCII only
+// - a label of another vocabulary is answered with "translate it" instead of the right filter
+// - inventory numbers sort as text, so "10" comes after "04012"
 // - the date range matches by containment, not overlap, so a work of 1907 misses 1900–1910
 // - paging repeats or skips a record, or has_more is true on the last page
 // - a photo without a recorded licence comes back without image_license, read as unrestricted
@@ -86,6 +92,56 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
       assert.ok(ids(all).includes('object/7417'));
       const own = await search({ creator: 'person/517', exclude_attributions: ['nach'], limit: 50 });
       assert.ok(!ids(own).includes('object/7417'));
+    });
+
+    await t.test('exclude_attributions alone drops an object even when another creator has no attribution', async () => {
+      // object/08c8b71e-… (inventory number 30058.10) has one creator "nach" and one without attribution.
+      const id = 'object/08c8b71e-9c5a-4fef-af3a-8545187a3079';
+      const args = { query: '30058.10', scope: 'inventory_number' };
+      assert.ok(ids(await search(args)).includes(id));
+      assert.ok(!ids(await search({ ...args, exclude_attributions: ['nach'] })).includes(id));
+    });
+
+    await t.test('OR joins only its two neighbours: every result of "a b OR c" matches a', async () => {
+      const stillleben = new Set(ids(await search({ query: 'Stillleben', limit: 50 })));
+      const r = await search({ query: 'Stillleben Ofen OR Helm', limit: 50 });
+      assert.ok(r.total > 0);
+      for (const id of ids(r)) assert.ok(stillleben.has(id), id);
+    });
+
+    await t.test('every example value in a term filter description is accepted by that filter', async () => {
+      const { tools } = await client.listTools();
+      const props = tools.find((x) => x.name === NAME).inputSchema.properties;
+      let checked = 0;
+      for (const [field, p] of Object.entries(props)) {
+        const marker = p.description?.indexOf('A term id ("type/');
+        if (!(marker > 0)) continue;
+        for (const [, example] of p.description.slice(0, marker).matchAll(/"([^"]+)"/g)) {
+          const res = await client.callTool({ name: NAME, arguments: { [field]: example } });
+          assert.ok(!res.isError, `${field}: "${example}": ${res.content[0].text}`);
+          checked++;
+        }
+      }
+      assert.ok(checked >= 20, `only ${checked} examples found`);
+    });
+
+    await t.test('a label matches regardless of case, umlauts included', async () => {
+      const upper = await search({ material: 'Öl' });
+      assert.deepEqual((await search({ material: 'öl' })).applied_filters.material, upper.applied_filters.material);
+      assert.deepEqual((await search({ material: 'HOLZ' })).applied_filters.material, (await search({ material: 'Holz' })).applied_filters.material);
+    });
+
+    await t.test('a label of another vocabulary is refused with the filter that takes it', async () => {
+      const text = await callError(client, NAME, { technique: 'Holz' });
+      assert.match(text, /"Holz" is a material term, not a technique term/);
+      assert.match(text, /Pass it as `material`/);
+    });
+
+    await t.test('inventory numbers sort numerically', async () => {
+      const r = await search({ object_type: 'Malerei auf textilem Bildträger', sort: 'inventory_number', limit: 50 });
+      const numeric = r.results.map((x) => x.inventory_number).filter((n) => /^\d+$/.test(n)).map(Number);
+      assert.ok(numeric.length > 10);
+      for (let i = 1; i < numeric.length; i++) assert.ok(numeric[i - 1] <= numeric[i], `${numeric[i - 1]} before ${numeric[i]}`);
     });
 
     await t.test('the date range matches objects whose dating overlaps it', async () => {

@@ -390,15 +390,21 @@ export function getObject(db, meta, args) {
   return fitCeiling(result);
 }
 
-// The per-section caps keep results far below the ceiling; this guards a lowered ceiling.
+// The per-section caps keep results far below the ceiling; this guards a lowered ceiling
+// by halving the longest lists, most dispensable first.
+const CUTTABLE = [['literature'], ['images'], ['exhibitions'], ['texts'], ['related', 'parts'], ['related', 'references'],
+  ['physical', 'parts'], ['provenance', 'periods']];
+
 function fitCeiling(result) {
-  const lists = ['literature', 'images', 'exhibitions', 'texts'];
-  for (const key of lists) {
-    if (JSON.stringify(result).length <= RESULT_CHAR_CEILING * 0.9) break;
-    if (!result[key]) continue;
-    const n = result[key].length;
-    result[key] = result[key].slice(0, 1);
-    (result.warnings ??= []).push(`${key}: cut to 1 of ${n} to fit the result size limit; ask for this section alone.`);
+  const fits = () => JSON.stringify(result).length <= RESULT_CHAR_CEILING * 0.9;
+  for (const path of CUTTABLE) {
+    if (fits()) break;
+    const holder = path.length === 1 ? result : result[path[0]];
+    const key = path.at(-1);
+    const list = holder?.[key];
+    if (!Array.isArray(list) || list.length < 2) continue;
+    while (holder[key].length > 1 && !fits()) holder[key] = holder[key].slice(0, Math.ceil(holder[key].length / 2));
+    (result.warnings ??= []).push(`${path.join('.')}: cut to ${holder[key].length} of ${list.length} to fit the result size limit; ask for this section alone.`);
   }
   return result;
 }

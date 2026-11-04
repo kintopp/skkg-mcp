@@ -8,7 +8,7 @@ import { termLabel, actorRef } from './labels.js';
 export const NOT_RECORDED = 'not recorded';
 
 export function objectCopyright(db, objectId, lang) {
-  const r = stmt(db, "SELECT term_id FROM object_terms WHERE object_id = ? AND facet = 'object_copyright'").get(objectId);
+  const r = stmt(db, "SELECT term_id FROM object_terms WHERE object_id = ? AND facet = 'object_copyright' ORDER BY seq IS NULL, seq, term_id").get(objectId);
   return (r && termLabel(db, r.term_id, lang)) || NOT_RECORDED;
 }
 

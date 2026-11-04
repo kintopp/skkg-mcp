@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { withTool } from '../lib/tool.js';
 import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
-import { scopedFtsQuery, assertQueryLength } from '../lib/fts.js';
+import { scopedFtsQuery } from '../lib/fts.js';
 import { objectRow } from '../lib/objects.js';
 import { prune } from '../lib/prune.js';
 import { objectFilterShape, hasObjectFilter, compileObjectFilters } from './object_filters.js';
@@ -24,12 +24,15 @@ const SCOPES = {
   inventory_number: ['inventory_number'],
 };
 
+const INVENTORY_ORDER = "o.inventory_number GLOB '[0-9]*' DESC, CAST(o.inventory_number AS INTEGER), o.inventory_number";
+
 const ORDER = {
-  relevance: 'bm25(objects_fts, 0, 5, 3, 1, 1, 10), o.inventory_number',
-  inventory_number: 'o.inventory_number',
-  date_asc: 'COALESCE(o.date_from, o.date_to) IS NULL, COALESCE(o.date_from, o.date_to), o.inventory_number',
-  date_desc: 'COALESCE(o.date_to, o.date_from) IS NULL, COALESCE(o.date_to, o.date_from) DESC, o.inventory_number',
-  acquisition_date: '(SELECT date FROM acquisitions a WHERE a.object_id = o.id) IS NULL, (SELECT date FROM acquisitions a WHERE a.object_id = o.id), o.inventory_number',
+  relevance: 'bm25(objects_fts, 0, 5, 3, 1, 1, 10), ' + INVENTORY_ORDER,
+  // Numeric inventory numbers in numeric order ("884" before "1000"), then the others as text.
+  inventory_number: INVENTORY_ORDER,
+  date_asc: 'COALESCE(o.date_from, o.date_to) IS NULL, COALESCE(o.date_from, o.date_to), ' + INVENTORY_ORDER,
+  date_desc: 'COALESCE(o.date_to, o.date_from) IS NULL, COALESCE(o.date_to, o.date_from) DESC, ' + INVENTORY_ORDER,
+  acquisition_date: '(SELECT date FROM acquisitions a WHERE a.object_id = o.id) IS NULL, (SELECT date FROM acquisitions a WHERE a.object_id = o.id), ' + INVENTORY_ORDER,
 };
 
 const description =
@@ -84,7 +87,6 @@ export const outputSchema = z.object({
 });
 
 export function searchObjects(db, meta, args) {
-  assertQueryLength(args.query, MAX_QUERY_LEN);
   const fts = args.query ? scopedFtsQuery(args.query, SCOPES[args.scope]) : undefined;
   if (args.query && !fts) {
     throw new ToolError(`\`query\` "${args.query}" has no searchable word.`, 'Pass German keywords, e.g. "Stillleben".');
