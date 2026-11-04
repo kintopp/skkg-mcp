@@ -11,6 +11,7 @@ const publication = (summary) => renderRecordText({ id: 'literature/1', type: 'l
 test('a publication without a year label or place shows the years it has', () => {
   assert.match(publication({ year_from: 1910 }), /^Published: 1910$/m);
   assert.match(publication({ year_from: 1909, year_to: 1911 }), /^Published: 1909–1911$/m);
+  assert.match(publication({ year_to: 1911 }), /^Published: \?–1911$/m);
 });
 
 test('the year label wins over the years', () => {

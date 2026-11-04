@@ -31,11 +31,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { copyFileSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
-import { withClient, callOk, callSent, callError, FIXTURE_DB } from './helpers.js';
+import { withClient, callOk, callSent, callError, makeTestDb, FIXTURE_DB } from './helpers.js';
 import { outputSchema } from '../src/tools/get_record.js';
 import { outputSchema as searchSchema } from '../src/tools/search_objects.js';
 
@@ -338,13 +334,11 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
 test('with both relations, a role under one of them keeps its exact filter', { skip: FIXTURE_DB.skip }, async () => {
   // No fixture creator with both relations has a role under one only, so a copy gets one:
   // person/146 as "Druckerei" (type/21118/183988) of object/1635, which it made.
-  const dir = mkdtempSync(join(tmpdir(), 'skkg-roles-'));
-  const path = join(dir, 'fixture.sqlite');
-  copyFileSync(FIXTURE_DB.path, path);
-  const db = new DatabaseSync(path);
-  db.prepare(`INSERT INTO object_creators (object_id, seq, actor_id, relation, role_id)
+  const copy = makeTestDb({ from: FIXTURE_DB.path });
+  copy.db.prepare(`INSERT INTO object_creators (object_id, seq, actor_id, relation, role_id)
       VALUES ('object/1635', 9, 'person/146', 'carried_out_by', 'type/21118/183988')`).run();
-  db.close();
+  copy.db.close();
+  const { path } = copy;
   try {
     await withClient('get-record-roles-test', async (client) => {
       const r = await callOk(client, NAME, { id: 'person/146' }, outputSchema);
@@ -357,7 +351,7 @@ test('with both relations, a role under one of them keeps its exact filter', { s
       for (const x of roles.filter((y) => y.role !== 'Druckerei')) assert.equal(x.filter, undefined, `${x.as} ${x.role}`);
     }, { env: { SKKG_DB_PATH: path } });
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    copy.cleanup();
   }
 });
 

@@ -73,8 +73,9 @@ const litOut = () => z.array(z.object({
   page: str(), figure: str(), catalogue: str(), note: str(), citation: str(),
 })).optional();
 
+const LITERATURE_KINDS = ['author', 'editor', 'publisher'];
 const ROLE_KINDS = ['creator', 'influence', 'acquired_from', 'provenance_owner', 'photographer', 'photo_right_holder',
-  'author', 'editor', 'publisher', 'subject_of_literature'];
+  ...LITERATURE_KINDS, 'subject_of_literature'];
 
 export const outputSchema = z.object({
   id: z.string(),
@@ -197,12 +198,9 @@ const count = (db, sql, ...params) => stmt(db, sql).get(...params).n;
 // The build flags SKKG's anonymisation: "Privatperson" and "Unbekannte:r Eigentümer:in" in either case.
 const isAnonymised = (a) => a.kind === 'anonymous' || a.is_anonymous === 1;
 
-// A stub is an actor SKKG records only by name; the build sets its kind from its part in literature.
-const KIND = {
-  person: 'person', group: 'group', actor: 'actor', stub: 'actor',
-  author_stub: 'author', editor_stub: 'editor', publisher_stub: 'publisher', anonymous: 'anonymised',
-};
-const LITERATURE_KINDS = ['author', 'editor', 'publisher'];
+const KIND = { person: 'person', group: 'group' };
+// A stub, an actor SKKG records only by name, is named by its part in literature, the first of these it has.
+const STUB_KINDS = ['publisher', 'editor', 'author'];
 
 // Paged object rows from `ids` (already in order), each with what `extra(id)` adds.
 function objectPage(db, ids, args, extra = () => ({}), filter = undefined) {
@@ -230,17 +228,15 @@ function actorRoles(db, id, lang) {
   const roles = [];
   const relations = stmt(db, `SELECT relation, COUNT(DISTINCT object_id) AS n FROM object_creators WHERE actor_id = ?
       GROUP BY relation ORDER BY relation`).all(id);
-  const byRole = stmt(db, `SELECT relation, role_id, COUNT(DISTINCT object_id) AS n FROM object_creators
-      WHERE actor_id = ? AND role_id IS NOT NULL GROUP BY relation, role_id ORDER BY n DESC`).all(id);
-  const relationsOf = new Map();
-  for (const r of byRole) relationsOf.set(r.role_id, (relationsOf.get(r.role_id) ?? 0) + 1);
+  const byRole = stmt(db, `SELECT relation, role_id, COUNT(DISTINCT object_id) AS n, COUNT(*) OVER (PARTITION BY role_id) AS relations
+      FROM object_creators WHERE actor_id = ? AND role_id IS NOT NULL GROUP BY relation, role_id ORDER BY n DESC`).all(id);
   for (const { relation, n } of relations) {
     const as = RELATION[relation];
     roles.push({ as, count: n, count_of: 'objects', filter: relations.length === 1 ? { creator: id } : undefined });
     for (const r of byRole.filter((x) => x.relation === relation)) {
       roles.push({
         as, role: termLabel(db, r.role_id, lang), count: r.n, count_of: 'objects',
-        filter: relationsOf.get(r.role_id) === 1 ? { creator: id, creator_role: r.role_id, include_narrower: false } : undefined,
+        filter: r.relations === 1 ? { creator: id, creator_role: r.role_id, include_narrower: false } : undefined,
       });
     }
   }
@@ -302,7 +298,6 @@ function getActor(db, id, want, args, ctx) {
   const a = stmt(db, 'SELECT * FROM actors WHERE id = ?').get(id);
   const lang = args.lang;
   const anonymised = isAnonymised(a);
-  const kind = anonymised ? 'anonymised' : KIND[a.kind] ?? 'actor';
   const [start, end] = a.kind === 'group' ? ['formation', 'dissolution'] : ['birth', 'death'];
   const counts = {
     names: count(db, 'SELECT COUNT(*) AS n FROM actor_names WHERE actor_id = ?', id),
@@ -317,10 +312,14 @@ function getActor(db, id, want, args, ctx) {
   const objects = want.has('objects') ? actorObjects(db, id) : undefined;
   counts.objects = objects ? objects.length : actorObjectCount(db, id);
   const roles = actorRoles(db, id, lang);
-  const parts = roles.filter((r) => LITERATURE_KINDS.includes(r.as)).map((r) => r.as);
+  let kind = KIND[a.kind] ?? 'actor';
   let note;
-  if (anonymised) note = 'SKKG\'s anonymisation: it stands for persons SKKG does not name, often several. Never try to identify them.';
-  else if (a.kind?.endsWith('stub')) {
+  if (anonymised) {
+    kind = 'anonymised';
+    note = 'SKKG\'s anonymisation: it stands for persons SKKG does not name, often several. Never try to identify them.';
+  } else if (a.kind === 'stub') {
+    const parts = roles.filter((r) => LITERATURE_KINDS.includes(r.as)).map((r) => r.as);
+    kind = STUB_KINDS.find((k) => parts.includes(k)) ?? 'actor';
     note = parts.length ? `SKKG records only the name of this ${parts.join(' and ')}, from its literature.` : 'SKKG records only the name of this actor.';
   }
   const out = {

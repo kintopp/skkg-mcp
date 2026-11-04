@@ -226,6 +226,7 @@ CREATE INDEX ix_nat_actor ON actor_nationalities(actor_id);
 CREATE INDEX ix_events_actor ON actor_events(actor_id);
 CREATE INDEX ix_ext_actor ON actor_external(actor_id);
 CREATE INDEX ix_links_actor ON actor_links(actor_id);
+CREATE INDEX ix_gnd_actor ON actor_gnd(actor_id);
 CREATE INDEX ix_rel_subject ON actor_relations(subject_id);
 CREATE INDEX ix_rel_target2 ON actor_relations(target_id);
 CREATE INDEX ix_mm_holder ON multimedia(right_holder_id);
@@ -470,7 +471,7 @@ def load_actors(src, db, used):
                 labels[a] = lab
     for a, lab in q("person", "SELECT ?a ?l WHERE { ?a a skkg:Actor ; skos:prefLabel ?l }"):
         labels[a] = lab
-    # Actors with only a label; load_literature sets the kind from their part in literature.
+    # Actors with only a label; skkg_get_record names them by their part in literature.
     for a in labels:
         kinds.setdefault(a, "stub")
     kinds[ANON_ACTOR] = "anonymous"
@@ -1098,26 +1099,22 @@ def load_literature(src, db, used):
         ?pub crm:P9_consists_of ?part . ?part crm:P14_carried_out_by ?a .
         OPTIONAL {{ ?part crm:P2_has_type ?r FILTER(STRSTARTS(STR(?r), 'https://data.skkg.ch/')) }} }}"""):
         kind = "editor" if part.endswith("/editing") else "publisher" if part.endswith("/publishing") else "author"
-        actors.append([l, a, kind, role])
+        actors.append((l, a, kind, role))
         used.add(role)
     # The dump does not order the authors; the publication's label names them in citation order.
     names = dict(db.execute("SELECT id, label FROM actors"))
-    by_lit = defaultdict(list)
-    for row in actors:
-        by_lit[row[0], row[2]].append(row)
-    for (l, _), rows in by_lit.items():
+    by_part = defaultdict(list)
+    for r in actors:
+        by_part[r[0], r[2]].append(r)
+    ordered, unmatched = [], 0
+    for (l, _), rs in by_part.items():
         label = lit.get(l, {}).get("label") or ""
-
-        def pos(r):
-            i = label.find(names.get(r[1]) or "\0")
-            return (i if i >= 0 else len(label), r[1])
-        for i, r in enumerate(sorted(rows, key=pos)):
-            r.append(i)
-    db.executemany("INSERT INTO literature_actors VALUES (?,?,?,?,?)", actors)
-    # An actor known only from literature is a stub of its part there; publisher wins over editor.
-    db.execute("""UPDATE actors SET kind = (SELECT CASE WHEN SUM(kind = 'publisher') THEN 'publisher_stub'
-        WHEN SUM(kind = 'editor') THEN 'editor_stub' ELSE 'author_stub' END FROM literature_actors WHERE actor_id = actors.id)
-        WHERE kind = 'stub' AND id IN (SELECT actor_id FROM literature_actors)""")
+        found = [(label.find(names.get(r[1]) or "\0"), r) for r in rs]
+        if len(rs) > 1:
+            unmatched += sum(i < 0 for i, _ in found)
+        found.sort(key=lambda x: (x[0] < 0, x[0], x[1][1]))
+        ordered += [(*r, seq) for seq, (_, r) in enumerate(found)]
+    db.executemany("INSERT INTO literature_actors VALUES (?,?,?,?,?)", ordered)
     rows = [(l, d.get("label"), d.get("title"), d.get("type"), d.get("signature"), d.get("isbn"), d.get("year_label"),
              d.get("year_from"), d.get("year_to"), d.get("place"), d.get("series"), d.get("series_id"), d.get("volume"),
              d.get("edition"), d.get("pages"), d.get("citation"), d.get("language"),
@@ -1162,7 +1159,7 @@ def load_literature(src, db, used):
             links.append((l, t, None))
     db.executemany("INSERT INTO literature_links VALUES (?,?,?)", links)
     used.update(r[2] for r in links)
-    return len(rows)
+    return {"publications": len(rows), "authors_not_in_label": unmatched}
 
 
 def load_exhibitions(src, db, used):
@@ -1500,7 +1497,7 @@ def main():
     step("actors", load_actors, src, db, used)
     step("objects", load_objects, src, db, used)
     step("multimedia", load_multimedia, src, db, used)
-    step("literature", load_literature, src, db, used)
+    lit = step("literature", load_literature, src, db, used)
     step("exhibitions", load_exhibitions, src, db, used)
     step("object groups", load_groups, src, db)
     step("provenance", load_provenance, src, db, used)
@@ -1544,6 +1541,7 @@ def main():
     report = {"ok": ok, "meta": info, "seconds": round(time.time() - start), "steps": steps, "counts": counts,
               "privacy_checks": [{"check": c, "ok": k, "detail": d} for c, k, d in checks],
               "count_drops": drops, "object_terms_without_term": unknown_terms,
+              "authors_not_in_label": lit["authors_not_in_label"],
               "size_bytes": tmp.stat().st_size, "unloaded_edges": edges, "query_timings": src.timings}
     Path(str(out) + ".report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1))
     Path(str(out) + ".report.md").write_text(render_report(report))
@@ -1568,6 +1566,8 @@ def render_report(r):
     lines += [f"| {t} | {n:,} |" for t, n in r["counts"].items()]
     lines += ["", "## Count drops over 5%", ""] + ([f"- {d['table']}: {d['previous']:,} → {d['now']:,}" for d in r["count_drops"]] or ["None, or no previous build."])
     lines += ["", f"Object terms without a term record: {r['object_terms_without_term']}.", "",
+              f"Authors of publications with several authors whose name is not in the publication's label, "
+              f"so their order is a guess: {r['authors_not_in_label']}.", "",
               "## Census edges not read by the build", "",
               "Edges of the shape census whose predicate no build query reads for that record type. "
               "New fields in a later dump appear here.", "", "| Root | Shape | Predicate | Subjects |", "|---|---|---|---:|"]

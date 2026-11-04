@@ -1,7 +1,7 @@
 // Shared test utilities.
 
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -82,10 +82,16 @@ export async function callError(client, name, args) {
 }
 
 // A throwaway database file with `meta` and the given tables, each created with an
-// `id` column plus any extra columns. Returns { path, db, cleanup }.
-export function makeTestDb({ meta = { schema_version: '3', data_as_of: '2026-10-28' }, tables = {} } = {}) {
+// `id` column plus any extra columns, or a writable copy of the database at `from`.
+// Returns { path, db, cleanup }.
+export function makeTestDb({ meta = { schema_version: '3', data_as_of: '2026-10-28' }, tables = {}, from } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'skkg-mcp-test-'));
   const path = join(dir, 'test.sqlite');
+  if (from) {
+    copyFileSync(from, path);
+    const db = new DatabaseSync(path);
+    return { path, db, cleanup: () => { if (db.isOpen) db.close(); rmSync(dir, { recursive: true, force: true }); } };
+  }
   const db = new DatabaseSync(path);
   db.exec('CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)');
   for (const [k, v] of Object.entries(meta)) db.prepare('INSERT INTO meta VALUES (?, ?)').run(k, v);
