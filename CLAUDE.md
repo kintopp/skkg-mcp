@@ -69,7 +69,8 @@ Summarized in `notes/02-open-data-policy-and-terms.md`. Metadata is free to reus
 - Every tool lives in `src/tools/<name>.js`, is registered in `src/server.js`, and is listed in `REQUIRED_PROPS` in `test/smoke.test.js`.
 - Resolve every `id` parameter with `resolveId` (`src/lib/ids.js`). A bare number can be an object id and another object's inventory number (object/2432 has inventory number 2232); the resolver refuses that case instead of guessing.
 - Privacy and rights rules are enforced by the database build, not here. Never add a raw SQL or SPARQL tool.
-- Test rules are in `test/CLAUDE.md` (adapted from the sibling servers). Never delete or weaken a failing test.
+- Code rules are in `src/CLAUDE.md`, test rules in `test/CLAUDE.md` (adapted from the sibling servers). Never delete or weaken a failing test.
+- Log every defect a review confirms in the ledger of `notes/12-defect-history.md`, with its category and the rule that covers it.
 
 ## Common errors
 
