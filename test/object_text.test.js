@@ -3,6 +3,8 @@
 //   claims firm authorship, or the creator's id is missing
 // - a period with SKKG's statement loses its certainty, holding kind, or price when the
 //   statement does not state them
+// - a field is dropped because the statement seems to hold it: a date that matches an owner's
+//   life dates, a place that is part of a name
 // - a range with only a start date reads as a single date
 // - a single year of a production date reads as an open range
 
@@ -46,6 +48,16 @@ test('a period keeps the certainty, holding kind, and price its statement leaves
   }, ['provenance']);
   const line = lineWith(text, 'provenance/p1');
   for (const s of ['unsicher', 'Kommission', 'CHF 500', 'person/3']) assert.ok(line.includes(s), `${s} in: ${line}`);
+});
+
+test('a period keeps its date and place when the statement only seems to hold them', () => {
+  const text = render({
+    provenance: {
+      periods: [{ id: 'provenance/p2', statement: 'gesichert 1918 Galerie Bernhard (1870–1950)', date: '1950', place: 'Bern' }],
+    },
+  }, ['provenance']);
+  const line = lineWith(text, 'provenance/p2');
+  assert.ok(line.includes(' · 1950 · ') && line.includes(' · Bern · '), line);
 });
 
 test('a range with only a start is open; a lone production year stays a year', () => {

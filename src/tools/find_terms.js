@@ -320,7 +320,7 @@ export function findTerms(db, meta, args) {
     if (args.id === undefined) result.results ??= [];
     return result;
   };
-  return fitResult({ rows, budget: RESULT_CHAR_LIMIT, build, render: renderText });
+  return fitResult({ rows, budget: RESULT_CHAR_LIMIT, build, render: renderText, noun: 'terms' });
 }
 
 function termLine(t) {
@@ -332,15 +332,13 @@ function termLine(t) {
     .filter(Boolean).join(' · ');
 }
 
-const termItem = (t, n) => `${n}. ${termLine(t)}`;
-
 const showing = (s) => (s.returned && s.total > s.returned ? `, showing ${s.offset + 1}–${s.offset + s.returned}` : '');
 
 function renderText(s) {
   const lines = s.term
     ? [termLine(s.term), s.total && `${s.total} narrower terms${showing(s)}:`]
     : [`${s.total} terms${showing(s)}.`];
-  (s.term ? s.narrower : s.results)?.forEach((t, i) => lines.push(termItem(t, s.offset + i + 1)));
+  (s.term ? s.narrower : s.results)?.forEach((t, i) => lines.push(`${s.offset + i + 1}. ${termLine(t)}`));
   if (s.has_more) lines.push(`More: offset ${s.next_offset}.`);
   for (const w of s.warnings ?? []) lines.push(`Warning: ${w}`);
   if (s.data_as_of) lines.push(`Data as of ${s.data_as_of}.`);

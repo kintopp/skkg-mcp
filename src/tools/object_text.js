@@ -56,11 +56,11 @@ function acquisition(a) {
 function periodLines(p, i) {
   const date = p.date ?? span(p.date_from, p.date_to) ??
     join([p.begin && join([p.begin.qualifier, point(p.begin.from, p.begin.to)], ' '), p.end && join([p.end.qualifier, point(p.end.from, p.end.to)], ' ')], ' to ');
-  // SKKG's statement often repeats some of the fields; a field it already holds is not repeated.
-  const missing = (v) => (v && !p.statement?.includes(v) ? v : undefined);
-  const head = [p.statement, missing(date), p.owner && `owner ${actor(p.owner)}`, missing(p.owner_type),
-    missing(join([p.transaction?.type, p.transaction?.kind], ' ')), missing(p.place), p.price && `price ${priceText(p.price)}`,
-    missing(p.certainty), missing(p.holding_kind), missing(p.status)];
+  // Every field is shown even when SKKG's statement seems to hold it: a substring test
+  // cannot tell a period's date from an owner's life dates, or "Bern" from "Galerie Bernhard".
+  const head = [p.statement, date, p.owner && `owner ${actor(p.owner)}`, p.owner_type,
+    join([p.transaction?.type, p.transaction?.kind], ' '), p.place, p.price && `price ${priceText(p.price)}`,
+    p.certainty, p.holding_kind, p.status];
   return [
     `${i + 1}. ${join([...head, p.id], ' · ')}`,
     p.date_note && `   Date: ${p.date_note}`,

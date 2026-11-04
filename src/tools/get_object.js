@@ -394,7 +394,8 @@ export function getObject(db, meta, args) {
 }
 
 // The per-section caps keep results far below the ceiling; this guards a lowered ceiling
-// by cutting the lists, most dispensable first. Provenance periods are never cut:
+// by cutting the lists, most dispensable first: a list is cut while the later ones are whole,
+// so it yields its room before they do. Provenance periods are never cut:
 // gaps and computed_previous_owner refer to neighbouring periods, and a chain is short.
 const CUTTABLE = [['literature'], ['images'], ['exhibitions'], ['texts'], ['related', 'parts'], ['related', 'references'],
   ['physical', 'parts']];
@@ -411,7 +412,6 @@ function fitCeiling(result, totals) {
     if (!Array.isArray(list) || list.length < 2) continue;
     const what = path.join('.');
     const warnings = result.warnings ?? [];
-    // Sets the list to its first k items, with the warning that reports the cut.
     const cut = (k) => {
       holder[key] = list.slice(0, k);
       result.warnings = [...warnings,

@@ -21,20 +21,29 @@ export function longestPrefix(n, fits) {
   return lo;
 }
 
+const tooLarge = (budget, what) => new ToolError(`The result is too large for the result size limit (${budget} characters) ${what}.`,
+  'Ask for fewer rows (`limit`, `top`, `breakdown_top`), or narrow a name filter to one actor id: the matched actors and ' +
+  'their warnings are part of the result.');
+
 /**
  * Builds the result for `rows` and renders its text. When the two together exceed `budget`,
- * keeps the longest prefix of `rows` that fits, or refuses when not even one row fits.
- * `build` sets the list and every field that depends on its length (returned, has_more,
- * next_offset, a cut warning).
+ * keeps the longest prefix of `rows` that fits, with a warning that names the cut, or refuses
+ * when not even one row fits. `build` sets the list and every field that depends on its length
+ * (returned, has_more, next_offset); its size must not shrink as rows are added, or the search
+ * for the longest prefix can stop short.
  */
-export function fitResult({ rows, budget, build, render }) {
-  const at = (k) => sent(build(k === rows.length ? rows : rows.slice(0, k)), render);
+export function fitResult({ rows, budget, build, render, noun }) {
+  const at = (k) => {
+    if (k === rows.length) return sent(build(rows), render);
+    const s = build(rows.slice(0, k));
+    s.warnings = [...(s.warnings ?? []),
+      `Cut to ${k} ${noun} to stay within the result size limit; page on with offset ${s.next_offset}.`];
+    return sent(s, render);
+  };
   const full = at(rows.length);
   if (full.size <= budget) return full;
+  if (!rows.length) throw tooLarge(budget, 'with no rows: its filters and warnings alone exceed it');
   const k = longestPrefix(rows.length - 1, (n) => at(n).size <= budget);
-  if (k === 0) {
-    throw new ToolError(`The result is too large for the result size limit (${budget} characters) even with one row.`,
-      'Ask for fewer rows (`limit`, `top`, `breakdown_top`) or fewer filters, whose names and warnings are part of the result.');
-  }
+  if (k === 0) throw tooLarge(budget, 'even with one row');
   return at(k);
 }

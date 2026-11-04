@@ -256,9 +256,6 @@ export function collectionStats(db, meta, args) {
 
   const build = (fitted) => {
     const hasMore = args.offset + fitted.length < sorted.length;
-    const cut = fitted.length < shown.length
-      ? [`Cut to ${fitted.length} buckets to stay within the result size; page on with offset ${args.offset + fitted.length}.`]
-      : [];
     const out = prune({
       dimension: args.dimension,
       breakdown: args.breakdown,
@@ -273,13 +270,13 @@ export function collectionStats(db, meta, args) {
       order,
       buckets: fitted,
       applied_filters: q.applied,
-      warnings: [...cut, ...clash(fitted), ...warnings],
+      warnings: [...clash(fitted), ...warnings],
       data_as_of: meta.data_as_of,
     });
     out.buckets ??= [];
     return out;
   };
-  return fitResult({ rows: shown, budget: RESULT_CHAR_LIMIT, build, render: renderText });
+  return fitResult({ rows: shown, budget: RESULT_CHAR_LIMIT, build, render: renderText, noun: 'buckets' });
 }
 
 function bucketText(b) {

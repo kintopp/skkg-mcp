@@ -126,6 +126,7 @@ export function searchObjects(db, meta, args) {
     budget: RESULT_CHAR_LIMIT,
     build,
     render: renderText,
+    noun: 'objects',
   });
 }
 
