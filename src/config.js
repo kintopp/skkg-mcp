@@ -42,6 +42,10 @@ export const WITHHELD_FACETS = Object.freeze(['location']);
 // Display languages of vocabulary labels (D6); German is the fallback.
 export const LANGS = Object.freeze(['de', 'en', 'fr']);
 
+// SKKG_CHANNEL_PROBE=1 registers skkg_channel_probe, which shows which result channel a host
+// passes to the model (notes/05, "Which channel reaches the model"). Off in normal use.
+export const CHANNEL_PROBE_ENV = 'SKKG_CHANNEL_PROBE';
+
 export const DATA_BASE = 'https://data.skkg.ch/';
 export const WEBSITE_OBJECT_BASE = 'https://digital.skkg.ch/de/intro/';
 export const IIIF_IMAGE_BASE = 'https://iiif.digital.skkg.ch/iiif/3/';

@@ -61,6 +61,7 @@ Summarized in `notes/02-open-data-policy-and-terms.md`. Metadata is free to reus
 - Every tool returns `content[{type:'text'}]` and `structuredContent` from one structured object. Errors are `isError: true` results without `structuredContent`, via `withTool` (`src/lib/tool.js`) and `ToolError`.
 - Hosts differ in which channel they give the model (`notes/05`, "Which channel reaches the model"), so both must stand alone. `structuredContent` is complete: every warning, paging field and note is a field there. The text is a compact rendering of the same result, never JSON, and it keeps the ids, both rights, the warnings, paging, and every section the caller asked for.
 - The size guard counts both channels together: cut lists with `fitResult` and `sentCost` (`src/lib/fit.js`), which price each item by its JSON and its text line.
+- `skkg_channel_probe` is registered only with `SKKG_CHANNEL_PROBE=1`, so it is not in `REQUIRED_PROPS`; `test/channel_probe.test.js` checks it instead.
 - Input schemas are `.strict()` and `$ref`-free; output schemas are `$ref`-free. Don't share one zod instance across fields.
 - The first sentence of a tool description is at most 79 characters. Tool `title` equals its name. Never set a human-readable `serverInfo.title`.
 - stdout is JSON-RPC only; log with `console.error`.

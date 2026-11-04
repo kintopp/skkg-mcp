@@ -3,11 +3,12 @@
 // Shared state (the database handle) lives at module scope in src/db.js.
 
 import { McpServer } from '@modelcontextprotocol/server';
-import { SERVER_NAME, SERVER_VERSION, SERVER_INSTRUCTIONS, CACHE_HINTS } from './config.js';
+import { SERVER_NAME, SERVER_VERSION, SERVER_INSTRUCTIONS, CACHE_HINTS, CHANNEL_PROBE_ENV } from './config.js';
 import { registerSearchObjectsTool } from './tools/search_objects.js';
 import { registerGetObjectTool } from './tools/get_object.js';
 import { registerFindTermsTool } from './tools/find_terms.js';
 import { registerCollectionStatsTool } from './tools/collection_stats.js';
+import { registerChannelProbeTool } from './tools/channel_probe.js';
 
 export function createServer() {
   // `listChanged` must be an explicit false: the SDK fills an absent value with `true`,
@@ -24,5 +25,6 @@ export function createServer() {
   registerGetObjectTool(server);
   registerFindTermsTool(server);
   registerCollectionStatsTool(server);
+  if (process.env[CHANNEL_PROBE_ENV] === '1') registerChannelProbeTool(server);
   return server;
 }
