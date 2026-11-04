@@ -24,7 +24,7 @@ const SECTIONS = ['production', 'physical', 'texts', 'acquisition', 'provenance'
 const description =
   'Get one SKKG object by id or inventory number, with the sections you ask for. ' +
   'The summary and the rights block are always included. Sections: production (creators, techniques, ' +
-  'dating and its basis), physical (materials, parts with dimensions, inscriptions, condition, location), ' +
+  'dating and its basis), physical (materials, parts with dimensions, inscriptions, condition), ' +
   'texts (SKKG\'s descriptions), acquisition (how, when, from whom and for how much SKKG acquired it), ' +
   'provenance (the ownership chain before SKKG, where one is recorded), exhibitions, literature, ' +
   'related (parent, parts, references, groups), images (each photo with its rights and IIIF service), or all. ' +
@@ -110,7 +110,6 @@ export const outputSchema = z.object({
     })).optional(),
     inscriptions: z.array(z.object({ text: str(), types: z.array(z.string()).optional(), translation: str(), note: str() })).optional(),
     condition: z.array(z.object({ conditions: z.array(z.string()).optional(), note: str(), date: str() })).optional(),
-    location: z.array(z.string()).optional(),
   }).optional(),
   texts: z.array(z.object({ title: str(), text: str(), type: str(), source: str() })).optional(),
   acquisition: z.object({
@@ -228,7 +227,6 @@ function physical(db, o, lang, ctx) {
       .all(o.id).map((i) => ({ text: i.text, types: termListLabels(db, i.type_ids, lang), translation: i.translation, note: i.note })),
     condition: stmt(db, 'SELECT condition_ids, note, date FROM object_conditions WHERE object_id = ?').all(o.id)
       .map((c) => ({ conditions: termListLabels(db, c.condition_ids, lang), note: c.note, date: c.date })),
-    location: objectFacetLabels(db, o.id, 'location', lang),
   };
 }
 

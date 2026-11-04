@@ -24,6 +24,11 @@ export const MAX_QUERY_LEN = 500;
 export const SECTION_LIMIT = 50;
 // More actors than this for one name filter is refused rather than OR-ed together.
 export const MAX_NAME_MATCHES = 25;
+// Vocabularies the server never returns. SKKG's API and website publish no object's current
+// location, and its export replaces storage positions with "Depot" (notes/08). The database
+// keeps the locations on purpose: this switch withholds them until SKKG says whether they
+// may be published. An exception to "the build enforces the rules", decided 4 November 2026.
+export const WITHHELD_FACETS = Object.freeze(['location']);
 // Display languages of vocabulary labels (D6); German is the fallback.
 export const LANGS = Object.freeze(['de', 'en', 'fr']);
 

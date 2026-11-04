@@ -77,6 +77,11 @@ const MUTATIONS = [
   ["src/tools/find_terms.js", "s.returned && s.total > s.returned ?", "s.total > s.returned ?", "find_terms past-end range"],
   ["src/tools/find_terms.js", "    .filter(Boolean).join(' · ');", "    .join(' · ');", "find_terms empty text segment"],
   ["src/tools/find_terms.js", "  country: 'countries, e.g. nationalities of persons',\n", "", "find_terms vocabulary list drift"],
+  ["src/tools/find_terms.js", "WHERE terms_fts MATCH ? AND ${SHOWN}${scoped", "WHERE terms_fts MATCH ?${scoped", "find_terms search withholds locations"],
+  ["src/tools/find_terms.js", "    if (WITHHELD_FACETS.includes(t.facet)) {\n      throw", "    if (false) {\n      throw", "find_terms id withholds locations"],
+  ["src/tools/object_filters.js", "if (!t || WITHHELD_FACETS.includes(t.facet)) throw", "if (!t) throw", "filter id withholds locations"],
+  ["src/tools/get_object.js", "      .map((c) => ({ conditions: termListLabels(db, c.condition_ids, lang), note: c.note, date: c.date })),\n", "      .map((c) => ({ conditions: termListLabels(db, c.condition_ids, lang), note: c.note, date: c.date })),\n    location: objectFacetLabels(db, o.id, 'location', lang),\n", "physical withholds location"],
+  ["src/config.js", "export const WITHHELD_FACETS = Object.freeze(['location']);", "export const WITHHELD_FACETS = Object.freeze([]);", "withheld vocabularies"],
 ];
 
 // Restore the mutated file if the run is interrupted.

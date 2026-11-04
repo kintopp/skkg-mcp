@@ -9,6 +9,7 @@
 // - images include multimedia without a published IIIF image, or the primary is not first
 // - a long image list is returned whole, or cut without a warning
 // - a price without a currency comes back without saying the currency is missing
+// - the physical section returns the current location, which SKKG's API and website do not publish
 // - results violate the output schema
 
 import { test } from 'node:test';
@@ -48,6 +49,14 @@ test('skkg_get_object against the fixture database', { skip: FIXTURE_DB.skip }, 
     await t.test('a provenance id is refused with the tool to use', async () => {
       const text = await callError(client, NAME, { id: 'provenance/a674fc16-e3cd-4be5-896c-a52c7cb4c963' });
       assert.match(text, /skkg_get_record/);
+    });
+
+    await t.test('the physical section has no current location', async () => {
+      // object/1014 has a location ("Depot") in the partial dump.
+      const r = await get({ id: 'object/1014', include: ['physical'] });
+      assert.ok(r.physical);
+      assert.equal(r.physical.location, undefined);
+      assert.doesNotMatch(JSON.stringify(r.physical), /"Depot"/);
     });
 
     await t.test('only the requested sections come back, and "all" brings every one', async () => {

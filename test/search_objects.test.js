@@ -21,6 +21,8 @@
 // - the date range matches by containment, not overlap, so a work of 1907 misses 1900–1910
 // - paging repeats or skips a record, or has_more is true on the last page
 // - a photo without a recorded licence comes back without image_license, read as unrestricted
+// - a current location is accepted as a filter, by name or as a term id of another filter,
+//   although SKKG's API and website publish none (notes/08)
 // - results violate the output schema
 
 import { test } from 'node:test';
@@ -63,6 +65,13 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
     await t.test('an unknown label is refused with German suggestions', async () => {
       assert.match(await callError(client, NAME, { material: 'wood' }), /no material term is labelled "wood".*German/);
       assert.match(await callError(client, NAME, { material: 'Hol' }), /Did you mean "Holz"/);
+    });
+
+    await t.test('current locations are no filter, by name or by term id', async () => {
+      await callError(client, NAME, { location: 'Depot' });
+      const text = await callError(client, NAME, { object_type: 'type/20042/182287' });
+      assert.match(text, /no term "type\/20042\/182287"/);
+      assert.doesNotMatch(text, /Restaurierungsregal|location/);
     });
 
     await t.test('a term id of another vocabulary is refused', async () => {

@@ -21,6 +21,7 @@
 // - ranking mixes provenance-period counts with object counts, so "most used" disagrees with object_count
 // - an offset past the end prints an impossible range and gives no hint, or a term without
 //   counts renders an empty segment
+// - a current location is returned by search, listing, or id, although SKKG publishes none
 // - a vocabulary named by the build is missing from `vocabulary`, or one is offered that the build no longer has
 // - results violate the output schema
 
@@ -100,9 +101,14 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
       assert.doesNotMatch(w, /translate/);
     });
 
-    await t.test('used terms come before unused ones', async () => {
-      const r = await find({ query: 'a', limit: 5 });
-      for (const x of r.results) assert.ok((x.object_count_with_narrower ?? x.object_count ?? x.record_count) > 0, JSON.stringify(x));
+    await t.test('used terms come before unused ones, even before an unused exact match', async () => {
+      const use = (x) => x.object_count_with_narrower ?? x.object_count ?? x.record_count ?? 0;
+      // "Umhang" is the exact label of an unused term and the start of a used one.
+      const r = await find({ query: 'Umhang', limit: 50 });
+      assert.ok(r.results.some((x) => x.label === 'Umhang' && use(x) === 0), JSON.stringify(r.results));
+      const used = r.results.map((x) => use(x) > 0);
+      assert.ok(used[0], JSON.stringify(r.results[0]));
+      assert.deepEqual(used, [...used].sort((a, b) => b - a));
     });
 
     await t.test('terms of other records carry a record count instead of an object count', async () => {
@@ -168,11 +174,21 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
       const offered = tools.find((x) => x.name === NAME).inputSchema.properties.vocabulary.enum.filter((v) => v !== 'all');
       const db = new DatabaseSync(FIXTURE_DB.path, { readOnly: true });
       try {
-        const built = db.prepare('SELECT DISTINCT facet FROM terms WHERE facet IS NOT NULL').all().map((r) => r.facet);
+        // location is withheld: SKKG's API and website publish no current locations (notes/08).
+        const built = db.prepare("SELECT DISTINCT facet FROM terms WHERE facet IS NOT NULL AND facet != 'location'").all().map((r) => r.facet);
         assert.deepEqual([...offered].sort(), built.sort());
       } finally {
         db.close();
       }
+    });
+
+    await t.test('current locations are never returned', async () => {
+      const shelf = await find({ query: 'Restaurierungsregal' });
+      assert.equal(shelf.total, 0);
+      const depot = await find({ query: 'Depot', limit: 50 });
+      assert.ok(depot.results.every((x) => x.vocabulary !== 'location'), JSON.stringify(depot.results));
+      assert.match(await callError(client, NAME, { id: 'type/20042/182287' }), /location term, which this server does not return/);
+      await callError(client, NAME, { vocabulary: 'location' });
     });
 
     await t.test('the description states the order the ranking follows', async () => {

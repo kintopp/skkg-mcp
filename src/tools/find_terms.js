@@ -14,13 +14,13 @@ import { fitList } from '../lib/fit.js';
 import { FIELD_OF_FACET } from './object_filters.js';
 import { langIn, str, int, termOut as termRefOut } from './schemas.js';
 import {
-  READ_ONLY_ANNOTATIONS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT,
+  WITHHELD_FACETS, READ_ONLY_ANNOTATIONS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT,
 } from '../config.js';
 
 export const FIND_TERMS_TOOL_NAME = 'skkg_find_terms';
 
-// The named vocabularies (`terms.facet`, set by FACETS in build_db.py). Terms of SKKG's
-// other schemes are found with `all` and carry their SKKG scheme name.
+// The named vocabularies (`terms.facet`, set by FACETS in build_db.py), less WITHHELD_FACETS.
+// Terms of SKKG's other schemes are found with `all` and carry their SKKG scheme name.
 const VOCABULARIES = {
   object_type: 'object types, hierarchical ("Malerei" > "Ölmalerei")',
   material: 'materials, hierarchical',
@@ -29,7 +29,6 @@ const VOCABULARIES = {
   production_role: 'roles of creators ("Künstler:in", "Verlag")',
   attribution: 'attribution qualifiers ("zugeschrieben", "nach")',
   acquisition_type: 'how SKKG acquired an object',
-  location: 'current locations, hierarchical; shelf labels are only meaningful with their path',
   object_copyright: 'copyright status of objects',
   image_license: 'photo licences',
   provenance_status: 'provenance research status',
@@ -205,6 +204,8 @@ function prefixQuery(query) {
     || m === 'OR' || m.endsWith('*') ? m : `${m}*`));
 }
 
+// Terms the tool may return: none of WITHHELD_FACETS.
+const SHOWN = `(t.facet IS NULL OR t.facet NOT IN (${WITHHELD_FACETS.map((f) => `'${f}'`).join(', ')}))`;
 const CANDIDATE = 't.id, t.facet, t.object_count, COALESCE(t.label_de, t.label) AS sort_label';
 // term id → objects it reaches with its narrower terms; an upper bound (an object with two
 // terms of one subtree counts twice), for order only. One query per database.
@@ -231,13 +232,13 @@ function search(db, args) {
   if (!q) throw new ToolError(`\`query\` "${args.query}" has no searchable word.`, 'Pass a German label, e.g. "Radierung".');
   const scoped = args.vocabulary !== 'all';
   const rows = stmt(db, `SELECT ${CANDIDATE} FROM terms_fts f JOIN terms t ON t.id = f.term_id
-      WHERE terms_fts MATCH ?${scoped ? ' AND t.facet = ?' : ''}`).all(...(scoped ? [q, args.vocabulary] : [q]));
+      WHERE terms_fts MATCH ? AND ${SHOWN}${scoped ? ' AND t.facet = ?' : ''}`).all(...(scoped ? [q, args.vocabulary] : [q]));
   const ids = rank(db, rows, new Set(termsByLabel(db, args.query.replace(/"/g, '')).map((e) => e.id)));
 
   const warnings = [];
   if (!rows.length) {
     const elsewhere = scoped
-      ? [...new Set(stmt(db, 'SELECT t.facet FROM terms_fts f JOIN terms t ON t.id = f.term_id WHERE terms_fts MATCH ? AND t.facet IS NOT NULL')
+      ? [...new Set(stmt(db, `SELECT t.facet FROM terms_fts f JOIN terms t ON t.id = f.term_id WHERE terms_fts MATCH ? AND t.facet IS NOT NULL AND ${SHOWN}`)
         .all(q).map((r) => r.facet))]
       : [];
     warnings.push(elsewhere.length
@@ -282,6 +283,10 @@ export function findTerms(db, meta, args) {
   if (args.id !== undefined) {
     const { id } = resolveId(db, args.id, { types: ['type'] });
     const t = getTerm(db, id);
+    if (WITHHELD_FACETS.includes(t.facet)) {
+      throw new ToolError(`"${id}" is a ${t.facet} term, which this server does not return.`,
+        'SKKG\'s API and website publish no current locations of objects.');
+    }
     if (args.vocabulary !== 'all' && t.facet !== args.vocabulary) {
       warnings.push(`"${id}" is a ${t.facet ?? schemeName(db, t.scheme_id)} term, not a ${args.vocabulary} term; returned anyway.`);
     }

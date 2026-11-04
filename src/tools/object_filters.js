@@ -9,7 +9,7 @@ import { ftsQuery } from '../lib/fts.js';
 import { stmt, placeholders } from '../lib/sql.js';
 import { termLabel, actorRef, objectRef, recordLabel } from '../lib/labels.js';
 import { termsByLabel } from '../lib/terms.js';
-import { MAX_NAME_MATCHES } from '../config.js';
+import { MAX_NAME_MATCHES, WITHHELD_FACETS } from '../config.js';
 
 // Term filters: the vocabulary facet, and the SQL that selects objects when the facet is
 // not an object_terms facet. `?` stands for the (expanded) term ids.
@@ -18,7 +18,6 @@ const TERM_FILTERS = {
   material: { facet: 'material' },
   technique: { facet: 'technique' },
   epoch: { facet: 'epoch' },
-  location: { facet: 'location' },
   object_copyright: { facet: 'object_copyright' },
   provenance_status: { facet: 'provenance_status' },
   image_license: { facet: 'image_license', sql: 'o.image_license_id IN (?)' },
@@ -70,7 +69,6 @@ export function objectFilterShape() {
     object_copyright: termField('Copyright status of the object itself: "gemeinfrei" or "Copyright"'),
     has_provenance_chain: z.boolean().optional().describe('Only objects with (true) or without (false) a provenance chain before SKKG'),
     provenance_status: termField('Provenance research status: "klar", "geklärt", or "ungeklärt"'),
-    location: termField('Current location, e.g. "Depot"'),
     exhibition: idField('Exhibition id: only objects shown in it'),
     literature: idField('Literature id: only objects it refers to'),
     part_of: idField('Object id (its parts) or object group id (its members)'),
@@ -96,7 +94,7 @@ export function resolveTerms(db, field, facet, value, narrower) {
   let ids;
   if (v.startsWith('type/')) {
     const t = stmt(db, 'SELECT id, facet FROM terms WHERE id = ?').get(v);
-    if (!t) throw new ToolError(`\`${field}\`: no term "${v}".`, 'Pass a German label instead, or check the id.');
+    if (!t || WITHHELD_FACETS.includes(t.facet)) throw new ToolError(`\`${field}\`: no term "${v}".`, 'Pass a German label instead, or check the id.');
     if (t.facet !== facet) {
       throw new ToolError(`\`${field}\`: "${v}" (${termLabel(db, v) ?? 'unlabelled'}) belongs to the ${t.facet ?? 'other'} vocabulary, not to ${facet}.`,
         otherFilterHint(field, [t.facet], facet));
