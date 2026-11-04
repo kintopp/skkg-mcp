@@ -7,10 +7,12 @@ import { getDatabase, staleWarning } from '../db.js';
 import { scopedFtsQuery } from '../lib/fts.js';
 import { objectRow } from '../lib/objects.js';
 import { prune } from '../lib/prune.js';
+import { fitList } from '../lib/fit.js';
 import { objectFilterShape, hasObjectFilter, compileObjectFilters } from './object_filters.js';
-import { creatorOut, appliedOut, langIn } from './schemas.js';
+import { creatorOut, objectCopyrightOut, appliedOut, langIn, str } from './schemas.js';
+import { creatorsText } from '../lib/objects.js';
 import {
-  READ_ONLY_ANNOTATIONS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, MAX_QUERY_LEN, RESULT_CHAR_CEILING,
+  READ_ONLY_ANNOTATIONS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, MAX_QUERY_LEN, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT,
 } from '../config.js';
 
 export const SEARCH_OBJECTS_TOOL_NAME = 'skkg_search_objects';
@@ -30,9 +32,9 @@ const ORDER = {
   relevance: 'bm25(objects_fts, 0, 5, 3, 1, 1, 10), ' + INVENTORY_ORDER,
   // Numeric inventory numbers in numeric order ("884" before "1000"), then the others as text.
   inventory_number: INVENTORY_ORDER,
-  date_asc: 'COALESCE(o.date_from, o.date_to) IS NULL, COALESCE(o.date_from, o.date_to), ' + INVENTORY_ORDER,
-  date_desc: 'COALESCE(o.date_to, o.date_from) IS NULL, COALESCE(o.date_to, o.date_from) DESC, ' + INVENTORY_ORDER,
-  acquisition_date: '(SELECT date FROM acquisitions a WHERE a.object_id = o.id) IS NULL, (SELECT date FROM acquisitions a WHERE a.object_id = o.id), ' + INVENTORY_ORDER,
+  date_asc: 'COALESCE(o.date_from, o.date_to) NULLS LAST, ' + INVENTORY_ORDER,
+  date_desc: 'COALESCE(o.date_to, o.date_from) DESC NULLS LAST, ' + INVENTORY_ORDER,
+  acquisition_date: '(SELECT date FROM acquisitions a WHERE a.object_id = o.id) NULLS LAST, ' + INVENTORY_ORDER,
 };
 
 const description =
@@ -61,16 +63,16 @@ const inputSchema = z.object({
 const resultOut = z.object({
   id: z.string(),
   type: z.literal('object'),
-  inventory_number: z.string().optional(),
-  title: z.string().optional(),
-  object_type: z.string().optional(),
+  inventory_number: str(),
+  title: str(),
+  object_type: str(),
   creators: z.array(creatorOut()).optional(),
-  date: z.string().optional(),
+  date: str(),
   epoch: z.array(z.string()).optional(),
   has_image: z.boolean(),
-  image_license: z.string().optional().describe('Licence of the primary photo; absent when the object has no image'),
-  object_copyright: z.string().describe('"gemeinfrei", "Copyright", or "not recorded"'),
-  website_url: z.string().optional(),
+  image_license: str().describe('Licence of the primary photo; absent when the object has no image'),
+  object_copyright: objectCopyrightOut(),
+  website_url: str(),
 });
 
 export const outputSchema = z.object({
@@ -114,12 +116,8 @@ export function searchObjects(db, meta, args) {
   const total = db.prepare(`SELECT COUNT(*) AS n FROM ${from} ${whereSql}`).get(...params).n;
   const ids = db.prepare(`SELECT o.id FROM ${from} ${whereSql} ORDER BY ${ORDER[sort]} LIMIT ? OFFSET ?`)
     .all(...params, args.limit, args.offset).map((r) => r.id);
-  let results = ids.map((id) => prune(objectRow(db, id, args.lang)));
-
-  // Rows are small; this only guards a lowered SKKG_RESULT_CHAR_CEILING.
-  while (results.length > 1 && JSON.stringify(results).length > RESULT_CHAR_CEILING * 0.9) {
-    results = results.slice(0, Math.ceil(results.length / 2));
-  }
+  // Rows are small; the fit only guards a lowered SKKG_RESULT_CHAR_CEILING.
+  const results = fitList(ids.map((id) => prune(objectRow(db, id, args.lang))), RESULT_CHAR_LIMIT);
 
   if (total === 0 && args.query) {
     warnings.push(`No object matches "${args.query}"${where.length > 1 ? ' with these filters' : ''}. ` +
@@ -151,9 +149,7 @@ function renderText(s) {
   const head = `${s.total} objects` + (s.total > s.returned ? `, showing ${s.offset + 1}–${s.offset + s.returned}` : '') +
     ` (sorted by ${s.sort}).`;
   const lines = (s.results ?? []).map((r, i) => {
-    const creators = (r.creators ?? []).map((c) => [c.name, c.role && `(${c.role}${c.attribution ? `, ${c.attribution}` : ''})`]
-      .filter(Boolean).join(' ')).join('; ');
-    const what = [r.object_type, creators, r.date].filter(Boolean).join(' · ');
+    const what = [r.object_type, creatorsText(r.creators), r.date].filter(Boolean).join(' · ');
     const rights = [r.has_image ? `photo: ${r.image_license}` : 'no image', `object: ${r.object_copyright}`].join(', ');
     return `${s.offset + i + 1}. ${r.inventory_number ?? ''} ${r.title ?? '(untitled)'}${what ? ` — ${what}` : ''}\n` +
       `   ${r.id} · ${rights} · ${r.website_url ?? ''}`;

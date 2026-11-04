@@ -18,7 +18,7 @@ test('skkg_get_object keeps results under a lowered size limit', { skip: FIXTURE
   await withClient('get-object-ceiling-test', async (client) => {
     const get = (args) => callOk(client, NAME, args, outputSchema);
 
-    await t.test('a long image list is halved to fit, and the warning gives the real total', async () => {
+    await t.test('a long image list is cut to fit, and the warning gives the real total', async () => {
       // object/4098 has 55 published images.
       const r = await get({ id: 'object/4098', include: ['images'] });
       assert.ok(JSON.stringify(r).length <= LIMIT);

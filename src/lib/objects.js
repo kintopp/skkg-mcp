@@ -2,7 +2,7 @@
 
 import { stmt } from './sql.js';
 import { termLabel, actorRef } from './labels.js';
-import { objectCopyright, NOT_RECORDED } from './rights.js';
+import { objectCopyright, primaryImageLicense } from './rights.js';
 import { websiteUrl } from './ids.js';
 
 const RELATION = { carried_out_by: 'creator', influenced_by: 'influence' };
@@ -17,6 +17,11 @@ export function objectCreators(db, objectId, lang) {
       attribution: termLabel(db, r.attribution_id, lang),
       relation: RELATION[r.relation],
     }));
+}
+
+// "Name (role, attribution); …" for the text output.
+export function creatorsText(creators = []) {
+  return creators.map((c) => `${c.name ?? c.id}${c.role ? ` (${c.role}${c.attribution ? `, ${c.attribution}` : ''})` : ''}`).join('; ');
 }
 
 export function objectFacetLabels(db, objectId, facet, lang) {
@@ -38,7 +43,7 @@ export function objectRow(db, id, lang) {
     date: o.date_label ?? undefined,
     epoch: objectFacetLabels(db, id, 'epoch', lang),
     has_image: o.has_image === 1,
-    image_license: o.has_image ? termLabel(db, o.image_license_id, lang) || NOT_RECORDED : undefined,
+    image_license: primaryImageLicense(db, o, lang),
     object_copyright: objectCopyright(db, id, lang),
     website_url: websiteUrl(id),
   };

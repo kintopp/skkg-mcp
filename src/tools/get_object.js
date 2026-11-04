@@ -10,11 +10,12 @@ import { stmt } from '../lib/sql.js';
 import { prune } from '../lib/prune.js';
 import { termLabel, actorRef, objectRef, termListLabels } from '../lib/labels.js';
 import { objectRights, imageRights, NOT_RECORDED } from '../lib/rights.js';
-import { objectCreators, objectFacetLabels } from '../lib/objects.js';
+import { objectCreators, objectFacetLabels, creatorsText } from '../lib/objects.js';
+import { fitList } from '../lib/fit.js';
 import {
-  actorOut, creatorOut, objectRefOut, objectRightsOut, imageRightsOut, langIn,
+  actorOut, creatorOut, objectRefOut, objectRightsOut, imageRightsOut, langIn, str, int,
 } from './schemas.js';
-import { READ_ONLY_ANNOTATIONS, SECTION_LIMIT, RESULT_CHAR_CEILING } from '../config.js';
+import { READ_ONLY_ANNOTATIONS, SECTION_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT } from '../config.js';
 
 export const GET_OBJECT_TOOL_NAME = 'skkg_get_object';
 
@@ -39,8 +40,6 @@ const inputSchema = z.object({
   lang: langIn(),
 }).strict();
 
-const str = () => z.string().optional();
-const int = () => z.number().int().optional();
 const priceOut = () => z.object({
   value: z.number().optional(),
   currency: str().describe('ISO code, or "not recorded" when the dump gives a value without a currency'),
@@ -50,6 +49,7 @@ const priceOut = () => z.object({
   value_chf: z.number().optional(),
   conversion_rate: z.number().optional(),
 });
+const boundOut = () => z.object({ qualifier: str(), from: str(), to: str() }).optional();
 const periodOut = z.object({
   id: z.string(),
   seq: int(),
@@ -59,8 +59,8 @@ const periodOut = z.object({
   date: str(),
   date_from: str(),
   date_to: str(),
-  begin: z.object({ qualifier: str(), from: str(), to: str() }).optional(),
-  end: z.object({ qualifier: str(), from: str(), to: str() }).optional(),
+  begin: boundOut(),
+  end: boundOut(),
   date_note: str(),
   transaction: z.object({ kind: str(), type: str() }).optional(),
   owner: actorOut().optional(),
@@ -184,14 +184,14 @@ function capped(rows, what, ctx) {
   return rows.slice(0, SECTION_LIMIT);
 }
 
-function summary(db, o, lang) {
+function summary(db, o, lang, creators) {
   return {
     titles: stmt(db, 'SELECT title, short_title, type_id, language_id, note FROM object_titles WHERE object_id = ? ORDER BY seq IS NULL, seq')
       .all(o.id).map((t) => ({
         title: t.title, short_title: t.short_title, type: termLabel(db, t.type_id, lang), language: termLabel(db, t.language_id, lang), note: t.note,
       })),
     object_type: termLabel(db, o.object_type_id, lang),
-    creators: objectCreators(db, o.id, lang),
+    creators,
     date: o.date_label,
     epoch: objectFacetLabels(db, o.id, 'epoch', lang),
     number_of_parts: asStr(o.number_of_parts),
@@ -200,9 +200,9 @@ function summary(db, o, lang) {
   };
 }
 
-function production(db, o, lang) {
+function production(db, o, lang, creators) {
   return {
-    creators: objectCreators(db, o.id, lang),
+    creators,
     techniques: objectFacetLabels(db, o.id, 'technique', lang),
     dates: stmt(db, 'SELECT * FROM object_dates WHERE object_id = ? ORDER BY seq IS NULL, seq').all(o.id).map((d) => ({
       label: d.label, year_from: d.year_from, year_to: d.year_to, epoch: termLabel(db, d.epoch_id, lang),
@@ -360,6 +360,7 @@ export function getObject(db, meta, args) {
   const want = new Set(args.include.includes('all') ? SECTIONS : args.include);
   const warnings = [];
   const ctx = { warnings, totals: {} };
+  const creators = objectCreators(db, o.id, lang);
   const primary = o.primary_multimedia_id && stmt(db, 'SELECT * FROM multimedia WHERE id = ?').get(o.primary_multimedia_id);
 
   const out = {
@@ -369,9 +370,9 @@ export function getObject(db, meta, args) {
     title: o.title ?? o.label,
     website_url: websiteUrl(id),
     manifest_url: o.manifest_url,
-    summary: summary(db, o, lang),
+    summary: summary(db, o, lang, creators),
     rights: { object: objectRights(db, o, lang), primary_image: primary ? imageRights(db, primary, lang) : undefined },
-    production: want.has('production') ? production(db, o, lang) : undefined,
+    production: want.has('production') ? production(db, o, lang, creators) : undefined,
     physical: want.has('physical') ? physical(db, o, lang, ctx) : undefined,
     texts: want.has('texts') ? texts(db, o, lang) : undefined,
     acquisition: want.has('acquisition') ? acquisition(db, o, lang) : undefined,
@@ -388,33 +389,37 @@ export function getObject(db, meta, args) {
   out.data_as_of = meta.data_as_of;
 
   const result = prune(out);
-  // Keys the schema requires even when every value inside was empty.
+  // The schema requires summary even when every value inside was empty.
   result.summary ??= {};
-  result.rights.object ??= { object_copyright: NOT_RECORDED };
   return fitCeiling(result, ctx.totals);
 }
 
 // The per-section caps keep results far below the ceiling; this guards a lowered ceiling
-// by halving the longest lists, most dispensable first. Provenance periods are never cut:
+// by cutting the lists, most dispensable first. Provenance periods are never cut:
 // gaps and computed_previous_owner refer to neighbouring periods, and a chain is short.
 const CUTTABLE = [['literature'], ['images'], ['exhibitions'], ['texts'], ['related', 'parts'], ['related', 'references'],
   ['physical', 'parts']];
 
+// Room left in a list's budget for the warning that reports its cut.
+const WARNING_ROOM = 200;
+
 function fitCeiling(result, totals) {
-  const limit = Math.floor(RESULT_CHAR_CEILING * 0.9);
-  const fits = () => JSON.stringify(result).length <= limit;
+  let size = JSON.stringify(result).length;
   for (const path of CUTTABLE) {
-    if (fits()) break;
+    if (size <= RESULT_CHAR_LIMIT) break;
     const holder = path.length === 1 ? result : result[path[0]];
     const key = path.at(-1);
     const list = holder?.[key];
     if (!Array.isArray(list) || list.length < 2) continue;
-    while (holder[key].length > 1 && !fits()) holder[key] = holder[key].slice(0, Math.ceil(holder[key].length / 2));
+    // The list's JSON is replaced in place, so the rest of the result keeps its size.
+    const rest = size - JSON.stringify(list).length;
+    holder[key] = fitList(list, RESULT_CHAR_LIMIT - rest - WARNING_ROOM);
     const what = path.join('.');
     (result.warnings ??= []).push(`${what}: cut to ${holder[key].length} of ${totals[what] ?? list.length} to fit the result size limit; ask for fewer sections.`);
+    size = JSON.stringify(result).length;
   }
-  if (!fits()) {
-    throw new ToolError(`The result for ${result.id} is too large for the result size limit (${limit} characters) even with its lists cut.`,
+  if (size > RESULT_CHAR_LIMIT) {
+    throw new ToolError(`The result for ${result.id} is too large for the result size limit (${RESULT_CHAR_LIMIT} characters) even with its lists cut.`,
       'Ask for fewer sections in `include`, e.g. one at a time.');
   }
   return result;
@@ -422,7 +427,7 @@ function fitCeiling(result, totals) {
 
 function renderText(s) {
   const sm = s.summary ?? {};
-  const creators = (sm.creators ?? []).map((c) => `${c.name ?? c.id}${c.role ? ` (${c.role}${c.attribution ? `, ${c.attribution}` : ''})` : ''}`).join('; ');
+  const creators = creatorsText(sm.creators);
   const img = s.rights.primary_image;
   const lines = [
     `${s.inventory_number ?? ''} ${s.title ?? '(untitled)'} — ${s.id}`,

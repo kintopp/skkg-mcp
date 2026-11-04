@@ -7,7 +7,7 @@ import { ToolError } from '../lib/errors.js';
 import { resolveId } from '../lib/ids.js';
 import { ftsQuery } from '../lib/fts.js';
 import { stmt, placeholders } from '../lib/sql.js';
-import { termLabel, actorRef, objectRef } from '../lib/labels.js';
+import { termLabel, actorRef, objectRef, recordLabel } from '../lib/labels.js';
 import { MAX_NAME_MATCHES } from '../config.js';
 
 // Term filters: the vocabulary facet, and the SQL that selects objects when the facet is
@@ -27,6 +27,14 @@ const TERM_FILTERS = {
   attribution: { facet: 'attribution', creatorColumn: 'attribution_id' },
 };
 const filterSql = (f) => f.sql ?? `o.id IN (SELECT object_id FROM object_terms WHERE facet = '${f.facet}' AND term_id IN (?))`;
+const ACQUISITION_YEAR = "o.id IN (SELECT object_id FROM acquisitions WHERE date GLOB '[0-9][0-9][0-9][0-9]*' AND CAST(substr(date, 1, 4) AS INTEGER)";
+// The dating overlaps the range: its latest year reaches date_from, its earliest year date_to.
+const YEAR_FILTERS = [
+  ['date_from', 'COALESCE(o.date_to, o.date_from) >= ?'],
+  ['date_to', 'COALESCE(o.date_from, o.date_to) <= ?'],
+  ['acquisition_year_from', `${ACQUISITION_YEAR} >= ?)`],
+  ['acquisition_year_to', `${ACQUISITION_YEAR} <= ?)`],
+];
 // The filter that takes a facet's terms, for errors that point to the right filter.
 const FIELD_OF_FACET = Object.fromEntries(Object.entries(TERM_FILTERS).map(([field, f]) => [f.facet, field]));
 
@@ -178,17 +186,9 @@ export function compileObjectFilters(db, args) {
   const warnings = [];
   const narrower = args.include_narrower !== false;
 
-  for (const [field, f] of Object.entries(TERM_FILTERS)) {
-    if (args[field] === undefined || f.creatorColumn) continue;
-    const { ids, matched } = resolveTerms(db, field, f.facet, args[field], narrower);
-    clauses.push(filterSql(f).replace('(?)', `(${placeholders(ids.length)})`));
-    params.push(...ids);
-    applied[field] = matched;
-  }
-
+  // Conditions on one creator row (object_creators oc), AND-ed inside one EXISTS.
   const creatorParts = [];
   const creatorParams = [];
-  let excluded;
   if (args.creator !== undefined) {
     const { ids, byName } = resolveActors(db, 'creator', args.creator);
     creatorParts.push(`oc.actor_id IN (${placeholders(ids.length)})`);
@@ -196,23 +196,23 @@ export function compileObjectFilters(db, args) {
     applied.creator = ids.map((id) => actorRef(db, id));
     if (byName && ids.length > 1) warnings.push(nameWarning('creator', args.creator, ids.length));
   }
-  for (const field of ['creator_role', 'attribution']) {
+
+  for (const [field, f] of Object.entries(TERM_FILTERS)) {
     if (args[field] === undefined) continue;
-    const { ids, matched } = resolveTerms(db, field, TERM_FILTERS[field].facet, args[field], narrower);
-    creatorParts.push(`oc.${TERM_FILTERS[field].creatorColumn} IN (${placeholders(ids.length)})`);
-    creatorParams.push(...ids);
+    const { ids, matched } = resolveTerms(db, field, f.facet, args[field], narrower);
+    if (f.creatorColumn) {
+      creatorParts.push(`oc.${f.creatorColumn} IN (${placeholders(ids.length)})`);
+      creatorParams.push(...ids);
+    } else {
+      clauses.push(filterSql(f).replace('(?)', `(${placeholders(ids.length)})`));
+      params.push(...ids);
+    }
     applied[field] = matched;
   }
-  if (args.exclude_attributions) {
-    excluded = [];
-    const matched = [];
-    for (const v of args.exclude_attributions) {
-      const r = resolveTerms(db, 'exclude_attributions', 'attribution', v, narrower);
-      excluded.push(...r.ids);
-      matched.push(...r.matched);
-    }
-    applied.exclude_attributions = matched;
-  }
+
+  const exclusions = args.exclude_attributions?.map((v) => resolveTerms(db, 'exclude_attributions', 'attribution', v, narrower));
+  const excluded = exclusions?.flatMap((r) => r.ids);
+  if (exclusions) applied.exclude_attributions = exclusions.flatMap((r) => r.matched);
   // With a creator filter, the exclusion applies to the creator row that matched it: another
   // person's "nach" row, or the same person's row in another role, must not drop the object.
   // Without one, any creator so attributed drops it; a condition on one row would let any
@@ -230,15 +230,12 @@ export function compileObjectFilters(db, args) {
   }
 
   assertRange(args, 'date_from', 'date_to');
-  if (args.date_from !== undefined) {
-    clauses.push('COALESCE(o.date_to, o.date_from) >= ?');
-    params.push(args.date_from);
-    applied.date_from = args.date_from;
-  }
-  if (args.date_to !== undefined) {
-    clauses.push('COALESCE(o.date_from, o.date_to) <= ?');
-    params.push(args.date_to);
-    applied.date_to = args.date_to;
+  assertRange(args, 'acquisition_year_from', 'acquisition_year_to');
+  for (const [field, sql] of YEAR_FILTERS) {
+    if (args[field] === undefined) continue;
+    clauses.push(sql);
+    params.push(args[field]);
+    applied[field] = args[field];
   }
 
   if (args.acquired_from !== undefined) {
@@ -248,18 +245,6 @@ export function compileObjectFilters(db, args) {
     applied.acquired_from = ids.map((id) => actorRef(db, id));
     if (byName && ids.length > 1) warnings.push(nameWarning('acquired_from', args.acquired_from, ids.length));
   }
-  assertRange(args, 'acquisition_year_from', 'acquisition_year_to');
-  if (args.acquisition_year_from !== undefined) {
-    clauses.push("o.id IN (SELECT object_id FROM acquisitions WHERE CAST(substr(date, 1, 4) AS INTEGER) >= ? AND date GLOB '[0-9][0-9][0-9][0-9]*')");
-    params.push(args.acquisition_year_from);
-    applied.acquisition_year_from = args.acquisition_year_from;
-  }
-  if (args.acquisition_year_to !== undefined) {
-    clauses.push("o.id IN (SELECT object_id FROM acquisitions WHERE CAST(substr(date, 1, 4) AS INTEGER) <= ? AND date GLOB '[0-9][0-9][0-9][0-9]*')");
-    params.push(args.acquisition_year_to);
-    applied.acquisition_year_to = args.acquisition_year_to;
-  }
-
   for (const field of ['has_image', 'has_provenance_chain']) {
     if (args[field] === undefined) continue;
     clauses.push(`o.${field} = ?`);
@@ -271,13 +256,13 @@ export function compileObjectFilters(db, args) {
     const { id } = resolveId(db, args.exhibition, { types: ['exhibition'] });
     clauses.push('o.id IN (SELECT object_id FROM exhibition_objects WHERE exhibition_id = ?)');
     params.push(id);
-    applied.exhibition = [{ id, label: stmt(db, 'SELECT label FROM exhibitions WHERE id = ?').get(id)?.label ?? undefined }];
+    applied.exhibition = [{ id, label: recordLabel(db, 'exhibitions', id) }];
   }
   if (args.literature !== undefined) {
     const { id } = resolveId(db, args.literature, { types: ['literature'] });
     clauses.push('o.id IN (SELECT object_id FROM literature_refs WHERE literature_id = ?)');
     params.push(id);
-    applied.literature = [{ id, label: stmt(db, 'SELECT label FROM literature WHERE id = ?').get(id)?.label ?? undefined }];
+    applied.literature = [{ id, label: recordLabel(db, 'literature', id) }];
   }
   if (args.part_of !== undefined) {
     const { id, type } = resolveId(db, args.part_of, { types: ['object', 'objectgroup'] });
@@ -286,7 +271,7 @@ export function compileObjectFilters(db, args) {
       applied.part_of = [{ id, label: objectRef(db, id).title }];
     } else {
       clauses.push('o.id IN (SELECT object_id FROM object_group_members WHERE group_id = ?)');
-      applied.part_of = [{ id, label: stmt(db, 'SELECT label FROM object_groups WHERE id = ?').get(id)?.label ?? undefined }];
+      applied.part_of = [{ id, label: recordLabel(db, 'object_groups', id) }];
     }
     params.push(id);
   }

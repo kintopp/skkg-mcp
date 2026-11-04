@@ -14,6 +14,8 @@ export const SCHEMA_VERSION = 1;
 export const STALE_AFTER_DAYS = 30;
 
 export const RESULT_CHAR_CEILING = posIntEnv('SKKG_RESULT_CHAR_CEILING', 150000, { min: 1000, max: 5_000_000 });
+// What a tool's structured result may use of the ceiling.
+export const RESULT_CHAR_LIMIT = Math.floor(RESULT_CHAR_CEILING * 0.9);
 
 export const SEARCH_DEFAULT_LIMIT = 10;
 export const SEARCH_MAX_LIMIT = 50;

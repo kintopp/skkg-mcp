@@ -4,7 +4,8 @@
 import { z } from 'zod';
 import { LANGS } from '../config.js';
 
-const str = () => z.string().optional();
+export const str = () => z.string().optional();
+export const int = () => z.number().int().optional();
 
 export const termOut = () => z.object({ id: z.string(), label: str() });
 export const actorOut = () => z.object({ id: z.string(), name: str() });
@@ -19,8 +20,10 @@ export const creatorOut = () => z.object({
     .describe('"influence": the object was made after or under the influence of this person'),
 });
 
+export const objectCopyrightOut = () => z.string().describe('"gemeinfrei", "Copyright", or "not recorded"');
+
 export const objectRightsOut = () => z.object({
-  object_copyright: z.string().describe('"gemeinfrei", "Copyright", or "not recorded"'),
+  object_copyright: objectCopyrightOut(),
   credit_line: str(),
   redaction_status: str(),
 });

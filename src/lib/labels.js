@@ -12,10 +12,6 @@ export function termLabel(db, id, lang = 'de') {
   return (lang !== 'de' && t[`label_${lang}`]) || t.label_de || t.label || undefined;
 }
 
-export function termRef(db, id, lang) {
-  return id ? { id, label: termLabel(db, id, lang) } : undefined;
-}
-
 // Actor ids (person/…, actor/…) and the address ids some records point to.
 export function actorRef(db, id) {
   if (!id) return undefined;
@@ -28,6 +24,11 @@ export function objectRef(db, id) {
   if (!id) return undefined;
   const o = stmt(db, 'SELECT inventory_number, title, label FROM objects WHERE id = ?').get(id);
   return { id, inventory_number: o?.inventory_number ?? undefined, title: o?.title ?? o?.label ?? undefined, website_url: websiteUrl(id) };
+}
+
+// Label of a record in a table with a `label` column (exhibitions, literature, object_groups).
+export function recordLabel(db, table, id) {
+  return stmt(db, `SELECT label FROM ${table} WHERE id = ?`).get(id)?.label ?? undefined;
 }
 
 // Labels of a JSON array of term ids, as stored in type_ids and condition_ids.

@@ -12,6 +12,11 @@ export function objectCopyright(db, objectId, lang) {
   return (r && termLabel(db, r.term_id, lang)) || NOT_RECORDED;
 }
 
+// Licence of an object's primary photo, from its objects row; undefined without an image.
+export function primaryImageLicense(db, o, lang) {
+  return o.has_image ? termLabel(db, o.image_license_id, lang) || NOT_RECORDED : undefined;
+}
+
 export function objectRights(db, o, lang) {
   return {
     object_copyright: objectCopyright(db, o.id, lang),
