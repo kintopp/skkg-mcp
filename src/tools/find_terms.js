@@ -10,7 +10,7 @@ import { stmt, perDb } from '../lib/sql.js';
 import { termLabel } from '../lib/labels.js';
 import { termsByLabel } from '../lib/terms.js';
 import { prune } from '../lib/prune.js';
-import { fitResult, sentCost } from '../lib/fit.js';
+import { fitResult } from '../lib/fit.js';
 import { FIELD_OF_FACET } from './object_filters.js';
 import { langIn, str, int, termOut as termRefOut } from './schemas.js';
 import {
@@ -320,8 +320,7 @@ export function findTerms(db, meta, args) {
     if (args.id === undefined) result.results ??= [];
     return result;
   };
-  const n = args.offset + args.limit;
-  return fitResult({ rows, budget: RESULT_CHAR_LIMIT, cost: sentCost((t) => `${n}. ${termLine(t)}`), build, render: renderText });
+  return fitResult({ rows, budget: RESULT_CHAR_LIMIT, build, render: renderText });
 }
 
 function termLine(t) {
@@ -333,13 +332,15 @@ function termLine(t) {
     .filter(Boolean).join(' · ');
 }
 
+const termItem = (t, n) => `${n}. ${termLine(t)}`;
+
 const showing = (s) => (s.returned && s.total > s.returned ? `, showing ${s.offset + 1}–${s.offset + s.returned}` : '');
 
 function renderText(s) {
   const lines = s.term
     ? [termLine(s.term), s.total && `${s.total} narrower terms${showing(s)}:`]
     : [`${s.total} terms${showing(s)}.`];
-  (s.term ? s.narrower : s.results)?.forEach((t, i) => lines.push(`${s.offset + i + 1}. ${termLine(t)}`));
+  (s.term ? s.narrower : s.results)?.forEach((t, i) => lines.push(termItem(t, s.offset + i + 1)));
   if (s.has_more) lines.push(`More: offset ${s.next_offset}.`);
   for (const w of s.warnings ?? []) lines.push(`Warning: ${w}`);
   if (s.data_as_of) lines.push(`Data as of ${s.data_as_of}.`);
@@ -359,8 +360,8 @@ export function registerFindTermsTool(server) {
     },
     withTool(FIND_TERMS_TOOL_NAME, 'Term lookup failed', async (args) => {
       const { db, meta } = getDatabase();
-      const structured = findTerms(db, meta, args);
-      return { content: [{ type: 'text', text: renderText(structured) }], structuredContent: structured };
+      const { structured, text } = findTerms(db, meta, args);
+      return { content: [{ type: 'text', text }], structuredContent: structured };
     }),
   );
 }

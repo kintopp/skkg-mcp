@@ -11,8 +11,8 @@ import { prune } from '../lib/prune.js';
 import { termLabel, actorRef, objectRef, termListLabels } from '../lib/labels.js';
 import { objectRights, imageRights, NOT_RECORDED } from '../lib/rights.js';
 import { objectCreators, objectFacetLabels } from '../lib/objects.js';
-import { fitList, sentCost } from '../lib/fit.js';
-import { renderObjectText, ITEM_TEXT } from './object_text.js';
+import { sent, longestPrefix } from '../lib/fit.js';
+import { renderObjectText } from './object_text.js';
 import {
   actorOut, creatorOut, objectRefOut, objectRightsOut, imageRightsOut, langIn, str, int,
 } from './schemas.js';
@@ -399,33 +399,36 @@ export function getObject(db, meta, args) {
 const CUTTABLE = [['literature'], ['images'], ['exhibitions'], ['texts'], ['related', 'parts'], ['related', 'references'],
   ['physical', 'parts']];
 
-// Room left in a list's budget for the warning that reports its cut, in both channels.
-const WARNING_ROOM = 300;
-
 const renderText = (s) => renderObjectText(s, SECTIONS);
-// What is sent: the structured result and its text rendering.
-const sentSize = (s) => JSON.stringify(s).length + renderText(s).length;
 
 function fitCeiling(result, totals) {
-  let size = sentSize(result);
+  let r = sent(result, renderText);
   for (const path of CUTTABLE) {
-    if (size <= RESULT_CHAR_LIMIT) break;
+    if (r.size <= RESULT_CHAR_LIMIT) break;
     const holder = path.length === 1 ? result : result[path[0]];
     const key = path.at(-1);
     const list = holder?.[key];
     if (!Array.isArray(list) || list.length < 2) continue;
     const what = path.join('.');
-    holder[key] = [];
-    const rest = sentSize(result);
-    holder[key] = fitList(list, RESULT_CHAR_LIMIT - rest - WARNING_ROOM, sentCost(ITEM_TEXT[what]));
-    (result.warnings ??= []).push(`${what}: cut to ${holder[key].length} of ${totals[what] ?? list.length} to fit the result size limit; ask for fewer sections.`);
-    size = sentSize(result);
+    const warnings = result.warnings ?? [];
+    // Sets the list to its first k items, with the warning that reports the cut.
+    const cut = (k) => {
+      holder[key] = list.slice(0, k);
+      result.warnings = [...warnings,
+        `${what}: cut to ${k} of ${totals[what] ?? list.length} to fit the result size limit; ask for fewer sections.`];
+    };
+    const k = Math.max(1, longestPrefix(list.length - 1, (n) => {
+      cut(n);
+      return sent(result, renderText).size <= RESULT_CHAR_LIMIT;
+    }));
+    cut(k);
+    r = sent(result, renderText);
   }
-  if (size > RESULT_CHAR_LIMIT) {
+  if (r.size > RESULT_CHAR_LIMIT) {
     throw new ToolError(`The result for ${result.id} is too large for the result size limit (${RESULT_CHAR_LIMIT} characters) even with its lists cut.`,
       'Ask for fewer sections in `include`, e.g. one at a time.');
   }
-  return result;
+  return r;
 }
 
 export function registerGetObjectTool(server) {
@@ -441,8 +444,8 @@ export function registerGetObjectTool(server) {
     },
     withTool(GET_OBJECT_TOOL_NAME, 'Get object failed', async (args) => {
       const { db, meta } = getDatabase();
-      const structured = getObject(db, meta, args);
-      return { content: [{ type: 'text', text: renderText(structured) }], structuredContent: structured };
+      const { structured, text } = getObject(db, meta, args);
+      return { content: [{ type: 'text', text }], structuredContent: structured };
     }),
   );
 }

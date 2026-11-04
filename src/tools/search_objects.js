@@ -6,7 +6,7 @@ import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
 import { objectRow } from '../lib/objects.js';
 import { prune } from '../lib/prune.js';
-import { fitResult, sentCost } from '../lib/fit.js';
+import { fitResult } from '../lib/fit.js';
 import { objectQueryShape, objectFilterShape, hasObjectFilter, compileObjectQuery } from './object_filters.js';
 import { creatorOut, objectCopyrightOut, appliedOut, langIn, str } from './schemas.js';
 import { creatorsText } from '../lib/objects.js';
@@ -124,7 +124,6 @@ export function searchObjects(db, meta, args) {
   return fitResult({
     rows: ids.map((id) => prune(objectRow(db, id, args.lang))),
     budget: RESULT_CHAR_LIMIT,
-    cost: sentCost((r) => resultLine(r, args.offset + args.limit)),
     build,
     render: renderText,
   });
@@ -162,8 +161,8 @@ export function registerSearchObjectsTool(server) {
     },
     withTool(SEARCH_OBJECTS_TOOL_NAME, 'Search failed', async (args) => {
       const { db, meta } = getDatabase();
-      const structured = searchObjects(db, meta, args);
-      return { content: [{ type: 'text', text: renderText(structured) }], structuredContent: structured };
+      const { structured, text } = searchObjects(db, meta, args);
+      return { content: [{ type: 'text', text }], structuredContent: structured };
     }),
   );
 }

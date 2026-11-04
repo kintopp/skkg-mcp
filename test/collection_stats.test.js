@@ -184,7 +184,7 @@ test('production decades floor years BC and leave out datings wider than a decad
     },
   });
   try {
-    const r = collectionStats(db, { data_as_of: '2026-10-28' }, {
+    const { structured: r } = collectionStats(db, { data_as_of: '2026-10-28' }, {
       dimension: 'production_decade', top: 25, offset: 0, breakdown_top: 10, lang: 'de', scope: 'all', include_narrower: true,
     });
     assert.deepEqual(r.buckets.map((b) => [b.value, b.label, b.count]), [[-710, '-710–-701', 1], [1200, '1200–1209', 1], [1990, '1990–1999', 1]]);

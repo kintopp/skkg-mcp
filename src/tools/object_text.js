@@ -3,7 +3,10 @@
 
 const present = (v) => v !== undefined && v !== null && v !== '' && v !== false;
 const join = (parts, sep = ', ') => parts.filter(present).join(sep);
-const span = (a, b) => (a && b && a !== b ? `${a}–${b}` : a ?? (b && `?–${b}`));
+// A range; one with only a start is open ("1950–?"), not a single date.
+const span = (a, b) => (a && b ? (a === b ? a : `${a}–${b}`) : a ? `${a}–?` : b && `?–${b}`);
+// A year or a bounded estimate, where a lone value is the value itself.
+const point = (a, b) => (b === undefined || b === null || a === b ? a : span(a, b));
 const actor = (a) => a && `${a.name ?? a.id} (${a.id})`;
 const obj = (r) => r && join([r.inventory_number, r.title ?? '(untitled)', r.id], ' · ');
 const list = (label, items) => (items?.length ? `${label}: ${items.join(', ')}` : undefined);
@@ -21,12 +24,13 @@ function photoRights(r) {
     r.photographer && `photo ${r.photographer.name ?? r.photographer.id}`, r.photo_date, r.credit_line && `credit: ${r.credit_line}`]);
 }
 
-const creatorLine = (c) => `- ${join([c.name ?? c.id, c.role, c.attribution, c.relation === 'influence' && 'influence'])} · ${c.id}`;
+const creatorRef = (c) => `${join([c.name ?? c.id, c.role, c.attribution, c.relation === 'influence' && 'influence'])} (${c.id})`;
+const creatorLine = (c) => `- ${creatorRef(c)}`;
 
 function production(p) {
   return ['Production:', ...(p.creators ?? []).map(creatorLine), list('Techniques', p.techniques),
-    ...(p.dates ?? []).map((d) => `Dated: ${join([join([d.prefix, d.label ?? span(d.year_from, d.year_to), d.suffix], ' '),
-      d.label && d.label !== String(span(d.year_from, d.year_to)) && span(d.year_from, d.year_to), d.epoch, d.basis && `basis: ${d.basis}`, d.note])}`),
+    ...(p.dates ?? []).map((d) => `Dated: ${join([join([d.prefix, d.label ?? point(d.year_from, d.year_to), d.suffix], ' '),
+      d.label && d.label !== String(point(d.year_from, d.year_to)) && point(d.year_from, d.year_to), d.epoch, d.basis && `basis: ${d.basis}`, d.note])}`),
     p.edition && `Edition: ${p.edition}`];
 }
 
@@ -49,14 +53,14 @@ function acquisition(a) {
   a.note && `  ${a.note}`];
 }
 
-// SKKG's statement already gives the date, owner, type, place and price of a period.
 function periodLines(p, i) {
   const date = p.date ?? span(p.date_from, p.date_to) ??
-    join([p.begin && join([p.begin.qualifier, span(p.begin.from, p.begin.to)], ' '), p.end && join([p.end.qualifier, span(p.end.from, p.end.to)], ' ')], ' to ');
-  const head = p.statement
-    ? [p.statement, p.owner && `owner ${actor(p.owner)}`, p.status]
-    : [date, p.owner && actor(p.owner), p.owner_type, join([p.transaction?.type, p.transaction?.kind], ' '),
-      p.place, p.price && `price ${priceText(p.price)}`, p.certainty, p.holding_kind, p.status];
+    join([p.begin && join([p.begin.qualifier, point(p.begin.from, p.begin.to)], ' '), p.end && join([p.end.qualifier, point(p.end.from, p.end.to)], ' ')], ' to ');
+  // SKKG's statement often repeats some of the fields; a field it already holds is not repeated.
+  const missing = (v) => (v && !p.statement?.includes(v) ? v : undefined);
+  const head = [p.statement, missing(date), p.owner && `owner ${actor(p.owner)}`, missing(p.owner_type),
+    missing(join([p.transaction?.type, p.transaction?.kind], ' ')), missing(p.place), p.price && `price ${priceText(p.price)}`,
+    missing(p.certainty), missing(p.holding_kind), missing(p.status)];
   return [
     `${i + 1}. ${join([...head, p.id], ' · ')}`,
     p.date_note && `   Date: ${p.date_note}`,
@@ -102,24 +106,13 @@ const SECTION_TEXT = {
   images: (ms) => ['Images:', ...ms.map(imageLine)],
 };
 
-// One line per item of each list fitCeiling can cut, so it can price an item in the text.
-export const ITEM_TEXT = {
-  literature: literatureLine,
-  images: imageLine,
-  exhibitions: exhibitionLine,
-  texts: textBlock,
-  'related.parts': objectLine,
-  'related.references': referenceLine,
-  'physical.parts': partLine,
-};
-
 export function renderObjectText(s, sections) {
   const sm = s.summary ?? {};
   const img = s.rights.primary_image;
   const oc = s.rights.object;
   const lines = [
     `${s.inventory_number ?? ''} ${s.title ?? '(untitled)'} — ${s.id}`,
-    join([sm.object_type, (sm.creators ?? []).map((c) => join([c.name ?? c.id, c.role], ', ')).join('; '), sm.date,
+    join([sm.object_type, (sm.creators ?? []).map(creatorRef).join('; '), sm.date,
       sm.epoch?.join(', '), sm.number_of_parts && `parts: ${sm.number_of_parts}`], ' · '),
     ...(sm.titles ?? []).filter((t) => t.title !== s.title)
       .map((t) => `Title: ${join([t.title, t.short_title && `short: ${t.short_title}`, t.type, t.language, t.note])}`),

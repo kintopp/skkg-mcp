@@ -10,8 +10,8 @@ import { withClient, callSent, callError, FIXTURE_DB } from './helpers.js';
 import { outputSchema } from '../src/tools/get_object.js';
 
 const NAME = 'skkg_get_object';
-// object/1014 sends about 7,600 characters with provenance and 9,500 with its images as well,
-// in both channels together; its JSON alone with images is about 6,000.
+// object/1014 with provenance fits this limit; with its images as well it fits only if they are
+// cut, and its JSON alone would fit uncut.
 const CEILING = 10000;
 // The guard keeps what is sent, JSON and text together, under 90% of the ceiling.
 const LIMIT = CEILING * 0.9;
@@ -24,6 +24,7 @@ test('skkg_get_object keeps results under a lowered size limit', { skip: FIXTURE
       // object/4098 has 55 published images.
       const { structured: r, sent } = await get({ id: 'object/4098', include: ['images'] });
       assert.ok(sent <= LIMIT, `${sent} characters sent`);
+      assert.ok(sent > LIMIT / 2, `only ${sent} characters sent: the cut keeps as many images as fit`);
       assert.ok(r.images.length >= 1 && r.images.length < 50);
       assert.ok(r.warnings.includes(`images: cut to ${r.images.length} of 55 to fit the result size limit; ask for fewer sections.`),
         r.warnings.join(' | '));

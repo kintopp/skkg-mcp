@@ -8,7 +8,7 @@ import { getDatabase, staleWarning } from '../db.js';
 import { stmt } from '../lib/sql.js';
 import { termLabel, actorRef } from '../lib/labels.js';
 import { prune } from '../lib/prune.js';
-import { fitResult, sentCost } from '../lib/fit.js';
+import { fitResult } from '../lib/fit.js';
 import {
   objectQueryShape, objectFilterShape, compileObjectQuery, VALUE_PAIRS, TERM_FILTER_FIELDS,
   ACQUISITION_YEAR, ACQUISITION_DATED,
@@ -236,11 +236,11 @@ export function collectionStats(db, meta, args) {
   // include_narrower is one flag for every term filter, so a bucket's exact term also stops
   // the caller's own term filters from matching narrower terms.
   const ownTermFilters = TERM_FILTER_FIELDS.filter((f) => args[f] !== undefined && f !== args.dimension);
-  if (ownTermFilters.length && args.include_narrower !== false && shown.some((b) => b.filter?.include_narrower === false)) {
-    warnings.push('Buckets of terms with narrower terms carry include_narrower: false in `filter`. Added to this call\'s ' +
+  const clash = (fitted) => (ownTermFilters.length && args.include_narrower !== false && fitted.some((b) => b.filter?.include_narrower === false)
+    ? ['Buckets of terms with narrower terms carry include_narrower: false in `filter`. Added to this call\'s ' +
       `arguments, it also stops ${ownTermFilters.map((f) => `\`${f}\``).join(', ')} from matching narrower terms, ` +
-      'so a search can list fewer objects than the bucket count.');
-  }
+      'so a search can list fewer objects than the bucket count.']
+    : []);
   if (DECADE_NOTE[args.dimension] || DECADE_NOTE[args.breakdown]) {
     warnings.push(DECADE_NOTE[args.dimension] ?? DECADE_NOTE[args.breakdown]);
   }
@@ -273,13 +273,13 @@ export function collectionStats(db, meta, args) {
       order,
       buckets: fitted,
       applied_filters: q.applied,
-      warnings: [...cut, ...warnings],
+      warnings: [...cut, ...clash(fitted), ...warnings],
       data_as_of: meta.data_as_of,
     });
     out.buckets ??= [];
     return out;
   };
-  return fitResult({ rows: shown, budget: RESULT_CHAR_LIMIT, cost: sentCost(bucketText), build, render: renderText });
+  return fitResult({ rows: shown, budget: RESULT_CHAR_LIMIT, build, render: renderText });
 }
 
 function bucketText(b) {
@@ -315,8 +315,8 @@ export function registerCollectionStatsTool(server) {
     },
     withTool(COLLECTION_STATS_TOOL_NAME, 'Stats failed', async (args) => {
       const { db, meta } = getDatabase();
-      const structured = collectionStats(db, meta, args);
-      return { content: [{ type: 'text', text: renderText(structured) }], structuredContent: structured };
+      const { structured, text } = collectionStats(db, meta, args);
+      return { content: [{ type: 'text', text }], structuredContent: structured };
     }),
   );
 }
