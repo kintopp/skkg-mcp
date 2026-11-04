@@ -4,27 +4,17 @@ import { z } from 'zod';
 import { withTool } from '../lib/tool.js';
 import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
-import { scopedFtsQuery } from '../lib/fts.js';
 import { objectRow } from '../lib/objects.js';
 import { prune } from '../lib/prune.js';
 import { fitList } from '../lib/fit.js';
-import { objectFilterShape, hasObjectFilter, compileObjectFilters } from './object_filters.js';
+import { objectQueryShape, objectFilterShape, hasObjectFilter, compileObjectQuery } from './object_filters.js';
 import { creatorOut, objectCopyrightOut, appliedOut, langIn, str } from './schemas.js';
 import { creatorsText } from '../lib/objects.js';
 import {
-  READ_ONLY_ANNOTATIONS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, MAX_QUERY_LEN, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT,
+  READ_ONLY_ANNOTATIONS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT,
 } from '../config.js';
 
 export const SEARCH_OBJECTS_TOOL_NAME = 'skkg_search_objects';
-
-// FTS columns per scope; `title` also covers the object label, which holds the short title.
-const SCOPES = {
-  all: undefined,
-  title: ['title', 'label'],
-  inscription: ['inscription'],
-  text: ['text'],
-  inventory_number: ['inventory_number'],
-};
 
 const INVENTORY_ORDER = "o.inventory_number GLOB '[0-9]*' DESC, CAST(o.inventory_number AS INTEGER), o.inventory_number";
 
@@ -48,10 +38,7 @@ const description =
   'A search with neither query nor filter is refused.';
 
 const inputSchema = z.object({
-  query: z.string().max(MAX_QUERY_LEN).optional().describe(
-    'German keywords over titles, inscriptions, object texts, and inventory numbers. Umlauts may be written ä or ae'),
-  scope: z.enum(Object.keys(SCOPES)).default('all').describe(
-    'Where the query matches: all (default), title, inscription, text (descriptions), or inventory_number'),
+  ...objectQueryShape(),
   ...objectFilterShape(),
   sort: z.enum(Object.keys(ORDER)).optional().describe(
     'relevance (default with a query), inventory_number (default without), date_asc, date_desc, or acquisition_date (oldest SKKG acquisition first)'),
@@ -89,18 +76,14 @@ export const outputSchema = z.object({
 });
 
 export function searchObjects(db, meta, args) {
-  const fts = args.query ? scopedFtsQuery(args.query, SCOPES[args.scope]) : undefined;
-  if (args.query && !fts) {
-    throw new ToolError(`\`query\` "${args.query}" has no searchable word.`, 'Pass German keywords, e.g. "Stillleben".');
-  }
-  if (!fts && !hasObjectFilter(args)) {
+  if (!args.query && !hasObjectFilter(args)) {
     throw new ToolError('Give a `query` or at least one filter; the server does not list the whole collection.',
       'For example {"query": "Stillleben"} or {"object_type": "Zeichnung", "date_from": 1800, "date_to": 1850}.');
   }
 
-  const warnings = [];
-  const filters = compileObjectFilters(db, args);
-  warnings.push(...filters.warnings);
+  const q = compileObjectQuery(db, args);
+  const { fts } = q;
+  const warnings = [...q.warnings];
 
   let sort = args.sort ?? (fts ? 'relevance' : 'inventory_number');
   if (sort === 'relevance' && !fts) {
@@ -108,19 +91,14 @@ export function searchObjects(db, meta, args) {
     sort = 'inventory_number';
   }
 
-  const where = [...(fts ? ['objects_fts MATCH ?'] : []), ...filters.clauses];
-  const params = [...(fts ? [fts] : []), ...filters.params];
-  const from = fts ? 'objects_fts JOIN objects o ON o.id = objects_fts.object_id' : 'objects o';
-  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-
-  const total = db.prepare(`SELECT COUNT(*) AS n FROM ${from} ${whereSql}`).get(...params).n;
-  const ids = db.prepare(`SELECT o.id FROM ${from} ${whereSql} ORDER BY ${ORDER[sort]} LIMIT ? OFFSET ?`)
-    .all(...params, args.limit, args.offset).map((r) => r.id);
+  const total = db.prepare(`SELECT COUNT(*) AS n FROM ${q.from} ${q.where}`).get(...q.params).n;
+  const ids = db.prepare(`SELECT o.id FROM ${q.from} ${q.where} ORDER BY ${ORDER[sort]} LIMIT ? OFFSET ?`)
+    .all(...q.params, args.limit, args.offset).map((r) => r.id);
   // Rows are small; the fit only guards a lowered SKKG_RESULT_CHAR_CEILING.
   const results = fitList(ids.map((id) => prune(objectRow(db, id, args.lang))), RESULT_CHAR_LIMIT);
 
   if (total === 0 && args.query) {
-    warnings.push(`No object matches "${args.query}"${where.length > 1 ? ' with these filters' : ''}. ` +
+    warnings.push(`No object matches "${args.query}"${q.clauseCount > 1 ? ' with these filters' : ''}. ` +
       'The data is German: check that the keywords are German, try a prefix (Uhr*), or drop a filter.');
   } else if (total === 0) {
     warnings.push('No object matches these filters together. Drop one filter at a time to see which one empties the result.');
@@ -137,7 +115,7 @@ export function searchObjects(db, meta, args) {
     next_offset: hasMore ? args.offset + results.length : undefined,
     sort,
     results,
-    applied_filters: filters.applied,
+    applied_filters: q.applied,
     warnings,
     data_as_of: meta.data_as_of,
   });

@@ -20,6 +20,16 @@ export const RESULT_CHAR_LIMIT = Math.floor(RESULT_CHAR_CEILING * 0.9);
 export const SEARCH_DEFAULT_LIMIT = 10;
 export const SEARCH_MAX_LIMIT = 50;
 export const MAX_QUERY_LEN = 500;
+// Buckets per page of skkg_collection_stats; with a breakdown each bucket carries a list, so fewer fit.
+export const STATS_DEFAULT_TOP = 25;
+export const STATS_MAX_TOP = 200;
+export const STATS_MAX_TOP_WITH_BREAKDOWN = 50;
+export const BREAKDOWN_DEFAULT_TOP = 10;
+export const BREAKDOWN_MAX_TOP = 50;
+// Up to this many matching objects, skkg_collection_stats restricts its reads in SQL (json_each);
+// beyond it, reading every pair and filtering in JavaScript is faster (measured: 23 ms against
+// 70 ms at 5,000 ids, 278 ms against 76 ms at 60,000).
+export const STATS_SQL_RESTRICT_MAX = posIntEnv('SKKG_STATS_SQL_RESTRICT_MAX', 10_000, { min: 1, max: 1_000_000 });
 // Longest list per section of skkg_get_object.
 export const SECTION_LIMIT = 50;
 // More actors than this for one name filter is refused rather than OR-ed together.

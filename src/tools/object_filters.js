@@ -1,18 +1,60 @@
-// The object filters shared by skkg_search_objects and, later, skkg_collection_stats.
+// The object query (keywords and filters) shared by skkg_search_objects and skkg_collection_stats.
 // Each filter compiles to one SQL condition on `o` (objects); values are resolved first,
 // so applied_filters shows the caller which terms, actors, and records were matched.
 
 import { z } from 'zod';
 import { ToolError } from '../lib/errors.js';
 import { resolveId } from '../lib/ids.js';
-import { ftsQuery } from '../lib/fts.js';
+import { ftsQuery, scopedFtsQuery } from '../lib/fts.js';
 import { stmt, placeholders } from '../lib/sql.js';
 import { termLabel, actorRef, objectRef, recordLabel } from '../lib/labels.js';
 import { termsByLabel } from '../lib/terms.js';
-import { MAX_NAME_MATCHES, WITHHELD_FACETS } from '../config.js';
+import { MAX_NAME_MATCHES, MAX_QUERY_LEN, WITHHELD_FACETS } from '../config.js';
 
-// Term filters: the vocabulary facet, and the SQL that selects objects when the facet is
-// not an object_terms facet. `?` stands for the (expanded) term ids.
+// FTS columns per scope; `title` also covers the object label, which holds the short title.
+const SCOPES = {
+  all: undefined,
+  title: ['title', 'label'],
+  inscription: ['inscription'],
+  text: ['text'],
+  inventory_number: ['inventory_number'],
+};
+
+// The keyword fields, a fresh shape on every call.
+export function objectQueryShape() {
+  return {
+    query: z.string().max(MAX_QUERY_LEN).optional().describe(
+      'German keywords over titles, inscriptions, object texts, and inventory numbers. Umlauts may be written ä or ae'),
+    scope: z.enum(Object.keys(SCOPES)).default('all').describe(
+      'Where the query matches: all (default), title, inscription, text (descriptions), or inventory_number'),
+  };
+}
+
+// Where each filter's values are stored, as a query of (oid, k) pairs: an object and one of its
+// values. The term filters select `oid IN (… WHERE k IN (?))`, and skkg_collection_stats counts
+// the same pairs, so a bucket and the filter that lists it cannot drift apart. The creator
+// pairs also carry `row`, one per creator row, because those filters apply to one row together.
+const objectTermPairs = (facet) => `SELECT object_id AS oid, term_id AS k FROM object_terms WHERE facet = '${facet}'`;
+const creatorPairs = (col) => `SELECT object_id AS oid, object_id || '#' || rowid AS row, ${col} AS k
+    FROM object_creators WHERE ${col} IS NOT NULL`;
+export const VALUE_PAIRS = Object.freeze({
+  object_type: objectTermPairs('object_type'),
+  material: objectTermPairs('material'),
+  technique: objectTermPairs('technique'),
+  epoch: objectTermPairs('epoch'),
+  object_copyright: objectTermPairs('object_copyright'),
+  provenance_status: objectTermPairs('provenance_status'),
+  image_license: 'SELECT id AS oid, image_license_id AS k FROM objects WHERE image_license_id IS NOT NULL',
+  acquisition_type: 'SELECT object_id AS oid, type_id AS k FROM acquisitions WHERE type_id IS NOT NULL',
+  creator: creatorPairs('actor_id'),
+  creator_role: creatorPairs('role_id'),
+  attribution: creatorPairs('attribution_id'),
+});
+// The year of SKKG's acquisition, for acquisitions whose date starts with one.
+export const ACQUISITION_YEAR = 'CAST(substr(date, 1, 4) AS INTEGER)';
+export const ACQUISITION_DATED = "date GLOB '[0-9][0-9][0-9][0-9]*'";
+
+// Term filters and their vocabulary facet. `?` stands for the (expanded) term ids.
 const TERM_FILTERS = {
   object_type: { facet: 'object_type' },
   material: { facet: 'material' },
@@ -20,20 +62,21 @@ const TERM_FILTERS = {
   epoch: { facet: 'epoch' },
   object_copyright: { facet: 'object_copyright' },
   provenance_status: { facet: 'provenance_status' },
-  image_license: { facet: 'image_license', sql: 'o.image_license_id IN (?)' },
-  acquisition_type: { facet: 'acquisition_type', sql: 'o.id IN (SELECT object_id FROM acquisitions WHERE type_id IN (?))' },
+  image_license: { facet: 'image_license' },
+  acquisition_type: { facet: 'acquisition_type' },
   // These two narrow the creator rows, so they are compiled together with `creator`.
   creator_role: { facet: 'production_role', creatorColumn: 'role_id' },
   attribution: { facet: 'attribution', creatorColumn: 'attribution_id' },
 };
-const filterSql = (f) => f.sql ?? `o.id IN (SELECT object_id FROM object_terms WHERE facet = '${f.facet}' AND term_id IN (?))`;
-const ACQUISITION_YEAR = "o.id IN (SELECT object_id FROM acquisitions WHERE date GLOB '[0-9][0-9][0-9][0-9]*' AND CAST(substr(date, 1, 4) AS INTEGER)";
+export const TERM_FILTER_FIELDS = Object.freeze(Object.keys(TERM_FILTERS));
+const filterSql = (field) => `o.id IN (SELECT oid FROM (${VALUE_PAIRS[field]}) WHERE k IN (?))`;
+const ACQUISITION_YEAR_IN = `o.id IN (SELECT object_id FROM acquisitions WHERE ${ACQUISITION_DATED} AND ${ACQUISITION_YEAR}`;
 // The dating overlaps the range: its latest year reaches date_from, its earliest year date_to.
 const YEAR_FILTERS = [
   ['date_from', 'COALESCE(o.date_to, o.date_from) >= ?'],
   ['date_to', 'COALESCE(o.date_from, o.date_to) <= ?'],
-  ['acquisition_year_from', `${ACQUISITION_YEAR} >= ?)`],
-  ['acquisition_year_to', `${ACQUISITION_YEAR} <= ?)`],
+  ['acquisition_year_from', `${ACQUISITION_YEAR_IN} >= ?)`],
+  ['acquisition_year_to', `${ACQUISITION_YEAR_IN} <= ?)`],
 ];
 // The filter that takes a facet's terms, for errors that point to the right filter.
 export const FIELD_OF_FACET = Object.fromEntries(Object.entries(TERM_FILTERS).map(([field, f]) => [f.facet, field]));
@@ -180,7 +223,7 @@ export function compileObjectFilters(db, args) {
       creatorParts.push(`oc.${f.creatorColumn} IN (${placeholders(ids.length)})`);
       creatorParams.push(...ids);
     } else {
-      clauses.push(filterSql(f).replace('(?)', `(${placeholders(ids.length)})`));
+      clauses.push(filterSql(field).replace('(?)', `(${placeholders(ids.length)})`));
       params.push(...ids);
     }
     applied[field] = matched;
@@ -253,6 +296,28 @@ export function compileObjectFilters(db, args) {
   }
 
   return { clauses, params, applied, warnings };
+}
+
+/**
+ * Compiles `query`, `scope`, and the filters in `args` to the objects they match:
+ * { from, where, params, fts, applied, warnings }, where `from` and `where` select `o.id`.
+ */
+export function compileObjectQuery(db, args) {
+  const fts = args.query ? scopedFtsQuery(args.query, SCOPES[args.scope ?? 'all']) : undefined;
+  if (args.query && !fts) {
+    throw new ToolError(`\`query\` "${args.query}" has no searchable word.`, 'Pass German keywords, e.g. "Stillleben".');
+  }
+  const filters = compileObjectFilters(db, args);
+  const clauses = [...(fts ? ['objects_fts MATCH ?'] : []), ...filters.clauses];
+  return {
+    from: fts ? 'objects_fts JOIN objects o ON o.id = objects_fts.object_id' : 'objects o',
+    where: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '',
+    params: [...(fts ? [fts] : []), ...filters.params],
+    fts,
+    clauseCount: clauses.length,
+    applied: filters.applied,
+    warnings: filters.warnings,
+  };
 }
 
 function assertRange(args, from, to) {

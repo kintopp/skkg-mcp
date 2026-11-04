@@ -7,6 +7,7 @@ import { SERVER_NAME, SERVER_VERSION, SERVER_INSTRUCTIONS, CACHE_HINTS } from '.
 import { registerSearchObjectsTool } from './tools/search_objects.js';
 import { registerGetObjectTool } from './tools/get_object.js';
 import { registerFindTermsTool } from './tools/find_terms.js';
+import { registerCollectionStatsTool } from './tools/collection_stats.js';
 
 export function createServer() {
   // `listChanged` must be an explicit false: the SDK fills an absent value with `true`,
@@ -22,5 +23,6 @@ export function createServer() {
   registerSearchObjectsTool(server);
   registerGetObjectTool(server);
   registerFindTermsTool(server);
+  registerCollectionStatsTool(server);
   return server;
 }
