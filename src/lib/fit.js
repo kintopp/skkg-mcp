@@ -43,7 +43,14 @@ export function fitResult({ rows, budget, build, render, noun }) {
   const full = at(rows.length);
   if (full.size <= budget) return full;
   if (!rows.length) throw tooLarge(budget, 'with no rows: its filters and warnings alone exceed it');
-  const k = longestPrefix(rows.length - 1, (n) => at(n).size <= budget);
+  // The search only moves up on a probe that fits, so the last one that fits is the answer.
+  let best;
+  const k = longestPrefix(rows.length - 1, (n) => {
+    const r = at(n);
+    if (r.size > budget) return false;
+    best = r;
+    return true;
+  });
   if (k === 0) throw tooLarge(budget, 'even with one row');
-  return at(k);
+  return best;
 }

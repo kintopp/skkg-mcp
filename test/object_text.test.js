@@ -23,7 +23,7 @@ const base = {
     ],
   },
 };
-const render = (extra, sections = []) => renderObjectText({ ...base, ...extra }, sections);
+const render = (extra) => renderObjectText({ ...base, ...extra });
 const lineWith = (text, needle) => text.split('\n').find((l) => l.includes(needle)) ?? '';
 
 test('the summary line keeps each creator\'s attribution, influence, and id', () => {
@@ -45,7 +45,7 @@ test('a period keeps the certainty, holding kind, and price its statement leaves
         owner: { id: 'person/3', name: 'Galerie X' },
       }],
     },
-  }, ['provenance']);
+  });
   const line = lineWith(text, 'provenance/p1');
   for (const s of ['unsicher', 'Kommission', 'CHF 500', 'person/3']) assert.ok(line.includes(s), `${s} in: ${line}`);
 });
@@ -55,7 +55,7 @@ test('a period keeps its date and place when the statement only seems to hold th
     provenance: {
       periods: [{ id: 'provenance/p2', statement: 'gesichert 1918 Galerie Bernhard (1870–1950)', date: '1950', place: 'Bern' }],
     },
-  }, ['provenance']);
+  });
   const line = lineWith(text, 'provenance/p2');
   assert.ok(line.includes(' · 1950 · ') && line.includes(' · Bern · '), line);
 });
@@ -64,7 +64,7 @@ test('a range with only a start is open; a lone production year stays a year', (
   const text = render({
     exhibitions: [{ id: 'exhibition/1', title: 'Schau', date_from: '2020-01-01' }],
     production: { dates: [{ year_from: 1907 }] },
-  }, ['production', 'exhibitions']);
+  });
   assert.match(lineWith(text, 'exhibition/1'), /2020-01-01–\?/);
   assert.match(text, /^Dated: 1907$/m);
 });

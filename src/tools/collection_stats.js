@@ -2,13 +2,14 @@
 // optionally broken down by a second one.
 
 import { z } from 'zod';
-import { withTool } from '../lib/tool.js';
+import { withTool, toolResult } from '../lib/tool.js';
 import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
 import { stmt } from '../lib/sql.js';
 import { termLabel, actorRef } from '../lib/labels.js';
 import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
+import { paging, tailLines } from '../lib/results.js';
 import {
   objectQueryShape, objectFilterShape, compileObjectQuery, VALUE_PAIRS, TERM_FILTER_FIELDS,
   ACQUISITION_YEAR, ACQUISITION_DATED,
@@ -236,11 +237,13 @@ export function collectionStats(db, meta, args) {
   // include_narrower is one flag for every term filter, so a bucket's exact term also stops
   // the caller's own term filters from matching narrower terms.
   const ownTermFilters = TERM_FILTER_FIELDS.filter((f) => args[f] !== undefined && f !== args.dimension);
-  const clash = (fitted) => (ownTermFilters.length && args.include_narrower !== false && fitted.some((b) => b.filter?.include_narrower === false)
-    ? ['Buckets of terms with narrower terms carry include_narrower: false in `filter`. Added to this call\'s ' +
+  const clash = (fitted) => {
+    if (!ownTermFilters.length || args.include_narrower === false) return [];
+    if (!fitted.some((b) => b.filter?.include_narrower === false)) return [];
+    return ['Buckets of terms with narrower terms carry include_narrower: false in `filter`. Added to this call\'s ' +
       `arguments, it also stops ${ownTermFilters.map((f) => `\`${f}\``).join(', ')} from matching narrower terms, ` +
-      'so a search can list fewer objects than the bucket count.']
-    : []);
+      'so a search can list fewer objects than the bucket count.'];
+  };
   if (DECADE_NOTE[args.dimension] || DECADE_NOTE[args.breakdown]) {
     warnings.push(DECADE_NOTE[args.dimension] ?? DECADE_NOTE[args.breakdown]);
   }
@@ -255,7 +258,6 @@ export function collectionStats(db, meta, args) {
   if (stale) warnings.push(stale);
 
   const build = (fitted) => {
-    const hasMore = args.offset + fitted.length < sorted.length;
     const out = prune({
       dimension: args.dimension,
       breakdown: args.breakdown,
@@ -263,10 +265,7 @@ export function collectionStats(db, meta, args) {
       with_value: withValue,
       without_value: total - withValue,
       total_buckets: sorted.length,
-      returned: fitted.length,
-      offset: args.offset,
-      has_more: hasMore,
-      next_offset: hasMore ? args.offset + fitted.length : undefined,
+      ...paging(sorted.length, fitted.length, args.offset),
       order,
       buckets: fitted,
       applied_filters: q.applied,
@@ -293,10 +292,7 @@ function renderText(s) {
     (s.returned && s.total_buckets > s.returned ? `, showing ${s.offset + 1}–${s.offset + s.returned}` : '') + '.';
   const lines = [head];
   for (const b of s.buckets) lines.push(bucketText(b));
-  if (s.has_more) lines.push(`More: offset ${s.next_offset}.`);
-  for (const w of s.warnings ?? []) lines.push(`Warning: ${w}`);
-  if (s.data_as_of) lines.push(`Data as of ${s.data_as_of}.`);
-  return lines.join('\n');
+  return [...lines, ...tailLines(s)].join('\n');
 }
 
 export function registerCollectionStatsTool(server) {
@@ -312,8 +308,7 @@ export function registerCollectionStatsTool(server) {
     },
     withTool(COLLECTION_STATS_TOOL_NAME, 'Stats failed', async (args) => {
       const { db, meta } = getDatabase();
-      const { structured, text } = collectionStats(db, meta, args);
-      return { content: [{ type: 'text', text }], structuredContent: structured };
+      return toolResult(collectionStats(db, meta, args));
     }),
   );
 }

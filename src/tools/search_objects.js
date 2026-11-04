@@ -1,12 +1,13 @@
 // skkg_search_objects: keyword and filter search over the objects; the main entry point.
 
 import { z } from 'zod';
-import { withTool } from '../lib/tool.js';
+import { withTool, toolResult } from '../lib/tool.js';
 import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
 import { objectRow } from '../lib/objects.js';
 import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
+import { paging, tailLines } from '../lib/results.js';
 import { objectQueryShape, objectFilterShape, hasObjectFilter, compileObjectQuery } from './object_filters.js';
 import { creatorOut, objectCopyrightOut, appliedOut, langIn, str } from './schemas.js';
 import { creatorsText } from '../lib/objects.js';
@@ -104,13 +105,9 @@ export function searchObjects(db, meta, args) {
   if (stale) warnings.push(stale);
 
   const build = (results) => {
-    const hasMore = args.offset + results.length < total;
     const out = prune({
       total,
-      returned: results.length,
-      offset: args.offset,
-      has_more: hasMore,
-      next_offset: hasMore ? args.offset + results.length : undefined,
+      ...paging(total, results.length, args.offset),
       sort,
       results,
       applied_filters: q.applied,
@@ -141,12 +138,7 @@ function renderText(s) {
   const head = `${s.total} objects` + (s.total > s.returned ? `, showing ${s.offset + 1}–${s.offset + s.returned}` : '') +
     ` (sorted by ${s.sort}).`;
   const lines = (s.results ?? []).map((r, i) => resultLine(r, s.offset + i + 1));
-  const tail = [
-    s.has_more && `More: offset ${s.next_offset}.`,
-    ...(s.warnings ?? []).map((w) => `Warning: ${w}`),
-    s.data_as_of && `Data as of ${s.data_as_of}.`,
-  ];
-  return [head, ...lines, ...tail].filter(Boolean).join('\n');
+  return [head, ...lines, ...tailLines(s)].join('\n');
 }
 
 export function registerSearchObjectsTool(server) {
@@ -162,8 +154,7 @@ export function registerSearchObjectsTool(server) {
     },
     withTool(SEARCH_OBJECTS_TOOL_NAME, 'Search failed', async (args) => {
       const { db, meta } = getDatabase();
-      const { structured, text } = searchObjects(db, meta, args);
-      return { content: [{ type: 'text', text }], structuredContent: structured };
+      return toolResult(searchObjects(db, meta, args));
     }),
   );
 }

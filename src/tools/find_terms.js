@@ -1,7 +1,7 @@
 // skkg_find_terms: finds terms of SKKG's vocabularies, for use as filter values.
 
 import { z } from 'zod';
-import { withTool } from '../lib/tool.js';
+import { withTool, toolResult } from '../lib/tool.js';
 import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
 import { resolveId } from '../lib/ids.js';
@@ -11,6 +11,7 @@ import { termLabel } from '../lib/labels.js';
 import { termsByLabel } from '../lib/terms.js';
 import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
+import { paging, tailLines } from '../lib/results.js';
 import { FIELD_OF_FACET } from './object_filters.js';
 import { langIn, str, int, termOut as termRefOut } from './schemas.js';
 import {
@@ -258,17 +259,6 @@ function pageRows(db, ids, args) {
   return ids.slice(args.offset, args.offset + args.limit).map((id) => termRow(db, getTerm(db, id), args.lang));
 }
 
-function paging(total, rows, args) {
-  const hasMore = args.offset + rows.length < total;
-  return {
-    total,
-    returned: rows.length,
-    offset: args.offset,
-    has_more: hasMore,
-    next_offset: hasMore ? args.offset + rows.length : undefined,
-  };
-}
-
 export function findTerms(db, meta, args) {
   if (args.id !== undefined && args.query !== undefined) {
     throw new ToolError('Pass either `id` or `query`, not both.', 'Use `query` to find terms, then `id` to see one term\'s broader and narrower terms.');
@@ -316,7 +306,7 @@ export function findTerms(db, meta, args) {
   const stale = staleWarning(meta);
   if (stale) warnings.push(stale);
   const build = (list) => {
-    const result = prune({ ...paging(total, list, args), ...head, [listKey]: list, applied, warnings, data_as_of: meta.data_as_of });
+    const result = prune({ total, ...paging(total, list.length, args.offset), ...head, [listKey]: list, applied, warnings, data_as_of: meta.data_as_of });
     if (args.id === undefined) result.results ??= [];
     return result;
   };
@@ -339,10 +329,7 @@ function renderText(s) {
     ? [termLine(s.term), s.total && `${s.total} narrower terms${showing(s)}:`]
     : [`${s.total} terms${showing(s)}.`];
   (s.term ? s.narrower : s.results)?.forEach((t, i) => lines.push(`${s.offset + i + 1}. ${termLine(t)}`));
-  if (s.has_more) lines.push(`More: offset ${s.next_offset}.`);
-  for (const w of s.warnings ?? []) lines.push(`Warning: ${w}`);
-  if (s.data_as_of) lines.push(`Data as of ${s.data_as_of}.`);
-  return lines.filter(Boolean).join('\n');
+  return [...lines.filter(Boolean), ...tailLines(s)].join('\n');
 }
 
 export function registerFindTermsTool(server) {
@@ -358,8 +345,7 @@ export function registerFindTermsTool(server) {
     },
     withTool(FIND_TERMS_TOOL_NAME, 'Term lookup failed', async (args) => {
       const { db, meta } = getDatabase();
-      const { structured, text } = findTerms(db, meta, args);
-      return { content: [{ type: 'text', text }], structuredContent: structured };
+      return toolResult(findTerms(db, meta, args));
     }),
   );
 }

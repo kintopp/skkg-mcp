@@ -22,6 +22,9 @@ const textBytes = (result) => Buffer.byteLength(
 const structuredBytes = (result) =>
   result?.structuredContent === undefined ? 0 : Buffer.byteLength(JSON.stringify(result.structuredContent), 'utf8');
 
+/** The tool result of a structured object and its text rendering, from sent() or fitResult(). */
+export const toolResult = ({ structured, text }) => ({ content: [{ type: 'text', text }], structuredContent: structured });
+
 // `name` is the tool name (logged); `label` prefixes an error result, e.g. "Search failed".
 export function withTool(name, label, handler) {
   return async (...callArgs) => {

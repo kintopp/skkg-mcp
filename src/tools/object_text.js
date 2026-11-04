@@ -7,7 +7,10 @@ const join = (parts, sep = ', ') => parts.filter(present).join(sep);
 const span = (a, b) => (a && b ? (a === b ? a : `${a}–${b}`) : a ? `${a}–?` : b && `?–${b}`);
 // A year or a bounded estimate, where a lone value is the value itself.
 const point = (a, b) => (b === undefined || b === null || a === b ? a : span(a, b));
-const actor = (a) => a && `${a.name ?? a.id} (${a.id})`;
+import { tailLines } from '../lib/results.js';
+
+const nameOf = (a) => a.name ?? a.id;
+const actor = (a) => a && `${nameOf(a)} (${a.id})`;
 const obj = (r) => r && join([r.inventory_number, r.title ?? '(untitled)', r.id], ' · ');
 const list = (label, items) => (items?.length ? `${label}: ${items.join(', ')}` : undefined);
 
@@ -18,20 +21,24 @@ function priceText(p) {
 }
 
 function photoRights(r) {
-  return join([r.image_license, r.right_holder && `holder ${r.right_holder.name ?? r.right_holder.id}`,
-    r.original_right_holder && `original holder ${r.original_right_holder.name ?? r.original_right_holder.id}`,
+  return join([r.image_license, r.right_holder && `holder ${nameOf(r.right_holder)}`,
+    r.original_right_holder && `original holder ${nameOf(r.original_right_holder)}`,
     r.rights_end_date && `rights until ${r.rights_end_date}`, r.rights_note,
-    r.photographer && `photo ${r.photographer.name ?? r.photographer.id}`, r.photo_date, r.credit_line && `credit: ${r.credit_line}`]);
+    r.photographer && `photo ${nameOf(r.photographer)}`, r.photo_date, r.credit_line && `credit: ${r.credit_line}`]);
 }
 
-const creatorRef = (c) => `${join([c.name ?? c.id, c.role, c.attribution, c.relation === 'influence' && 'influence'])} (${c.id})`;
+const creatorRef = (c) => `${join([nameOf(c), c.role, c.attribution, c.relation === 'influence' && 'influence'])} (${c.id})`;
 const creatorLine = (c) => `- ${creatorRef(c)}`;
+
+function dateLine(d) {
+  const years = point(d.year_from, d.year_to);
+  return `Dated: ${join([join([d.prefix, d.label ?? years, d.suffix], ' '),
+    d.label && d.label !== String(years) && years, d.epoch, d.basis && `basis: ${d.basis}`, d.note])}`;
+}
 
 function production(p) {
   return ['Production:', ...(p.creators ?? []).map(creatorLine), list('Techniques', p.techniques),
-    ...(p.dates ?? []).map((d) => `Dated: ${join([join([d.prefix, d.label ?? point(d.year_from, d.year_to), d.suffix], ' '),
-      d.label && d.label !== String(point(d.year_from, d.year_to)) && point(d.year_from, d.year_to), d.epoch, d.basis && `basis: ${d.basis}`, d.note])}`),
-    p.edition && `Edition: ${p.edition}`];
+    ...(p.dates ?? []).map(dateLine), p.edition && `Edition: ${p.edition}`];
 }
 
 const partLine = (p) => `- ${join([join([p.label ?? p.id, p.type && `(${p.type})`], ' '),
@@ -45,7 +52,10 @@ function physical(p) {
     ...(p.condition ?? []).map((c) => `Condition${c.date ? ` (${c.date})` : ''}: ${join([c.conditions?.join(', '), c.note], '; ')}`)];
 }
 
-const textBlock = (t) => `${join([t.title ?? 'Text', join([t.type, t.source], '; ') && `(${join([t.type, t.source], '; ')})`], ' ')}:\n${t.text ?? ''}`;
+function textBlock(t) {
+  const about = join([t.type, t.source], '; ');
+  return `${join([t.title ?? 'Text', about && `(${about})`], ' ')}:\n${t.text ?? ''}`;
+}
 
 function acquisition(a) {
   return [`Acquisition: ${join([a.type, a.date_label ?? a.date, a.date_uncertain && 'date uncertain',
@@ -54,8 +64,8 @@ function acquisition(a) {
 }
 
 function periodLines(p, i) {
-  const date = p.date ?? span(p.date_from, p.date_to) ??
-    join([p.begin && join([p.begin.qualifier, point(p.begin.from, p.begin.to)], ' '), p.end && join([p.end.qualifier, point(p.end.from, p.end.to)], ' ')], ' to ');
+  const bound = (b) => b && join([b.qualifier, point(b.from, b.to)], ' ');
+  const date = p.date ?? span(p.date_from, p.date_to) ?? join([bound(p.begin), bound(p.end)], ' to ');
   // Every field is shown even when SKKG's statement seems to hold it: a substring test
   // cannot tell a period's date from an owner's life dates, or "Bern" from "Galerie Bernhard".
   const head = [p.statement, date, p.owner && `owner ${actor(p.owner)}`, p.owner_type,
@@ -106,7 +116,10 @@ const SECTION_TEXT = {
   images: (ms) => ['Images:', ...ms.map(imageLine)],
 };
 
-export function renderObjectText(s, sections) {
+/** The sections of skkg_get_object, in the order they are rendered. */
+export const SECTIONS = Object.keys(SECTION_TEXT);
+
+export function renderObjectText(s) {
   const sm = s.summary ?? {};
   const img = s.rights.primary_image;
   const oc = s.rights.object;
@@ -122,11 +135,9 @@ export function renderObjectText(s, sections) {
     s.website_url,
     s.manifest_url && `IIIF manifest: ${s.manifest_url}`,
   ];
-  for (const k of sections) {
+  for (const k of SECTIONS) {
     if (s[k] !== undefined) lines.push('', ...SECTION_TEXT[k](s[k]));
   }
   if (s.warnings?.length) lines.push('');
-  for (const w of s.warnings ?? []) lines.push(`Warning: ${w}`);
-  if (s.data_as_of) lines.push(`Data as of ${s.data_as_of}.`);
-  return lines.filter((l) => l === '' || present(l)).join('\n');
+  return [...lines.filter((l) => l === '' || present(l)), ...tailLines(s)].join('\n');
 }

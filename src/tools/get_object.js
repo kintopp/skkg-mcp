@@ -2,7 +2,7 @@
 // rights block (object copyright and photo rights side by side).
 
 import { z } from 'zod';
-import { withTool } from '../lib/tool.js';
+import { withTool, toolResult } from '../lib/tool.js';
 import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
 import { resolveId, websiteUrl } from '../lib/ids.js';
@@ -12,15 +12,13 @@ import { termLabel, actorRef, objectRef, termListLabels } from '../lib/labels.js
 import { objectRights, imageRights, NOT_RECORDED } from '../lib/rights.js';
 import { objectCreators, objectFacetLabels } from '../lib/objects.js';
 import { sent, longestPrefix } from '../lib/fit.js';
-import { renderObjectText } from './object_text.js';
+import { renderObjectText, SECTIONS } from './object_text.js';
 import {
   actorOut, creatorOut, objectRefOut, objectRightsOut, imageRightsOut, langIn, str, int,
 } from './schemas.js';
 import { READ_ONLY_ANNOTATIONS, SECTION_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT } from '../config.js';
 
 export const GET_OBJECT_TOOL_NAME = 'skkg_get_object';
-
-const SECTIONS = ['production', 'physical', 'texts', 'acquisition', 'provenance', 'exhibitions', 'literature', 'related', 'images'];
 
 const description =
   'Get one SKKG object by id or inventory number, with the sections you ask for. ' +
@@ -400,10 +398,8 @@ export function getObject(db, meta, args) {
 const CUTTABLE = [['literature'], ['images'], ['exhibitions'], ['texts'], ['related', 'parts'], ['related', 'references'],
   ['physical', 'parts']];
 
-const renderText = (s) => renderObjectText(s, SECTIONS);
-
 function fitCeiling(result, totals) {
-  let r = sent(result, renderText);
+  let r = sent(result, renderObjectText);
   for (const path of CUTTABLE) {
     if (r.size <= RESULT_CHAR_LIMIT) break;
     const holder = path.length === 1 ? result : result[path[0]];
@@ -419,10 +415,10 @@ function fitCeiling(result, totals) {
     };
     const k = Math.max(1, longestPrefix(list.length - 1, (n) => {
       cut(n);
-      return sent(result, renderText).size <= RESULT_CHAR_LIMIT;
+      return sent(result, renderObjectText).size <= RESULT_CHAR_LIMIT;
     }));
     cut(k);
-    r = sent(result, renderText);
+    r = sent(result, renderObjectText);
   }
   if (r.size > RESULT_CHAR_LIMIT) {
     throw new ToolError(`The result for ${result.id} is too large for the result size limit (${RESULT_CHAR_LIMIT} characters) even with its lists cut.`,
@@ -444,8 +440,7 @@ export function registerGetObjectTool(server) {
     },
     withTool(GET_OBJECT_TOOL_NAME, 'Get object failed', async (args) => {
       const { db, meta } = getDatabase();
-      const { structured, text } = getObject(db, meta, args);
-      return { content: [{ type: 'text', text }], structuredContent: structured };
+      return toolResult(getObject(db, meta, args));
     }),
   );
 }
