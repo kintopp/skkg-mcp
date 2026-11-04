@@ -15,6 +15,16 @@ export const STALE_AFTER_DAYS = 30;
 
 export const RESULT_CHAR_CEILING = posIntEnv('SKKG_RESULT_CHAR_CEILING', 150000, { min: 1000, max: 5_000_000 });
 
+export const SEARCH_DEFAULT_LIMIT = 10;
+export const SEARCH_MAX_LIMIT = 50;
+export const MAX_QUERY_LEN = 500;
+// Longest list per section of skkg_get_object; one object has 281 parts, another 189 images.
+export const SECTION_LIMIT = 50;
+// More actors than this for one name filter is refused rather than OR-ed together.
+export const MAX_NAME_MATCHES = 25;
+// Display languages of vocabulary labels (D6); German is the fallback.
+export const LANGS = Object.freeze(['de', 'en', 'fr']);
+
 export const DATA_BASE = 'https://data.skkg.ch/';
 export const WEBSITE_OBJECT_BASE = 'https://digital.skkg.ch/de/intro/';
 export const IIIF_IMAGE_BASE = 'https://iiif.digital.skkg.ch/iiif/3/';

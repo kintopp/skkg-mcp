@@ -6,7 +6,10 @@ import assert from 'node:assert/strict';
 import { withClient } from './helpers.js';
 
 // Every registered tool must be listed here with its required input properties.
-const REQUIRED_PROPS = {};
+const REQUIRED_PROPS = {
+  skkg_search_objects: [],
+  skkg_get_object: ['id'],
+};
 
 test('starts without a database, with the machine name and no human-readable title', async () => {
   await withClient('skkg-smoke', async (client) => {

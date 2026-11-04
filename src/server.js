@@ -4,6 +4,8 @@
 
 import { McpServer } from '@modelcontextprotocol/server';
 import { SERVER_NAME, SERVER_VERSION, SERVER_INSTRUCTIONS, CACHE_HINTS } from './config.js';
+import { registerSearchObjectsTool } from './tools/search_objects.js';
+import { registerGetObjectTool } from './tools/get_object.js';
 
 export function createServer() {
   // `listChanged` must be an explicit false: the SDK fills an absent value with `true`,
@@ -16,5 +18,7 @@ export function createServer() {
       cacheHints: CACHE_HINTS,
     },
   );
+  registerSearchObjectsTool(server);
+  registerGetObjectTool(server);
   return server;
 }

@@ -14,7 +14,14 @@ Extends the root `CLAUDE.md`: the offline suite is the only continuous layer, so
 
 ## Harness
 
-- **No network, no full database in `npm test`.** Unit tests build a throwaway database with `makeTestDb` (`test/helpers.js`), holding only the tables and rows the test needs. Tool tests will use a fixture database built by `scripts/build_db.py` from the partial dump, so its schema cannot drift from the real one.
+- **No network, no full database in `npm test`.** Unit tests build a throwaway database with `makeTestDb` (`test/helpers.js`), holding only the tables and rows the test needs. Tool tests use the fixture database built by `scripts/build_db.py` from the partial dump, so its schema cannot drift from the real one. It stays uncommitted in `data/db/` (56 MB); `FIXTURE_DB` (`test/helpers.js`) gives its path (override with `SKKG_FIXTURE_DB`) and a `skip` reason when it is missing. Rebuild it (about 40 s) with:
+
+  ```sh
+  uv run --with pyoxigraph python -I scripts/load_oxigraph.py data/raw/partial/latest-partial-dump.ttl.gz data/oxigraph/partial-20261028
+  uv run --with pyoxigraph python -I scripts/build_db.py data/oxigraph/partial-20261028 data/db/skkg-partial-20261028.sqlite --headers data/raw/partial/headers.txt
+  ```
+
+  Assert facts the spec or the dump fixes (an id, an anonymisation label), not counts that change with the next partial dump.
 - **Gates use exact equality, never truthiness:** `process.env.SKKG_LIVE === '1'` for tests that call SKKG (`live: true`, IIIF), and a set `SKKG_FULL_DB` path for tests against the full database. A test that reaches the network or the full database without its gate is a bug.
 - **Query-plan assertions belong to the full-database gate.** A query that scans a table passes on a small fixture and is slow only on the full database. Such tests check `EXPLAIN QUERY PLAN` for the index the query must use, and each names the invariant it guards.
 - **Privacy is a behaviour.** The build enforces it, but tool tests still assert that results keep SKKG's anonymisation ("Privatperson", "Unbekannte:r Eigentümer:in") and that private addresses carry no coordinates.

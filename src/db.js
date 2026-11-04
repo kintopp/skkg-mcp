@@ -41,5 +41,5 @@ export function staleWarning(meta, now = new Date()) {
   const days = Math.floor((now - asOf) / 86_400_000);
   if (days <= STALE_AFTER_DAYS) return undefined;
   return `The data is from ${meta.data_as_of}, ${days} days ago. SKKG may since have changed rights, ` +
-    'withdrawn records, or anonymised persons; check important records with skkg_get_object and live: true.';
+    'withdrawn records, or anonymised persons; check important records on their website_url.';
 }
