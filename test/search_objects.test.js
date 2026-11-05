@@ -16,7 +16,7 @@
 // - a label of another vocabulary is answered with "translate it" instead of the right filter,
 //   or the hint names only one of several vocabularies; a term that only skkg_search_provenance
 //   filters ("Auktionshaus", an owner type) gets no hint, or one naming its filter as this tool's;
-//   a currency term ("DM") is not sent to `currency` of skkg_search_provenance
+//   a label of two vocabularies ("DM", a currency and a country) names one of them only
 // - with a creator filter, exclude_attributions drops an object through a creator row other than
 //   the one the filter matched
 // - the hint for a wrong exclude_attributions value names an inclusion filter, inverting the exclusion
@@ -88,6 +88,13 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
       const text = await callError(client, NAME, { object_type: 'type/20042/182287' });
       assert.match(text, /no term "type\/20042\/182287"/);
       assert.doesNotMatch(text, /Restaurierungsregal|location/);
+    });
+
+    await t.test('a label of a current location is refused without naming the location vocabulary', async () => {
+      // "Restaurierungsregal" is the label of the location term type/20042/182287 only.
+      const text = await callError(client, NAME, { object_type: 'Restaurierungsregal' });
+      assert.match(text, /no term of `object_type` is labelled "Restaurierungsregal"/);
+      assert.doesNotMatch(text, /location/);
     });
 
     await t.test('a term id of another vocabulary is refused', async () => {
@@ -200,12 +207,11 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
       assert.doesNotMatch(text, /\ba object_type\b/);
       await assertVocabulariesListed(text, ['object_type']);
       assert.doesNotMatch(text, /Pass it as/);
-      // "DM" is a currency term, which skkg_search_provenance takes as the code it is recorded under,
-      // and the country code of Dominica, which skkg_search_actors takes as either of its country filters.
+      // "DM" is SKKG's label of a currency, which no term filter takes, and the country code of
+      // Dominica, which skkg_search_actors takes as either of its country filters.
       const dm = await callError(client, NAME, { acquisition_type: 'DM' });
       assert.match(dm, /"DM" is a term of the country and currency vocabularies, not of `acquisition_type`/);
-      assert.match(dm, /skkg_search_actors takes it as `nationality` or `place_country`, and skkg_search_provenance takes it as `currency`/);
-      assert.match(dm, /skkg_search_provenance takes it as `currency`/);
+      assert.match(dm, /This tool has no filter for it; skkg_search_actors takes it as `nationality` or `place_country`\./);
     });
 
     await t.test('a wrong exclude_attributions value is never sent to an inclusion filter', async () => {

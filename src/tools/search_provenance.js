@@ -13,8 +13,8 @@ import { words, startingWith } from '../lib/words.js';
 import { fitResult } from '../lib/fit.js';
 import { capList, paging, showing, pastEnd, tailLines } from '../lib/results.js';
 import { objectRowLines, periodLines, periodRefLine, acquisitionLines } from '../lib/text.js';
-import { resolveTerms, actorFilter, assertRange, filterValues, valuesOfTerms, valuesHint, termName } from '../lib/filters.js';
-import { TERM_FILTERS as TERM_FILTERS_OF, VALUE_FILTERS, priced } from './term_filters.js';
+import { resolveTerms, actorFilter, assertRange } from '../lib/filters.js';
+import { TERM_FILTERS as TERM_FILTERS_OF } from './term_filters.js';
 import {
   objectRowShape, periodShape, periodRefShape, acquisitionOut, appliedOut, langIn, int, termField, termValue, idField, yearField,
 } from './schemas.js';
@@ -85,9 +85,8 @@ const filterShape = {
     'a lone date with another qualifier ("um 1900", "vor 1997", "spätestens 1907") is that year only'),
   year_to: yearField('Latest year; see year_from'),
   currency: termValue().optional().describe(
-    'Currency of the price, an ISO code such as "CHF", "DEM", "FRF", "GBP" (SKKG\'s "DM" and "FF" are DEM and FRF), ' +
-    'or the id ("type/…") or a label of a currency term with a price. ' +
-    'Alone, it keeps the entries with a price in that currency'),
+    'Currency of the price: its ISO code or SKKG\'s label of it, e.g. "CHF", "DEM", "GBP", "DM" ' +
+    '(SKKG\'s "DM" and "FF" are DEM and FRF). Alone, it keeps the entries with a price in that currency'),
   price_min: priceField('Lowest price, in `currency`, which it needs. A batch price (is_batch_price) is the price of all objects of the batch'),
   price_max: priceField('Highest price, in `currency`; see price_min'),
 };
@@ -148,22 +147,31 @@ function resolvePlaces(db, value) {
   return hits;
 }
 
-// `currency` takes the codes of the priced entries, from its record in VALUE_FILTERS; the build
-// normalises SKKG's duplicate terms to one code each.
-const CURRENCY = { tool: SEARCH_PROVENANCE_TOOL_NAME, field: 'currency', facet: VALUE_FILTERS[SEARCH_PROVENANCE_TOOL_NAME].currency.facet };
-function resolveCurrency(db, value, args) {
-  const codes = filterValues(db, CURRENCY.tool, CURRENCY.field);
-  const v = value.trim();
-  if (codes.includes(v.toUpperCase())) return v.toUpperCase();
-  const { ids, matched } = resolveTerms(db, { ...CURRENCY, call: { args, needs: needs(args, 'currency') } }, v);
-  const viaTerm = valuesOfTerms(db, CURRENCY.tool, CURRENCY.field, ids);
-  if (viaTerm.length === 1) return viaTerm[0];
-  const named = matched.some((m) => m.id === v) ? termName(db, v) : `"${v}"`;
-  if (viaTerm.length > 1) {
-    throw new ToolError(`\`currency\`: ${named} names prices in several currencies (${viaTerm.join(', ')}).`,
-      `Pass one of the codes, e.g. "${viaTerm[0]}".`);
-  }
-  throw new ToolError(`\`currency\`: no price is recorded in ${named}.`, valuesHint(db, CURRENCY.tool, CURRENCY.field));
+// The entries of alias `t` that have a price in a known currency.
+const priced = (t) => `${t}.currency_code IS NOT NULL AND ${t}.price_value IS NOT NULL`;
+
+// What `currency` takes: the code of every priced entry, and SKKG's label of its currency
+// ("DM", "FF"), upper-cased, each mapped to its code. The build derives the code from the label
+// (currency_code in scripts/build_db.py), so a label names one code.
+function currencies(db) {
+  return perDb(db, 'currencies', () => {
+    const rows = db.prepare(`SELECT DISTINCT t.label, x.code FROM (
+        SELECT currency_id AS id, currency_code AS code FROM acquisitions a WHERE ${priced('a')}
+        UNION SELECT currency_id, currency_code FROM provenance p WHERE ${priced('p')}) x
+      JOIN terms t ON t.id = x.id ORDER BY x.code, t.label`).all();
+    const byInput = new Map(rows.map((r) => [r.code, r.code]));
+    for (const r of rows) if (r.label) byInput.set(r.label.trim().toUpperCase(), r.code);
+    return { codes: [...new Set(rows.map((r) => r.code))], aliases: [...byInput].filter(([k, c]) => k !== c), byInput };
+  });
+}
+
+function resolveCurrency(db, value) {
+  const { codes, aliases, byInput } = currencies(db);
+  const code = byInput.get(value.trim().toUpperCase());
+  if (code) return code;
+  throw new ToolError(`\`currency\`: no price is recorded in "${value.trim()}".`,
+    `The prices use ${codes.join(', ')}${aliases.length ? `; SKKG's ${aliases.length > 1 ? 'labels' : 'label'} ` +
+      `${aliases.map(([k, c]) => `"${k}" (${c})`).join(', ')} ${aliases.length > 1 ? 'are' : 'is'} taken too` : ''}.`);
 }
 
 // What a call must change for `field` to take the value refused for `from`: drop the filters of
@@ -251,7 +259,7 @@ function compile(db, args) {
     applied[field] = args[field];
   }
   if (args.currency !== undefined) {
-    const code = resolveCurrency(db, args.currency, args);
+    const code = resolveCurrency(db, args.currency);
     for (const [layer, t] of [['chain', 'p'], ['acquisition', 'a']]) add(layer, `${t}.currency_code = ? AND ${priced(t)}`, code);
     applied.currency = code;
   }

@@ -301,7 +301,7 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
       const d = tools.find((x) => x.name === NAME).description;
       assert.match(d, /when a search filter takes it, `filter` and `filter_tool`/);
       assert.match(d, /many vocabularies have none/);
-      assert.match(d, /`currency` of skkg_search_provenance takes the ids and labels of the currency terms that have a price, but matches by code/);
+      assert.match(d, /`currency` of skkg_search_provenance takes the codes of the prices \("CHF", "DEM"\) and SKKG's labels of them/);
       // "Stabil" is a condition, a vocabulary no search filter takes.
       const stabil = (await find({ id: 'type/25086/133788' })).term;
       assert.ok(stabil.object_count > 0);

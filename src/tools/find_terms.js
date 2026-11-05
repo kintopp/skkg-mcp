@@ -63,8 +63,7 @@ const description =
   'and, when a search filter takes it, `filter` and `filter_tool`: that parameter and its tool (skkg_search_objects, ' +
   'skkg_search_provenance for the vocabularies of provenance periods, or skkg_search_actors for gender and the country codes ' +
   'of nationalities); many vocabularies have none. Currency terms carry none either: ' +
-  '`currency` of skkg_search_provenance takes the ids and labels of the currency terms that have a price, but matches by code, ' +
-  'so it also lists the prices recorded under the other terms of that currency. With `id`, returns one term with its broader and narrower terms. ' +
+  '`currency` of skkg_search_provenance takes the codes of the prices ("CHF", "DEM") and SKKG\'s labels of them. With `id`, returns one term with its broader and narrower terms. ' +
   'With only `vocabulary`, lists that vocabulary. To search objects, use skkg_search_objects; ' +
   'its term filters take these labels or ids directly.';
 
@@ -129,8 +128,7 @@ function termRow(db, t, lang) {
   const label = termLabel(db, t.id, lang);
   const languages = [t.label_de, t.label_en, t.label_fr].filter(Boolean);
   // The first tool that filters the facet: skkg_search_objects for the acquisition types, which both take.
-  // A filter that takes values, not term ids, is never offered (term_filters.js).
-  const { tool, field } = filtersOfFacet(t.facet).find((f) => !f.values) ?? {};
+  const { tool, field } = filtersOfFacet(t.facet)[0] ?? {};
   return prune({
     id: t.id,
     label,

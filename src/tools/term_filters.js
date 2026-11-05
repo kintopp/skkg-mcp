@@ -2,8 +2,7 @@
 // terms it takes, and where its values are stored. The tools compile these records,
 // skkg_find_terms names them as a term's `filter`, and the wrong-vocabulary hints point to them
 // (src/lib/filters.js). A facet that two tools filter goes, in skkg_find_terms, to the tool listed
-// first: the acquisition types to skkg_search_objects. VALUE_FILTERS holds the filters that take a
-// value stored for their terms instead of term ids. This module imports no tool or helper, so
+// first: the acquisition types to skkg_search_objects. This module imports no tool or helper, so
 // every module can read it without an import cycle.
 
 import { SEARCH_OBJECTS_TOOL_NAME, SEARCH_PROVENANCE_TOOL_NAME, SEARCH_ACTORS_TOOL_NAME } from '../config.js';
@@ -55,24 +54,5 @@ export const TERM_FILTERS = Object.freeze({
     gender: { facet: 'gender', sql: 'a.gender_id' },
     nationality: { facet: 'country', exists: 'SELECT 1 FROM actor_nationalities n WHERE n.actor_id = a.id AND n.country_id' },
     place_country: { facet: 'country', exists: `${LIFE_PLACES} AND e.place_id` },
-  }),
-});
-
-// The entries of alias `t` that have a price in a known currency: the codes `currency` offers, and the rows it matches.
-export const priced = (t) => `${t}.currency_code IS NOT NULL AND ${t}.price_value IS NOT NULL`;
-
-// The filters that take a value stored for their terms, not term ids: `values` lists the (k, v)
-// pairs of a term and its value, `hint` leads the list of values in a refusal. A term without a
-// value is refused, so the hints of other filters send only terms with one. One value can stand for
-// several terms (DEM for "DM" and "DEM"), so skkg_find_terms gives the terms no `filter`: it would
-// not reproduce a term's count.
-export const VALUE_FILTERS = Object.freeze({
-  [SEARCH_PROVENANCE_TOOL_NAME]: Object.freeze({
-    currency: {
-      facet: 'currency',
-      hint: 'The prices use',
-      values: `SELECT a.currency_id AS k, a.currency_code AS v FROM acquisitions a WHERE ${priced('a')}
-        UNION SELECT p.currency_id, p.currency_code FROM provenance p WHERE ${priced('p')}`,
-    },
   }),
 });

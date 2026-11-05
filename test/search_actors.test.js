@@ -198,7 +198,10 @@ test('skkg_search_actors against the fixture database', { skip: FIXTURE_DB.skip 
       assert.match(wrong, /Pass it as `nationality` or `place_country`\./);
       const taken = await callError(client, NAME, { nationality: 'DE', gender: 'CH' });
       assert.match(taken, /Pass it as `nationality` \(in place of its value "DE"\) or `place_country`\./);
-      assert.match(await callError(client, NAME, { nationality: 'Schweiz' }), /no term of `nationality` is labelled "Schweiz"/);
+      // "Schweiz" is a place of publication, not a country code.
+      const schweiz = await callError(client, NAME, { nationality: 'Schweiz' });
+      assert.match(schweiz, /"Schweiz" is a term of the literature_place vocabulary, not of `nationality`/);
+      assert.match(schweiz, /skkg_find_terms with vocabulary "country" lists the terms `nationality` takes/);
       const other = await callError(client, NAME, { nationality: 'Holz' });
       assert.match(other, /skkg_search_objects takes it as `material`/);
     });
