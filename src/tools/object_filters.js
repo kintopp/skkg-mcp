@@ -8,7 +8,8 @@ import { resolveId } from '../lib/ids.js';
 import { scopedFtsQuery } from '../lib/fts.js';
 import { placeholders } from '../lib/sql.js';
 import { objectRef, recordLabel } from '../lib/labels.js';
-import { TERM_FILTERS as TERM_FILTERS_OF, resolveTerms, actorFilter, assertRange } from '../lib/filters.js';
+import { resolveTerms, actorFilter, assertRange } from '../lib/filters.js';
+import { TERM_FILTERS as TERM_FILTERS_OF, creatorRowPairs } from './term_filters.js';
 import { termField, idField, yearField } from './schemas.js';
 import { MAX_QUERY_LEN, SEARCH_OBJECTS_TOOL_NAME } from '../config.js';
 
@@ -31,34 +32,13 @@ export function objectQueryShape() {
   };
 }
 
-// Where each filter's values are stored, as a query of (oid, k) pairs: an object and one of its
-// values. The term filters select `oid IN (… WHERE k IN (?))`, and skkg_collection_stats counts
-// the same pairs, so a bucket and the filter that lists it cannot drift apart. The creator
-// pairs also carry `row`, one per creator row, because those filters apply to one row together.
-const objectTermPairs = (facet) => `SELECT object_id AS oid, term_id AS k FROM object_terms WHERE facet = '${facet}'`;
-const CREATOR_COLUMNS = { creator: 'actor_id', creator_role: 'role_id', attribution: 'attribution_id' };
-// `where` keeps only the creator rows (`oc`) that the caller's creator filters match.
-export const creatorRowPairs = (field, where) => `SELECT oc.object_id AS oid, oc.object_id || '#' || oc.rowid AS row,
-    oc.${CREATOR_COLUMNS[field]} AS k FROM object_creators oc
-    WHERE oc.${CREATOR_COLUMNS[field]} IS NOT NULL${where ? ` AND ${where}` : ''}`;
-export const VALUE_PAIRS = Object.freeze({
-  object_type: objectTermPairs('object_type'),
-  material: objectTermPairs('material'),
-  technique: objectTermPairs('technique'),
-  epoch: objectTermPairs('epoch'),
-  object_copyright: objectTermPairs('object_copyright'),
-  provenance_status: objectTermPairs('provenance_status'),
-  image_license: 'SELECT id AS oid, image_license_id AS k FROM objects WHERE image_license_id IS NOT NULL',
-  acquisition_type: 'SELECT object_id AS oid, type_id AS k FROM acquisitions WHERE type_id IS NOT NULL',
-  creator: creatorRowPairs('creator'),
-  creator_role: creatorRowPairs('creator_role'),
-  attribution: creatorRowPairs('attribution'),
-});
-
-// The term filters (parameter → facet) are the table's in src/lib/filters.js. Two of them narrow
-// the creator rows, so they are compiled together with `creator`, on these columns.
+// The term filters are the records of term_filters.js: each one's facet and its (oid, k) pairs.
+// VALUE_PAIRS adds `creator`, which skkg_collection_stats counts the same way.
 const TERM_FILTERS = TERM_FILTERS_OF[SEARCH_OBJECTS_TOOL_NAME];
-const CREATOR_ROW_COLUMN = { creator_role: 'role_id', attribution: 'attribution_id' };
+export const VALUE_PAIRS = Object.freeze({
+  ...Object.fromEntries(Object.entries(TERM_FILTERS).map(([field, f]) => [field, f.pairs])),
+  creator: creatorRowPairs('creator'),
+});
 export const TERM_FILTER_FIELDS = Object.freeze(Object.keys(TERM_FILTERS));
 // `?` stands for the (expanded) term ids.
 const filterSql = (field) => `o.id IN (SELECT oid FROM (${VALUE_PAIRS[field]}) WHERE k IN (?))`;
@@ -134,12 +114,12 @@ export function compileObjectFilters(db, args) {
     if (a.warning) warnings.push(a.warning);
   }
 
-  for (const [field, facet] of Object.entries(TERM_FILTERS)) {
+  for (const [field, { facet, creatorColumn }] of Object.entries(TERM_FILTERS)) {
     if (args[field] === undefined) continue;
-    const { ids, matched } = resolveTerms(db, SEARCH_OBJECTS_TOOL_NAME, field, facet, args[field], narrower);
+    const { ids, matched } = resolveTerms(db, { tool: SEARCH_OBJECTS_TOOL_NAME, field, facet, narrower }, args[field]);
     termIds[field] = ids;
-    if (CREATOR_ROW_COLUMN[field]) {
-      creatorParts.push(`oc.${CREATOR_ROW_COLUMN[field]} IN (${placeholders(ids.length)})`);
+    if (creatorColumn) {
+      creatorParts.push(`oc.${creatorColumn} IN (${placeholders(ids.length)})`);
       creatorParams.push(...ids);
     } else {
       clauses.push(filterSql(field).replace('(?)', `(${placeholders(ids.length)})`));
@@ -148,7 +128,8 @@ export function compileObjectFilters(db, args) {
     applied[field] = matched;
   }
 
-  const exclusions = args.exclude_attributions?.map((v) => resolveTerms(db, SEARCH_OBJECTS_TOOL_NAME, 'exclude_attributions', 'attribution', v, narrower));
+  const exclusions = args.exclude_attributions?.map((v) => resolveTerms(db,
+    { tool: SEARCH_OBJECTS_TOOL_NAME, field: 'exclude_attributions', facet: 'attribution', narrower, exclusion: true }, v));
   const excluded = exclusions?.flatMap((r) => r.ids);
   if (exclusions) {
     applied.exclude_attributions = exclusions.flatMap((r) => r.matched);

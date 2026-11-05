@@ -13,7 +13,8 @@ import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
 import { capList, paging, showing, pastEnd, tailLines } from '../lib/results.js';
 import { objectRowLines, periodLines, periodRefLine, acquisitionLines } from '../lib/text.js';
-import { TERM_FILTERS as TERM_FILTERS_OF, resolveTerms, actorFilter, assertRange } from '../lib/filters.js';
+import { resolveTerms, actorFilter, assertRange } from '../lib/filters.js';
+import { TERM_FILTERS as TERM_FILTERS_OF } from './term_filters.js';
 import {
   objectRowShape, periodShape, periodRefShape, acquisitionOut, appliedOut, langIn, int, termField, idField, yearField,
 } from './schemas.js';
@@ -22,23 +23,12 @@ import {
   SEARCH_PROVENANCE_TOOL_NAME,
 } from '../config.js';
 
-export { SEARCH_PROVENANCE_TOOL_NAME };
-
-// The term filters (parameter → facet) are the table's in src/lib/filters.js; this is where each
-// one's values are, with its layer: the column of `p` (provenance) or `a` (acquisitions), or an
-// EXISTS over the period's rows.
+// The term filters are the records of term_filters.js: each one's facet, its layer, and where its
+// values are.
 const TERM_FILTERS = TERM_FILTERS_OF[SEARCH_PROVENANCE_TOOL_NAME];
-const TERM_SQL = {
-  owner_type: { layer: 'chain', sql: 'p.owner_type_id' },
-  certainty: { layer: 'chain', sql: 'p.certainty_id' },
-  holding_kind: { layer: 'chain', sql: 'p.holding_kind_id' },
-  transaction_type: { layer: 'chain', sql: 'p.transaction_type_id' },
-  source_type: { layer: 'chain', exists: 'SELECT 1 FROM provenance_sources s WHERE s.provenance_id = p.id AND s.type_id' },
-  acquisition_type: { layer: 'acquisition', sql: 'a.type_id' },
-};
 // The layer of every filter that applies to one layer only; the others apply to both.
 const LAYER_OF = {
-  ...Object.fromEntries(Object.keys(TERM_FILTERS).map((field) => [field, TERM_SQL[field].layer])),
+  ...Object.fromEntries(Object.entries(TERM_FILTERS).map(([field, f]) => [field, f.layer])),
   owner: 'chain', transaction_kind: 'chain', place: 'chain', acquired_from: 'acquisition',
 };
 const LAYERS = { chain: ['chain'], acquisition: ['acquisition'], both: ['chain', 'acquisition'] };
@@ -204,12 +194,12 @@ function compile(db, args) {
   const narrowed = chainOnly.length ? 'chain' : acqOnly.length ? 'acquisition' : undefined;
   if (narrowed) {
     if (!layers.includes(narrowed)) {
-      const own = narrowed === 'chain' ? chainOnly : acqOnly;
+      const offending = narrowed === 'chain' ? chainOnly : acqOnly;
       // Dropping them leaves a usable call only when another filter remains.
-      const rest = given.length > own.length;
-      throw new ToolError(`${list(own)} ${own.length > 1 ? 'apply' : 'applies'} to ${narrowed === 'chain' ? 'chain periods' : 'SKKG\'s acquisitions'} only, ` +
+      const rest = given.length > offending.length;
+      throw new ToolError(`${list(offending)} ${offending.length > 1 ? 'apply' : 'applies'} to ${narrowed === 'chain' ? 'chain periods' : 'SKKG\'s acquisitions'} only, ` +
         `and \`layer\` is "${args.layer}".`,
-      rest ? `Drop ${list(own)}, or pass layer "${narrowed}" or "both".` : `Pass layer "${narrowed}" or "both", or leave \`layer\` out.`);
+      rest ? `Drop ${list(offending)}, or pass layer "${narrowed}" or "both".` : `Pass layer "${narrowed}" or "both", or leave \`layer\` out.`);
     }
     layers = [narrowed];
   }
@@ -226,10 +216,9 @@ function compile(db, args) {
   const applied = {};
   const warnings = [];
 
-  for (const [field, facet] of Object.entries(TERM_FILTERS)) {
+  for (const [field, f] of Object.entries(TERM_FILTERS)) {
     if (args[field] === undefined) continue;
-    const { ids, matched } = resolveTerms(db, SEARCH_PROVENANCE_TOOL_NAME, field, facet, args[field], false);
-    const f = TERM_SQL[field];
+    const { ids, matched } = resolveTerms(db, { tool: SEARCH_PROVENANCE_TOOL_NAME, field, facet: f.facet }, args[field]);
     const inList = `IN (${placeholders(ids.length)})`;
     add(f.layer, f.exists ? `EXISTS (${f.exists} ${inList})` : `${f.sql} ${inList}`, ...ids);
     applied[field] = matched;

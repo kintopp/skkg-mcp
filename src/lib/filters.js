@@ -1,5 +1,6 @@
-// What the search tools' filters share: which tool and parameter take each vocabulary's terms,
-// the term and actor resolvers, and the checks and warnings of every filter.
+// What the search tools' filters share: which tool and parameter take each vocabulary's terms
+// (from the records of src/tools/term_filters.js), the term and actor resolvers, and the checks
+// and warnings of every filter.
 
 import { ToolError } from './errors.js';
 import { resolveId } from './ids.js';
@@ -7,67 +8,56 @@ import { ftsQuery } from './fts.js';
 import { stmt, placeholders } from './sql.js';
 import { termLabel, actorRef } from './labels.js';
 import { termsByLabel } from './terms.js';
-import { MAX_NAME_MATCHES, WITHHELD_FACETS, SEARCH_OBJECTS_TOOL_NAME, SEARCH_PROVENANCE_TOOL_NAME } from '../config.js';
+import { MAX_NAME_MATCHES, WITHHELD_FACETS } from '../config.js';
+import { TERM_FILTERS } from '../tools/term_filters.js';
 
-// The term filters of each search tool: parameter → the vocabulary (facet) whose terms it takes.
-// The tools compile these parameters, skkg_find_terms names them as a term's `filter`, and the
-// wrong-vocabulary hints point to them. A facet that two tools filter goes, in skkg_find_terms,
-// to the tool listed first: the acquisition types to skkg_search_objects.
-export const TERM_FILTERS = Object.freeze({
-  [SEARCH_OBJECTS_TOOL_NAME]: Object.freeze({
-    object_type: 'object_type',
-    material: 'material',
-    technique: 'technique',
-    epoch: 'epoch',
-    object_copyright: 'object_copyright',
-    provenance_status: 'provenance_status',
-    image_license: 'image_license',
-    acquisition_type: 'acquisition_type',
-    creator_role: 'production_role',
-    attribution: 'attribution',
-  }),
-  [SEARCH_PROVENANCE_TOOL_NAME]: Object.freeze({
-    owner_type: 'owner_type',
-    certainty: 'certainty',
-    holding_kind: 'holding_kind',
-    transaction_type: 'transaction_type',
-    source_type: 'source_type',
-    acquisition_type: 'acquisition_type',
-  }),
-});
+// Where the terms of each vocabulary (facet) go: the parameters of the search tools that take
+// them, as [{ tool, field }] in the order of TERM_FILTERS, built once from its records.
+const FILTERS_OF_FACET = new Map();
+for (const [tool, fields] of Object.entries(TERM_FILTERS)) {
+  for (const [field, { facet }] of Object.entries(fields)) {
+    if (!FILTERS_OF_FACET.has(facet)) FILTERS_OF_FACET.set(facet, []);
+    FILTERS_OF_FACET.get(facet).push(Object.freeze({ tool, field }));
+  }
+}
 
 /** The parameters that take a facet's terms, as [{ tool, field }], in the order of TERM_FILTERS. */
-export function filtersOfFacet(facet) {
-  return Object.entries(TERM_FILTERS).flatMap(([tool, fields]) =>
-    Object.entries(fields).filter(([, f]) => f === facet).map(([field]) => ({ tool, field })));
-}
+export const filtersOfFacet = (facet) => FILTERS_OF_FACET.get(facet) ?? [];
+
+// The facet names are the values of skkg_find_terms' `vocabulary`, so the hints name them as such.
+const listedBy = (field, wanted) => `skkg_find_terms with vocabulary "${wanted}" lists the terms \`${field}\` takes.`;
 
 // Where terms of `facets` go instead of `field` of `tool`: its own parameters when it has one,
-// else those of the other tools, named with their tool. Never for exclude_attributions: the
-// filters it would name include objects, so following the hint would invert the exclusion.
-function otherFilterHint(tool, field, facets, wanted) {
+// else those of the other tools, named with their tool. Never for an exclusion: the filters it
+// would name include objects, so following the hint would invert it.
+function otherFilterHint({ tool, field, exclusion }, facets, wanted) {
   const targets = facets.flatMap(filtersOfFacet);
   const own = targets.filter((t) => t.tool === tool);
-  if (field === 'exclude_attributions' || !targets.length) return `\`${field}\` takes ${wanted} terms only.`;
-  if (own.length) return `Pass it as ${own.map((t) => `\`${t.field}\``).join(' or ')}, or pass a ${wanted} term.`;
+  if (exclusion || !targets.length) return listedBy(field, wanted);
+  if (own.length) return `Pass it as ${own.map((t) => `\`${t.field}\``).join(' or ')}; ${listedBy(field, wanted)}`;
   return `This tool has no filter for it; ${targets.map((t) => `${t.tool} takes it as \`${t.field}\``).join(', and ')}. ` +
-    `Here, pass a ${wanted} term.`;
+    listedBy(field, wanted);
 }
+
+const vocabularies = (facets) => `the ${facets.join(' and ')} ${facets.length > 1 ? 'vocabularies' : 'vocabulary'}`;
 
 /**
  * Resolves a term filter value (a term id or a label) to term ids of `facet`, for `field` of
- * `tool`. Throws a ToolError with suggestions. With `narrower`, the ids include the narrower terms.
+ * `tool`. Throws a ToolError with suggestions. With `narrower`, the ids include the narrower terms;
+ * `exclusion` marks a filter that leaves out what it matches, so its hints name no other filter.
  * Returns { ids, matched }, where `matched` lists the terms the value named, for applied_filters.
  */
-export function resolveTerms(db, tool, field, facet, value, narrower) {
+export function resolveTerms(db, { tool, field, facet, narrower = false, exclusion = false }, value) {
+  const where = { tool, field, exclusion };
   const v = value.trim();
   let ids;
   if (v.startsWith('type/')) {
     const t = stmt(db, 'SELECT id, facet FROM terms WHERE id = ?').get(v);
     if (!t || WITHHELD_FACETS.includes(t.facet)) throw new ToolError(`\`${field}\`: no term "${v}".`, 'Pass a German label instead, or check the id.');
     if (t.facet !== facet) {
-      throw new ToolError(`\`${field}\`: "${v}" (${termLabel(db, v) ?? 'unlabelled'}) belongs to the ${t.facet ?? 'other'} vocabulary, not to ${facet}.`,
-        otherFilterHint(tool, field, [t.facet], facet));
+      throw new ToolError(`\`${field}\`: "${v}" (${termLabel(db, v) ?? 'unlabelled'}) is a term of ` +
+        `${t.facet ? vocabularies([t.facet]) : 'another vocabulary'}, not of \`${field}\`.`,
+      otherFilterHint(where, [t.facet], facet));
     }
     ids = [v];
   } else {
@@ -76,10 +66,10 @@ export function resolveTerms(db, tool, field, facet, value, narrower) {
     if (!ids.length) {
       const elsewhere = [...new Set(entries.map((e) => e.facet).filter((f) => filtersOfFacet(f).length))];
       if (elsewhere.length) {
-        throw new ToolError(`\`${field}\`: "${v}" is a ${elsewhere.join(' and ')} term, not a ${facet} term.`,
-          otherFilterHint(tool, field, elsewhere, facet));
+        throw new ToolError(`\`${field}\`: "${v}" is a term of ${vocabularies(elsewhere)}, not of \`${field}\`.`,
+          otherFilterHint(where, elsewhere, facet));
       }
-      throw new ToolError(`\`${field}\`: no ${facet} term is labelled "${v}".`, suggestTerms(db, facet, v));
+      throw new ToolError(`\`${field}\`: no term of \`${field}\` is labelled "${v}".`, suggestTerms(db, facet, v));
     }
   }
   const matched = ids.map((id) => ({ id, label: termLabel(db, id) }));

@@ -19,6 +19,8 @@
 // - with a creator filter, exclude_attributions drops an object through a creator row other than
 //   the one the filter matched
 // - the hint for a wrong exclude_attributions value names an inclusion filter, inverting the exclusion
+// - a refusal names the vocabulary where the caller wrote a parameter ("not a production_role term"
+//   for `creator_role`), or sends the caller to a vocabulary skkg_find_terms does not take
 // - inventory numbers sort as text, so "10" comes after "04012"
 // - the date range matches by containment, not overlap, so a work of 1907 misses 1900–1910
 // - paging repeats or skips a record, or has_more is true on the last page
@@ -31,12 +33,23 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { withClient, callOk, callError, allPages, FIXTURE_DB } from './helpers.js';
 import { outputSchema } from '../src/tools/search_objects.js';
+import { outputSchema as findTermsSchema } from '../src/tools/find_terms.js';
 
 const NAME = 'skkg_search_objects';
 
 test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip }, async (t) => {
   await withClient('search-objects-test', async (client) => {
     const search = (args) => callOk(client, NAME, args, outputSchema);
+    // Every vocabulary a hint names is one skkg_find_terms lists, and `wanted` are among them.
+    const assertVocabulariesListed = async (text, wanted) => {
+      const named = [...text.matchAll(/skkg_find_terms with vocabulary "([^"]+)"/g)].map((m) => m[1]);
+      assert.deepEqual(named.filter((v) => wanted.includes(v)).sort(), [...wanted].sort(), text);
+      for (const vocabulary of named) {
+        const r = await callOk(client, 'skkg_find_terms', { vocabulary, limit: 1 }, findTermsSchema);
+        assert.equal(r.applied.vocabulary, vocabulary);
+        assert.ok(r.results.length > 0, vocabulary);
+      }
+    };
     const ids = (r) => r.results.map((x) => x.id);
 
     await t.test('neither query nor filter is refused with an example', async () => {
@@ -65,7 +78,7 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
     });
 
     await t.test('an unknown label is refused with German suggestions', async () => {
-      assert.match(await callError(client, NAME, { material: 'wood' }), /no material term is labelled "wood".*German/);
+      assert.match(await callError(client, NAME, { material: 'wood' }), /`material`: no term of `material` is labelled "wood".*German/);
       assert.match(await callError(client, NAME, { material: 'Hol' }), /Did you mean "Holz"/);
     });
 
@@ -78,7 +91,8 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
 
     await t.test('a term id of another vocabulary is refused', async () => {
       const text = await callError(client, NAME, { epoch: 'type/21087/219966' });
-      assert.match(text, /object_type vocabulary, not to epoch/);
+      assert.match(text, /is a term of the object_type vocabulary, not of `epoch`/);
+      await assertVocabulariesListed(text, ['epoch']);
     });
 
     await t.test('a broader object type includes narrower ones unless include_narrower is false', async () => {
@@ -156,25 +170,34 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
 
     await t.test('a label of another vocabulary is refused with every filter that takes it', async () => {
       const text = await callError(client, NAME, { technique: 'Holz' });
-      assert.match(text, /"Holz" is a material term, not a technique term/);
+      assert.match(text, /"Holz" is a term of the material vocabulary, not of `technique`/);
       assert.match(text, /Pass it as `material`/);
+      await assertVocabulariesListed(text, ['technique']);
       // "Fotografie" is an object type and a material.
       const both = await callError(client, NAME, { epoch: 'Fotografie' });
       assert.match(both, /`object_type`/);
       assert.match(both, /`material`/);
+      // The parameter is named as the caller wrote it, its vocabulary as skkg_find_terms takes it.
+      const role = await callError(client, NAME, { creator_role: 'Holz' });
+      assert.match(role, /not of `creator_role`/);
+      assert.match(role, /skkg_find_terms with vocabulary "production_role" lists the terms `creator_role` takes/);
+      assert.doesNotMatch(role, /production_role term/);
+      await assertVocabulariesListed(role, ['production_role']);
     });
 
     await t.test('a term that only skkg_search_provenance filters is sent there, named as its filter', async () => {
       const text = await callError(client, NAME, { object_type: 'Auktionshaus' });
-      assert.match(text, /"Auktionshaus" is a owner_type term, not a object_type term/);
+      assert.match(text, /"Auktionshaus" is a term of the owner_type vocabulary, not of `object_type`/);
       assert.match(text, /This tool has no filter for it; skkg_search_provenance takes it as `owner_type`/);
+      assert.doesNotMatch(text, /\ba object_type\b/);
+      await assertVocabulariesListed(text, ['object_type']);
       assert.doesNotMatch(text, /Pass it as/);
     });
 
     await t.test('a wrong exclude_attributions value is never sent to an inclusion filter', async () => {
       // "Verlag" is a creator role; creator_role would include publishers instead of excluding them.
       const text = await callError(client, NAME, { exclude_attributions: ['Verlag'] });
-      assert.match(text, /`exclude_attributions` takes attribution terms only/);
+      assert.match(text, /skkg_find_terms with vocabulary "attribution" lists the terms `exclude_attributions` takes/);
       assert.doesNotMatch(text, /creator_role/);
     });
 

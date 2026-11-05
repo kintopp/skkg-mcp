@@ -28,7 +28,12 @@ MUTATIONS = [
     ("ß also ss", "re.sub(\"ß|ss\", \"(?:ß|ss)\", re.escape(w))", "re.escape(w)", "redaction_replaces"),
     ("FTS content compared", "if Counter(rows) != Counter(db.execute(f\"SELECT * FROM {table}\").fetchall()):", "if False:", "fts_table or base_change"),
     ("website outside", "AND (website NOT LIKE 'http%' OR", "AND (0 AND", "website_fails"),
-    ("anonymised owner's own row checked", "named = sum(db.execute(", "named = 0 * sum(db.execute(", "own_row"),
+    ("anonymised owner's own row checked", "named = db.execute(", "named = 0 * db.execute(", "own_row"),
+    ("anonymised owner's gender checked", "OR COALESCE(gender_id, birth_label,", "OR COALESCE(birth_label,", "own_row"),
+    ("anonymised owners from the store", "anon = sorted(exp[\"anon\"] | actors.keys())", "anon = sorted(actors.keys() or exp[\"anon\"])", "unflagged_owners_own_row"),
+    ("anonymised owner's nationality checked", '("actor_nationalities", "actor_id"), ', "", "attached"),
+    ("loader drops an anonymised owner's gender", "None if anon else gender.get(a)", "gender.get(a)", "anonymised_owner_is_loaded"),
+    ("loader drops an anonymised owner's nationality", "[r for r in nat if r[0] not in anonymised]", "nat", "anonymised_owner_is_loaded"),
     ("anonymised owner's life data checked", "death_to, death_place, death_place_id, biography) IS NOT NULL)", "death_to, death_place, death_place_id, biography) IS NOT NULL AND 0)", "own_row"),
     # The data rules of test_build_rules.py.
     ("seit opens the end", '"from": {"seit", "mindestens seit"}', '"from": set()', "test_period_span"),

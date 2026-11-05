@@ -10,9 +10,8 @@ import { termLabel, actorRef } from '../lib/labels.js';
 import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
 import { paging, showing, pastEnd, tailLines } from '../lib/results.js';
-import {
-  objectQueryShape, objectFilterShape, compileObjectQuery, VALUE_PAIRS, TERM_FILTER_FIELDS, creatorRowPairs,
-} from './object_filters.js';
+import { objectQueryShape, objectFilterShape, compileObjectQuery, VALUE_PAIRS, TERM_FILTER_FIELDS } from './object_filters.js';
+import { creatorRowPairs } from './term_filters.js';
 import { appliedOut, langIn, str } from './schemas.js';
 import { searchArgs } from '../lib/text.js';
 import {

@@ -35,7 +35,7 @@ from pathlib import Path
 
 from pyoxigraph import BlankNode, Literal, NamedNode, Store
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 D = "https://data.skkg.ch/"
 AAT = "http://vocab.getty.edu/aat/"
 PREFIX = """PREFIX crm: <http://www.cidoc-crm.org/cidoc-crm/>
@@ -566,7 +566,7 @@ def load_actors(src, db, used):
     bio = {a: v for a, v in q("person", """SELECT ?a ?v WHERE { ?a a skkg:Actor ; crm:P67i_is_referred_to_by ?b .
         ?b crm:P190_has_symbolic_content ?v FILTER(STRENDS(STR(?b), '/biography')) }""")}
 
-    rows = []
+    rows, anonymised = [], set()
     for a, kind in kinds.items():
         if a not in labels and a != ANON_ACTOR:
             continue
@@ -575,12 +575,16 @@ def load_actors(src, db, used):
         b = ev.get("birth") or ev.get("formation") or (None,) * 6
         dd = ev.get("death") or ev.get("dissolution") or (None,) * 6
         label = "Privatperson" if a == ANON_ACTOR else labels.get(a)
-        anon = 1 if a == ANON_ACTOR or is_anonymisation(label) else 0
+        anon = a == ANON_ACTOR or is_anonymisation(label)
+        if anon:
+            anonymised.add(a)
+        # An anonymised owner keeps no personal data, not even a gender: the 2026-10-28 dump gives
+        # one of them "unbekannt", which the privacy check would have to tell from a real one.
         rows.append((a, kind, label, name.get(a), p.get("firstname"), p.get("lastname"),
-                     p.get("corporatename"), gender.get(a), b[0], b[1], b[2], b[3], b[4],
-                     dd[0], dd[1], dd[2], dd[3], dd[4], bio.get(a), anon))
+                     p.get("corporatename"), None if anon else gender.get(a), b[0], b[1], b[2], b[3], b[4],
+                     dd[0], dd[1], dd[2], dd[3], dd[4], bio.get(a), int(anon)))
     db.executemany("INSERT INTO actors VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
-    db.executemany("INSERT INTO actor_nationalities VALUES (?,?)", nat)
+    db.executemany("INSERT INTO actor_nationalities VALUES (?,?)", [r for r in nat if r[0] not in anonymised])
 
     names = [(a, v, t, "skkg") for a, v, t in q("person", """SELECT ?a ?v ?t WHERE { ?a a skkg:Actor ;
         crm:P1_is_identified_by ?n . ?n crm:P190_has_symbolic_content ?v FILTER(CONTAINS(STR(?n), '/alternativeName/'))
@@ -1730,24 +1734,27 @@ def privacy_checks(db, exp):
     out.append((f"{ANON_ACTOR} and {ANON_ADDRESS} hold only \"Privatperson\"", n == 1 and m == 1, ""))
 
     actors = dict(db.execute("SELECT id, label FROM actors WHERE is_anonymous = 1"))
-    # Its own row names no one: each name field is empty or the placeholder label, and it has no
-    # life data. These fields reach actors_fts, so the `owner` filter would find a name here.
-    named = sum(db.execute(f"""SELECT COUNT(*) FROM actors WHERE id IN ({",".join("?" * len(actors))})
-        AND (COALESCE(name, label) IS NOT label OR COALESCE(first_name, label) IS NOT label
-             OR COALESCE(last_name, label) IS NOT label OR COALESCE(corporate_name, label) IS NOT label
-             OR COALESCE(birth_label, birth_from, birth_to, birth_place, birth_place_id, death_label, death_from,
-                         death_to, death_place, death_place_id, biography) IS NOT NULL)""", list(actors)).fetchone()) if actors else 0
     unflagged = sum(is_anonymisation(lab) for (lab,) in db.execute("SELECT label FROM actors WHERE is_anonymous = 0"))
     relabelled = sum(a not in actors or (a != ANON_ACTOR and not is_anonymisation(actors[a])) for a in exp["anon"])
+    # The anonymised owners the store names, and any the loader flagged besides.
     anon = sorted(exp["anon"] | actors.keys())
     marks = ",".join("?" * len(anon))
+    # Their own rows name no one: each name field is empty or the placeholder label, and there is no
+    # gender or life data. These fields reach actors_fts, so the `owner` filter would find a name here.
+    named = db.execute(f"""SELECT COUNT(*) FROM actors WHERE id IN ({marks})
+        AND (COALESCE(name, label) IS NOT label OR COALESCE(first_name, label) IS NOT label
+             OR COALESCE(last_name, label) IS NOT label OR COALESCE(corporate_name, label) IS NOT label
+             OR COALESCE(gender_id, birth_label, birth_from, birth_to, birth_place, birth_place_id, death_label, death_from,
+                         death_to, death_place, death_place_id, biography) IS NOT NULL)""", anon).fetchone()[0]
     children = sum(db.execute(f"SELECT COUNT(*) FROM {t} WHERE {c} IN ({marks})", anon).fetchone()[0] for t, c in (
         ("actor_names", "actor_id"), ("actor_external", "actor_id"), ("actor_gnd", "actor_id"), ("actor_events", "actor_id"),
-        ("actor_links", "actor_id"), ("actor_relations", "subject_id"), ("actor_relations", "target_id")))
-    out.append(("every anonymised owner is flagged, keeps SKKG's placeholder label, and has no names, life data, identifiers, events or relations",
+        ("actor_links", "actor_id"), ("actor_nationalities", "actor_id"), ("actor_relations", "subject_id"),
+        ("actor_relations", "target_id")))
+    out.append(("every anonymised owner is flagged, keeps SKKG's placeholder label, and has no names, gender, life data, "
+                "nationality, identifiers, events or relations",
                 unflagged == relabelled == named == children == 0,
-                f"{len(exp['anon'])} anonymised; {unflagged} unflagged, {relabelled} relabelled or missing, {named} with a name "
-                f"or life data in their own row, {children} child rows"))
+                f"{len(exp['anon'])} anonymised; {unflagged} unflagged, {relabelled} relabelled or missing, {named} with a name, "
+                f"gender or life data in their own row, {children} child rows"))
     owners = {(p, o) for p, o in db.execute("SELECT id, owner_id FROM provenance") if o in exp["anon"]}
     sources = {(o, s) for o, s in db.execute("SELECT object_id, source_id FROM acquisitions") if s in exp["anon"]}
     out.append(("the anonymised owners keep their provenance periods and acquisitions",

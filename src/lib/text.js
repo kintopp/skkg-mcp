@@ -57,13 +57,13 @@ export const periodRefLine = (p, extra = []) => join([p.statement, p.owner && `o
 
 /**
  * SKKG's acquisition of an object: a line starting with `lead`, then its note on a line of its own
- * (indented by `noteIndent`), or with `inlineNote` at the end of the line, its line breaks as " / ".
+ * (indented by two spaces), or with `inlineNote` at the end of the line, its line breaks as " / ".
  */
-export function acquisitionLines(a, { lead = 'Acquisition: ', noteIndent = '  ', inlineNote = false } = {}) {
+export function acquisitionLines(a, { lead = 'Acquisition: ', inlineNote = false } = {}) {
   const note = inlineNote ? a.note?.replace(/\s*\n\s*/g, ' / ') : undefined;
   return [`${lead}${join([a.type, a.date_label ?? a.date, a.date_uncertain && 'date uncertain', a.source && `from ${actor(a.source)}`,
     a.reference && `ref. ${a.reference}`, a.price && `price ${priceText(a.price)}`, note])}`,
-  !inlineNote && a.note && `${noteIndent}${a.note}`];
+  !inlineNote && a.note && `  ${a.note}`];
 }
 
 /** An object row of a search result or a record's object list, numbered `n`. */

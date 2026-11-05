@@ -9,7 +9,8 @@ Ways the checks could fail, which the tests below pin:
 - a name is matched only in one case, Unicode form or spacing, or only in its own record;
 - a name is found only where the loader writes it, not in another column, table, or FTS copy;
 - the anonymisation is checked for presence, not for content and links, or an anonymised owner's
-  own row (its name fields, life data) is not checked, though it feeds the actor search;
+  own row (its name fields, gender, life data) or nationality is not checked, though the row feeds
+  the actor search, or the owners checked are those the loader flagged, not those of the store;
 - the allowed fields (acquisition notes) or a person's own organisation are refused.
 
 Values from the store are injected but never printed: assertions compare check names only.
@@ -57,6 +58,18 @@ def env(tmp_path_factory):
            "private": private, "other": other, "anon": anon,
            "pref": lambda x: min(exp["pref"][x])}
     conn.close()
+
+
+def detail(env, check, *statements):
+    """The detail of the check named `check` after the statements: counts only, never values."""
+    conn = env["conn"]
+    conn.execute("BEGIN")
+    try:
+        for sql, *params in statements:
+            conn.execute(sql, params)
+        return next(d for c, _, d in b.privacy_checks(conn, env["exp"]) if check in c)
+    finally:
+        conn.execute("ROLLBACK")
 
 
 def failed(env, *statements):
@@ -179,6 +192,10 @@ def test_an_anonymised_owner_unflagged_or_relabelled_fails(env):
     assert fails(env, ANON_OWNERS, ("UPDATE actors SET is_anonymous = 0 WHERE id = ?", x))
     assert fails(env, ANON_OWNERS, ("UPDATE actors SET label = ?, is_anonymous = 0 WHERE id = ?", env["full"], x))
     assert fails(env, ANON_OWNERS, ("UPDATE actors SET label = ? WHERE id = ?", env["full"], x))
+    # Relabelled with empty name fields, so only the label tells, or left out by the loader.
+    assert "1 relabelled or missing" in detail(env, ANON_OWNERS, ("UPDATE actors SET label = 'Muster', name = NULL, "
+                                                               "last_name = NULL, is_anonymous = 0 WHERE id = ?", x))
+    assert "1 relabelled or missing" in detail(env, ANON_OWNERS, ("DELETE FROM actors WHERE id = ?", x))
 
 
 def test_an_unflagged_placeholder_with_leading_space_or_other_case_fails(env):
@@ -191,17 +208,25 @@ def test_names_or_identifiers_attached_to_an_anonymised_owner_fail(env):
         assert fails(env, ANON_OWNERS, ("INSERT INTO actor_names VALUES (?, ?, NULL, 'skkg')", x, env["full"]))
         assert fails(env, ANON_OWNERS, ("INSERT INTO actor_gnd VALUES (?, '123', ?, NULL, NULL)", x, env["full"]))
         assert fails(env, ANON_OWNERS, ("INSERT INTO actor_external VALUES (?, 'gnd', '123', 'https://d-nb.info/gnd/123')", x))
+        assert fails(env, ANON_OWNERS, ("INSERT INTO actor_nationalities VALUES (?, 'type/20007/20047')", x))
 
 
 def test_a_name_or_life_data_in_an_anonymised_owners_own_row_fails(env):
     # Its own row feeds actors_fts, so the `owner` filter would find the name (review of f15e0a0, B2).
     for x in (b.ANON_ACTOR, env["anon"][0]):
         for col, value in (("name", env["full"]), ("first_name", env["given"]), ("last_name", env["surname"]),
-                           ("corporate_name", env["surname"]), ("birth_label", "1901"), ("death_place", "Winterthur"),
+                           ("corporate_name", env["surname"]), ("gender_id", "type/20088/132324"),
+                           ("birth_label", "1901"), ("death_place", "Winterthur"),
                            ("biography", env["surname"])):
             assert fails(env, ANON_OWNERS, (f"UPDATE actors SET {col} = ? WHERE id = ?", value, x)), f"{x} {col}"
     # The placeholder itself in a name field is how SKKG publishes the unknown owner.
     assert ANON_OWNERS not in " ".join(failed(env, ("UPDATE actors SET name = label, last_name = label WHERE id = ?", env["anon"][0])))
+
+
+def test_an_unflagged_owners_own_row_is_still_checked(env):
+    # The owners come from the store, not from the loader's flag (review of d9d3c30 and f08b4fb).
+    x = env["anon"][0]
+    assert "1 with a name" in detail(env, ANON_OWNERS, ("UPDATE actors SET is_anonymous = 0, name = ? WHERE id = ?", env["full"], x))
 
 
 def test_an_anonymised_owner_replaced_in_a_period_or_acquisition_fails(env):

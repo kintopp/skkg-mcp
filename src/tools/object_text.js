@@ -35,8 +35,6 @@ function textBlock(t) {
   return `${join([t.title ?? 'Text', about && `(${about})`], ' ')}:\n${t.text ?? ''}`;
 }
 
-const acquisition = (a) => acquisitionLines(a);
-
 function provenance(p) {
   return [`Provenance: ${join([p.status, p.status_text], ' — ')}`, ...(p.periods ?? []).flatMap((x, i) => periodLines(x, `${i + 1}. `)),
     ...(p.gaps ?? []).map((g) => `Gap (computed): ${span(g.from, g.to)}, between ${g.after} and ${g.before}`),
@@ -65,7 +63,7 @@ const SECTION_TEXT = {
   production,
   physical,
   texts: (ts) => ts.map(textBlock),
-  acquisition,
+  acquisition: (a) => acquisitionLines(a),
   provenance,
   exhibitions: (es) => ['Exhibitions:', ...es.map(exhibitionLine)],
   literature: (ls) => ['Literature:', ...ls.map(literatureLine)],

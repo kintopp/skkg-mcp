@@ -9,7 +9,7 @@ export const SERVER_VERSION = pkg.version;
 
 // The database is built by scripts/build_db.py.
 export const DB_PATH_ENV = 'SKKG_DB_PATH';
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 // Older than this, results warn that SKKG may have changed or withdrawn records.
 export const STALE_AFTER_DAYS = 30;
 

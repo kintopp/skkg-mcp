@@ -238,7 +238,9 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
       }
       assert.match(await callError(client, NAME, { owner_type: 'Auktion' }), /Pass it as `acquisition_type`/);
       const holz = await callError(client, NAME, { owner_type: 'Holz' });
+      assert.match(holz, /"Holz" is a term of the material vocabulary, not of `owner_type`/);
       assert.match(holz, /This tool has no filter for it; skkg_search_objects takes it as `material`/);
+      assert.match(holz, /skkg_find_terms with vocabulary "owner_type" lists the terms `owner_type` takes/);
       assert.doesNotMatch(holz, /Pass it as `material`/);
     });
 

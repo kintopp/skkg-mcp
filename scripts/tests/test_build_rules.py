@@ -21,7 +21,9 @@ Ways the rules could fail, which the tests below pin:
 - a link to an object the database does not hold is not counted because its column is missing
   from a hand list, or a period link that is NULL or not shaped "object/…" survives the drop;
 - a column that holds object ids does not declare its link, so the count misses it;
-- a currency label that is neither an alias nor an ISO-like code passes without a count.
+- a currency label that is neither an alias nor an ISO-like code passes without a count;
+- an anonymised owner keeps a gender or a nationality the store gives it, which the privacy
+  check would have to tell from a real one.
 
 Run: uv run --with pyoxigraph --with pytest python -I -m pytest -q scripts/tests
 """
@@ -208,3 +210,23 @@ def test_every_dated_acquisition_gets_the_year_of_its_date_and_a_sort_key():
     for date, y, key in rows:
         assert y == int(date[:4]) and key is not None, date  # every acquisition date of the dump is YYYY-MM-DD (notes/11)
     assert [d for d, _, _ in sorted(rows, key=lambda r: r[2])] == sorted(d for d, _, _ in rows)
+
+
+def test_an_anonymised_owner_is_loaded_without_gender_or_nationality():
+    # The full dump gives one anonymised owner the gender "unbekannt"; none has a nationality yet,
+    # so a store of two actors gives both to an anonymised owner and to a named one.
+    from pyoxigraph import Store, RdfFormat
+    store = Store()
+    turtle = "".join(f"""<https://data.skkg.ch/person/{a}> a <https://ontology.skkg.ch/Person>, <https://ontology.skkg.ch/Actor>,
+            <http://www.cidoc-crm.org/cidoc-crm/E21_Person> ;
+        <http://www.w3.org/2000/01/rdf-schema#label> "{label}" ;
+        <http://www.cidoc-crm.org/cidoc-crm/P2_has_type> <https://data.skkg.ch/type/20088/148983>,
+            <https://data.skkg.ch/type/20007/20047/citizenship> .
+""" for a, label in (("anon", "Unbekannte:r Eigentümer:in"), ("named", "Muster, Anna")))
+    store.load(turtle.encode(), format=RdfFormat.TURTLE)
+    db = empty_db()
+    b.load_actors(b.Source(store), db, set())
+    assert dict(db.execute("SELECT id, is_anonymous FROM actors WHERE id IN ('person/anon', 'person/named')")) == {"person/anon": 1, "person/named": 0}
+    assert dict(db.execute("SELECT id, gender_id FROM actors WHERE id IN ('person/anon', 'person/named')")) == {
+        "person/anon": None, "person/named": "type/20088/148983"}
+    assert db.execute("SELECT actor_id, country_id FROM actor_nationalities").fetchall() == [("person/named", "type/20007/20047")]
