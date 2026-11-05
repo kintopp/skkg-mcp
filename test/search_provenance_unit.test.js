@@ -21,7 +21,7 @@ function currencyDb() {
   return makeTestDb({
     tables: {
       terms: {
-        columns: ['label', 'label_de', 'facet'],
+        columns: ['label', 'label_de', 'label_en', 'label_fr', 'facet'],
         rows: [{ id: 'type/c/1', label: 'CHF', facet: 'currency' }, { id: 'type/c/2', label: 'FRF', facet: 'currency' },
           { id: 'type/c/3', label: 'CHF', facet: 'currency' }, { id: 'type/c/4', label: 'DEM', facet: 'currency' }],
       },
@@ -59,9 +59,15 @@ test('a currency label of prices in two currencies is refused as ambiguous, nami
 test('an unknown currency is refused with the codes the prices use', () => {
   const t = currencyDb();
   try {
-    const text = errorOf(() => searchProvenance(t.db, META, { ...ARGS, currency: 'Taler' }));
-    assert.match(text, /no price is recorded in "Taler"/);
-    assert.match(text, /The prices use CHF, FRF/);
+    const text = errorOf(() => searchProvenance(t.db, META, { ...ARGS, currency: 'Zorkmid' }));
+    assert.match(text, /no term of `currency` is labelled "Zorkmid"/);
+    assert.match(text, /The prices use CHF, FRF\./);
+    // type/c/4 (DEM) has a row, but no price.
+    for (const value of ['DEM', 'type/c/4']) {
+      const none = errorOf(() => searchProvenance(t.db, META, { ...ARGS, currency: value }));
+      assert.match(none, value === 'DEM' ? /no price is recorded in "DEM"/ : /no price is recorded in "type\/c\/4" \(DEM\)/);
+      assert.match(none, /The prices use CHF, FRF\./);
+    }
   } finally {
     t.cleanup();
   }

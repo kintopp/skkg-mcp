@@ -10,6 +10,11 @@
 // - prices in different currencies are compared, or a price filter without a currency runs
 // - SKKG's duplicate currency terms (DM, FF) miss the prices recorded under the other term, or a
 //   label of prices in two currencies is refused as unknown instead of ambiguous (search_provenance_unit)
+// - a currency term id ("type/…") is refused, or a term id or label of another vocabulary
+//   ("Auktion") is refused as unknown instead of pointed to the filter that takes it
+// - a currency refusal suggests terms or labels the vocabulary has but no price uses ("RM",
+//   skkg_find_terms' 164 currency terms), instead of the codes the prices use; a currency term
+//   without a price is refused as unknown instead of as having no price
 // - "zurich" misses "Zürich", or "Bern" matches "Bernhard" (matches inside a word)
 // - a period open at one end ("seit 2002", "o. D.–vmtl. 1979") misses the years on its open side,
 //   a single dated event (an auction day) matches later years, a lone date qualified otherwise
@@ -177,6 +182,28 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
       assert.equal(dm.applied_filters.currency, 'DEM');
       assert.ok(ids(dm).includes('object/edc750e1-eb98-4f09-b41d-c4d5705d19df'));
       assert.deepEqual(ids(await search({ currency: 'DEM', price_min: 12000, price_max: 12000, limit: 25 })), ids(dm));
+      // type/20033/287982 is the term "DM".
+      const byId = await search({ currency: 'type/20033/287982', price_min: 12000, price_max: 12000, limit: 25 });
+      assert.equal(byId.applied_filters.currency, 'DEM');
+      assert.deepEqual(ids(byId), ids(dm));
+    });
+
+    await t.test('a currency refusal offers only the codes the prices use', async () => {
+      // "RM" is a label of two currency terms that no price uses; "R" is the start of several such labels.
+      const rm = await callError(client, NAME, { currency: 'RM' });
+      assert.match(rm, /no price is recorded in "RM"/);
+      assert.match(rm, /The prices use CHF/);
+      const r = await callError(client, NAME, { currency: 'R' });
+      assert.match(r, /no term of `currency` is labelled "R"/);
+      assert.match(r, /The prices use CHF/);
+      assert.doesNotMatch(r, /Did you mean|translate/);
+      // type/21086/132298 is the acquisition type "Auktion".
+      for (const value of ['Auktion', 'type/21086/132298']) {
+        const text = await callError(client, NAME, { currency: value });
+        assert.match(text, /is a term of the acquisition_type vocabulary, not of `currency`/, value);
+        assert.match(text, /Pass it as `acquisition_type`\. The prices use CHF/, value);
+        assert.doesNotMatch(text, /skkg_find_terms/, value);
+      }
     });
 
     await t.test('a batch price is flagged', async () => {

@@ -25,18 +25,21 @@ for (const [tool, fields] of Object.entries(TERM_FILTERS)) {
 export const filtersOfFacet = (facet) => FILTERS_OF_FACET.get(facet) ?? [];
 
 // The facet names are the values of skkg_find_terms' `vocabulary`, so the hints name them as such.
-const listedBy = (field, wanted) => `skkg_find_terms with vocabulary "${wanted}" lists the terms \`${field}\` takes.`;
+// A field that takes only some of its vocabulary's terms names its values in `takes` instead.
+const listedBy = ({ field, takes }, wanted) =>
+  takes ?? `skkg_find_terms with vocabulary "${wanted}" lists the terms \`${field}\` takes.`;
 
 // Where terms of `facets` go instead of `field` of `tool`: its own parameters when it has one,
 // else those of the other tools, named with their tool. Never for an exclusion: the filters it
 // would name include objects, so following the hint would invert it.
-function otherFilterHint({ tool, field, exclusion }, facets, wanted) {
+function otherFilterHint(where, facets, wanted) {
+  const { tool, exclusion } = where;
   const targets = facets.flatMap(filtersOfFacet);
   const own = targets.filter((t) => t.tool === tool);
-  if (exclusion || !targets.length) return listedBy(field, wanted);
-  if (own.length) return `Pass it as ${own.map((t) => `\`${t.field}\``).join(' or ')}; ${listedBy(field, wanted)}`;
+  if (exclusion || !targets.length) return listedBy(where, wanted);
+  if (own.length) return `Pass it as ${own.map((t) => `\`${t.field}\``).join(' or ')}. ${listedBy(where, wanted)}`;
   return `This tool has no filter for it; ${targets.map((t) => `${t.tool} takes it as \`${t.field}\``).join(', and ')}. ` +
-    listedBy(field, wanted);
+    listedBy(where, wanted);
 }
 
 const vocabularies = (facets) => `the ${facets.join(' and ')} ${facets.length > 1 ? 'vocabularies' : 'vocabulary'}`;
@@ -45,10 +48,12 @@ const vocabularies = (facets) => `the ${facets.join(' and ')} ${facets.length > 
  * Resolves a term filter value (a term id or a label) to term ids of `facet`, for `field` of
  * `tool`. Throws a ToolError with suggestions. With `narrower`, the ids include the narrower terms;
  * `exclusion` marks a filter that leaves out what it matches, so its hints name no other filter.
+ * `takes`, for a field that takes only some of the vocabulary's terms, is a sentence naming its
+ * values; it replaces the hints to skkg_find_terms and to similar labels, which would offer the rest.
  * Returns { ids, matched }, where `matched` lists the terms the value named, for applied_filters.
  */
-export function resolveTerms(db, { tool, field, facet, narrower = false, exclusion = false }, value) {
-  const where = { tool, field, exclusion };
+export function resolveTerms(db, { tool, field, facet, narrower = false, exclusion = false, takes }, value) {
+  const where = { tool, field, exclusion, takes };
   const v = value.trim();
   let ids;
   if (v.startsWith('type/')) {
@@ -69,7 +74,7 @@ export function resolveTerms(db, { tool, field, facet, narrower = false, exclusi
         throw new ToolError(`\`${field}\`: "${v}" is a term of ${vocabularies(elsewhere)}, not of \`${field}\`.`,
           otherFilterHint(where, elsewhere, facet));
       }
-      throw new ToolError(`\`${field}\`: no term of \`${field}\` is labelled "${v}".`, suggestTerms(db, facet, v));
+      throw new ToolError(`\`${field}\`: no term of \`${field}\` is labelled "${v}".`, takes ?? suggestTerms(db, facet, v));
     }
   }
   const matched = ids.map((id) => ({ id, label: termLabel(db, id) }));

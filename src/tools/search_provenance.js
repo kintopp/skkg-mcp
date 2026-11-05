@@ -6,7 +6,6 @@ import { withTool, toolResult } from '../lib/tool.js';
 import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
 import { stmt, perDb, placeholders } from '../lib/sql.js';
-import { termsByLabel } from '../lib/terms.js';
 import { objectRow } from '../lib/objects.js';
 import { period, periodRef, acquisition, chainRows } from '../lib/provenance.js';
 import { prune } from '../lib/prune.js';
@@ -84,8 +83,9 @@ const filterShape = {
     'undated entries never match. A period open at one end ("seit 1995", "1916–o. D.", "bis 1934") reaches every year on that side; ' +
     'a lone date with another qualifier ("um 1900", "vor 1997", "spätestens 1907") is that year only'),
   year_to: yearField('Latest year; see year_from'),
-  currency: z.string().min(1).max(10).optional().describe(
-    'Currency of the price, an ISO code such as "CHF", "DEM", "FRF", "GBP" (SKKG\'s "DM" and "FF" are DEM and FRF). ' +
+  currency: z.string().min(1).max(200).optional().describe(
+    'Currency of the price, an ISO code such as "CHF", "DEM", "FRF", "GBP" (SKKG\'s "DM" and "FF" are DEM and FRF), ' +
+    'or a currency term id ("type/…"). ' +
     'Alone, it keeps the entries with a price in that currency'),
   price_min: priceField('Lowest price, in `currency`, which it needs. A batch price (is_batch_price) is the price of all objects of the batch'),
   price_max: priceField('Highest price, in `currency`; see price_min'),
@@ -163,16 +163,19 @@ function resolveCurrency(db, value) {
       UNION SELECT currency_code FROM provenance WHERE ${PRICED} ORDER BY 1`).all().map((r) => r.c));
   const v = value.trim();
   if (codes.includes(v.toUpperCase())) return v.toUpperCase();
-  const ids = termsByLabel(db, v).filter((t) => t.facet === 'currency').map((t) => t.id);
-  const viaTerm = ids.length ? stmt(db, `SELECT currency_code AS c FROM acquisitions WHERE ${PRICED} AND currency_id IN (${placeholders(ids.length)})
+  // Most currency terms have no price, so the refusals offer the codes, never the vocabulary.
+  const takes = `The prices use ${codes.join(', ')}.`;
+  const { ids, matched } = resolveTerms(db, { tool: SEARCH_PROVENANCE_TOOL_NAME, field: 'currency', facet: 'currency', takes }, v);
+  const viaTerm = stmt(db, `SELECT currency_code AS c FROM acquisitions WHERE ${PRICED} AND currency_id IN (${placeholders(ids.length)})
       UNION SELECT currency_code FROM provenance WHERE ${PRICED} AND currency_id IN (${placeholders(ids.length)}) ORDER BY 1`)
-    .all(...ids, ...ids).map((r) => r.c) : [];
+    .all(...ids, ...ids).map((r) => r.c);
+  const named = v.startsWith('type/') ? `"${v}" (${matched[0].label ?? 'unlabelled'})` : `"${v}"`;
   if (viaTerm.length === 1) return viaTerm[0];
   if (viaTerm.length > 1) {
-    throw new ToolError(`\`currency\`: "${v}" is the label of prices in several currencies (${viaTerm.join(', ')}).`,
+    throw new ToolError(`\`currency\`: ${named} is the label of prices in several currencies (${viaTerm.join(', ')}).`,
       `Pass one of the codes, e.g. "${viaTerm[0]}".`);
   }
-  throw new ToolError(`\`currency\`: no price is recorded in "${v}".`, `The prices use ${codes.join(', ')}.`);
+  throw new ToolError(`\`currency\`: no price is recorded in ${named}.`, takes);
 }
 
 // Compiles the filters to one condition per layer: { chain: { where, params }, acquisition: …, layers, applied, warnings }.
