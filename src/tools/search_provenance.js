@@ -14,7 +14,7 @@ import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
 import { capList, paging, showing, pastEnd, tailLines } from '../lib/results.js';
 import { join, objectRowLines, periodLines, actor, priceText } from '../lib/text.js';
-import { resolveTerms, resolveActors, assertRange, nameWarning, ACQUISITION_YEAR, ACQUISITION_DATED } from './object_filters.js';
+import { resolveTerms, resolveActors, assertRange, nameWarning } from './object_filters.js';
 import { objectRowShape, periodShape, acquisitionOut, actorOut, appliedOut, langIn, str, int } from './schemas.js';
 import {
   READ_ONLY_ANNOTATIONS, PROVENANCE_DEFAULT_LIMIT, PROVENANCE_MAX_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT, INVENTORY_ORDER,
@@ -38,23 +38,16 @@ const LAYER_OF = {
   ...Object.fromEntries(Object.entries(TERM_FILTERS).map(([field, f]) => [field, f.layer])),
   owner: 'chain', transaction_kind: 'chain', place: 'chain', acquired_from: 'acquisition',
 };
-const SHARED_FILTERS = ['year_from', 'year_to', 'price_min', 'price_max', 'currency'];
-const FILTERS = [...Object.keys(LAYER_OF), ...SHARED_FILTERS];
 const LAYERS = { chain: ['chain'], acquisition: ['acquisition'], both: ['chain', 'acquisition'] };
+const layerFilters = (layer) => Object.keys(LAYER_OF).filter((k) => LAYER_OF[k] === layer).join(', ');
 
-// The year span of a period. SKKG's begin and end bounds equal date_from and date_to where those
-// are set; where one of them is missing, a begin or end sub-span says the known date is one side
-// of an open period ("seit 1995", "1916–o. D.", "o. D.–spätestens 1903"), and without one the lone
-// date is a single event, e.g. an auction day (notes/11). A period with neither date never matches.
-const year = (col) => `CAST(substr(${col}, 1, 4) AS INTEGER)`;
-const PERIOD_FIRST = `CASE WHEN p.date_from IS NOT NULL THEN ${year('p.date_from')} WHEN p.date_to IS NULL THEN NULL
-    WHEN p.begin_from IS NOT NULL OR p.end_from IS NOT NULL THEN -9999 ELSE ${year('p.date_to')} END`;
-const PERIOD_LAST = `CASE WHEN p.date_to IS NOT NULL THEN ${year('p.date_to')} WHEN p.date_from IS NULL THEN NULL
-    WHEN p.begin_from IS NOT NULL OR p.end_to IS NOT NULL THEN 9999 ELSE ${year('p.date_from')} END`;
-
+// Dates sort by the year spans the build stores (provenance.year_first and year_last, where an open
+// side is a year beyond every filter; acquisitions.year), so the sort agrees with the year filter.
+// The recorded date breaks ties: within a year it is that year's date, and among periods open on
+// the same side it is the date they record.
 const ORDER = {
-  date_asc: 'MIN(m.first) IS NULL, MIN(m.first), ' + INVENTORY_ORDER,
-  date_desc: 'MAX(m.last) IS NULL, MAX(m.last) DESC, ' + INVENTORY_ORDER,
+  date_asc: 'MIN(m.first) IS NULL, MIN(m.first), MIN(m.first_date), ' + INVENTORY_ORDER,
+  date_desc: 'MAX(m.last) IS NULL, MAX(m.last) DESC, MAX(m.last_date) DESC, ' + INVENTORY_ORDER,
   price_desc: 'MAX(m.price) IS NULL, MAX(m.price) DESC, ' + INVENTORY_ORDER,
   inventory_number: INVENTORY_ORDER,
 };
@@ -63,8 +56,8 @@ const description =
   'Search provenance chains and SKKG\'s acquisitions; lists the objects that match. ' +
   'Two layers: `chain`, the periods before SKKG that curators recorded for only a few hundred objects, and ' +
   '`acquisition`, how SKKG itself acquired about 55,000 objects (type, seller, date, price). By default both are searched; ' +
-  'filters that belong to one layer (owner, owner_type, certainty, holding_kind, transaction_type, transaction_kind, place, ' +
-  'source_type: chain; acquisition_type, acquired_from: acquisition) restrict the search to it. ' +
+  `filters that belong to one layer (${layerFilters('chain')}: chain; ${layerFilters('acquisition')}: acquisition) ` +
+  'restrict the search to it. ' +
   'An entry matches when it meets every filter; each object lists its matching periods (matched_periods) and acquisition ' +
   '(matched_acquisition). Prices are compared in the currency recorded, never converted, so a price filter needs `currency`. ' +
   'Owner names are as SKKG publishes them; its anonymisation ("Unbekannte:r Eigentümer:in", "Privatperson") stays as it is: ' +
@@ -97,7 +90,8 @@ const inputSchema = z.object({
   acquired_from: z.string().min(1).max(300).optional().describe(
     'Who SKKG acquired the object from: an actor id or a name, as for `owner`'),
   year_from: yearField('Earliest year. A chain period matches when its dates overlap the range, an acquisition when its year is in it; ' +
-    'undated entries never match. A period open at one end ("seit 1995", "1916–o. D.") reaches every year on that side'),
+    'undated entries never match. A period open at one end ("seit 1995", "1916–o. D.", "bis 1934") reaches every year on that side; ' +
+    'a lone date with another qualifier ("um 1900", "vor 1997", "spätestens 1907") is that year only'),
   year_to: yearField('Latest year; see year_from'),
   currency: z.string().min(1).max(10).optional().describe(
     'Currency of the price, an ISO code such as "CHF", "DEM", "FRF", "GBP" (SKKG\'s "DM" and "FF" are DEM and FRF). ' +
@@ -107,13 +101,16 @@ const inputSchema = z.object({
   layer: z.enum(Object.keys(LAYERS)).default('both').describe(
     'chain (periods before SKKG), acquisition (SKKG\'s own acquisitions), or both (default)'),
   sort: z.enum(Object.keys(ORDER)).default('date_asc').describe(
-    'date_asc (default: earliest matching entry first), date_desc (latest first), price_desc (highest price first; needs `currency`), ' +
+    'date_asc (default: earliest matching entry first, a period open at its start before all others), ' +
+    'date_desc (latest first, a period open at its end before all others), price_desc (highest price first; needs `currency`), ' +
     'or inventory_number'),
   limit: z.number().int().min(1).max(PROVENANCE_MAX_LIMIT).default(PROVENANCE_DEFAULT_LIMIT).describe(
     `Objects per page. Default ${PROVENANCE_DEFAULT_LIMIT}`),
   offset: z.number().int().min(0).max(100_000).default(0),
   lang: langIn(),
 }).strict();
+const NOT_FILTERS = new Set(['layer', 'sort', 'limit', 'offset', 'lang']);
+const FILTERS = Object.keys(inputSchema.shape).filter((k) => !NOT_FILTERS.has(k));
 
 const resultOut = z.object({
   ...objectRowShape(),
@@ -134,7 +131,7 @@ export const outputSchema = z.object({
   next_offset: z.number().int().optional(),
   total_periods: z.number().int().describe('Chain periods that matched, each once, including those in unlinked_periods'),
   total_acquisitions: z.number().int().describe('SKKG acquisitions that matched, over all objects'),
-  layers: z.array(z.enum(['chain', 'acquisition'])).describe('The layers searched, after the filters that belong to one layer'),
+  layers: z.array(z.enum([...LAYERS.both])).describe('The layers searched, after the filters that belong to one layer'),
   sort: z.string(),
   results: z.array(resultOut),
   unlinked_periods: z.array(z.object({ id: z.string(), statement: str(), owner: actorOut().optional(), date: str() })).optional()
@@ -176,6 +173,10 @@ function resolveCurrency(db, value) {
       UNION SELECT currency_code FROM provenance WHERE currency_id IN (${placeholders(ids.length)})`).all(...ids, ...ids)
     .map((r) => r.c).filter(Boolean) : [];
   if (viaTerm.length === 1) return viaTerm[0];
+  if (viaTerm.length > 1) {
+    throw new ToolError(`\`currency\`: "${v}" is the label of prices in several currencies (${viaTerm.join(', ')}).`,
+      `Pass one of the codes, e.g. "${viaTerm[0]}".`);
+  }
   throw new ToolError(`\`currency\`: no price is recorded in "${v}".`, `The prices use ${codes.join(', ')}.`);
 }
 
@@ -192,8 +193,7 @@ function compile(db, args) {
   if (chainOnly.length && acqOnly.length) {
     throw new ToolError(`${list(chainOnly)} ${chainOnly.length > 1 ? 'apply' : 'applies'} to chain periods and ${list(acqOnly)} to ` +
       'SKKG\'s acquisitions; an entry is one or the other, so together they match nothing.',
-      'Search the two layers in two calls, or use skkg_search_objects, which takes acquired_from and acquisition_type ' +
-      'together with has_provenance_chain.');
+      'Make two calls, one with the chain filters and one with the acquisition filters, and keep the objects that both list.');
   }
   let layers = LAYERS[args.layer];
   const narrowed = chainOnly.length ? 'chain' : acqOnly.length ? 'acquisition' : undefined;
@@ -224,31 +224,28 @@ function compile(db, args) {
     add(f.layer, f.exists ? `EXISTS (${f.exists} ${inList})` : `${f.sql} ${inList}`, ...ids);
     applied[field] = matched;
   }
-  for (const [field, layer, column] of [['owner', 'chain', 'p.owner_id'], ['acquired_from', 'acquisition', 'a.source_id']]) {
+  for (const [field, column] of [['owner', 'p.owner_id'], ['acquired_from', 'a.source_id']]) {
     if (args[field] === undefined) continue;
     const { ids, byName } = resolveActors(db, field, args[field]);
-    add(layer, `${column} IN (${placeholders(ids.length)})`, ...ids);
+    add(LAYER_OF[field], `${column} IN (${placeholders(ids.length)})`, ...ids);
     applied[field] = ids.map((id) => actorRef(db, id));
     if (byName && ids.length > 1) warnings.push(nameWarning(field, args[field], ids.length));
   }
   if (args.transaction_kind !== undefined) {
-    add('chain', 'p.transaction_kind = ?', args.transaction_kind);
+    add(LAYER_OF.transaction_kind, 'p.transaction_kind = ?', args.transaction_kind);
     applied.transaction_kind = args.transaction_kind;
   }
   if (args.place !== undefined) {
     const places = resolvePlaces(db, args.place);
-    add('chain', `p.place IN (${placeholders(places.length)})`, ...places);
+    add(LAYER_OF.place, `p.place IN (${placeholders(places.length)})`, ...places);
     applied.place = places.join(' | ');
   }
-  if (args.year_from !== undefined) {
-    add('chain', `${PERIOD_LAST} >= ?`, args.year_from);
-    add('acquisition', `${ACQUISITION_DATED} AND ${ACQUISITION_YEAR} >= ?`, args.year_from);
-    applied.year_from = args.year_from;
-  }
-  if (args.year_to !== undefined) {
-    add('chain', `${PERIOD_FIRST} <= ?`, args.year_to);
-    add('acquisition', `${ACQUISITION_DATED} AND ${ACQUISITION_YEAR} <= ?`, args.year_to);
-    applied.year_to = args.year_to;
+  // The year spans are the build's (provenance.year_first, year_last; acquisitions.year), NULL when undated.
+  for (const [field, chainSql, op] of [['year_from', 'p.year_last', '>='], ['year_to', 'p.year_first', '<=']]) {
+    if (args[field] === undefined) continue;
+    add('chain', `${chainSql} ${op} ?`, args[field]);
+    add('acquisition', `a.year ${op} ?`, args[field]);
+    applied[field] = args[field];
   }
   if (args.currency !== undefined) {
     const code = resolveCurrency(db, args.currency);
@@ -267,41 +264,39 @@ function compile(db, args) {
 const list = (fields) => fields.map((f) => `\`${f}\``).join(', ');
 const whereSql = (parts) => (parts.length ? `WHERE ${parts.join(' AND ')}` : '');
 
-// The matching entries as (oid, layer, pid, first, last, price), over the layers searched.
+// The matching entries as (oid, layer, pid, first, last, first_date, last_date, price), over the layers searched.
 function entriesSql(c) {
   const parts = [];
   const params = [];
   if (c.layers.includes('chain')) {
-    parts.push(`SELECT po.object_id, 'chain', p.id, COALESCE(p.date_from, p.date_to), COALESCE(p.date_to, p.date_from), p.price_value
-        FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id ${whereSql(c.where.chain)}`);
+    parts.push(`SELECT po.object_id, 'chain', p.id, p.year_first, p.year_last, COALESCE(p.date_from, p.date_to),
+        COALESCE(p.date_to, p.date_from), p.price_value FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id ${whereSql(c.where.chain)}`);
     params.push(...c.params.chain);
   }
   if (c.layers.includes('acquisition')) {
-    parts.push(`SELECT a.object_id, 'acquisition', NULL, a.date, a.date, a.price_value FROM acquisitions a ${whereSql(c.where.acquisition)}`);
+    parts.push(`SELECT a.object_id, 'acquisition', NULL, a.year, a.year, a.date, a.date, a.price_value FROM acquisitions a
+        ${whereSql(c.where.acquisition)}`);
     params.push(...c.params.acquisition);
   }
-  return { sql: `WITH m(oid, layer, pid, first, last, price) AS (${parts.join(' UNION ALL ')})`, params };
+  return { sql: `WITH m(oid, layer, pid, first, last, first_date, last_date, price) AS (${parts.join(' UNION ALL ')})`, params };
 }
 
 export function searchProvenance(db, meta, args) {
   const c = compile(db, args);
   const m = entriesSql(c);
-  const counts = db.prepare(`${m.sql} SELECT COUNT(DISTINCT m.oid) AS objects,
-      SUM(m.layer = 'acquisition') AS acquisitions FROM m JOIN objects o ON o.id = m.oid`).get(...m.params);
+  // An acquisition is one per object, so only the chain layer needs DISTINCT.
+  const counts = db.prepare(`${m.sql} SELECT ${c.layers.includes('chain') ? 'COUNT(DISTINCT m.oid)' : 'COUNT(*)'} AS objects,
+      COUNT(DISTINCT m.pid) AS periods, SUM(m.layer = 'acquisition') AS acquisitions FROM m`).get(...m.params);
   const total = counts.objects;
-  // Periods are counted on their own, since some belong to no object in the database.
+  // The periods of no object (the build drops links to objects it does not hold) are listed apart.
   const chainWhere = whereSql(c.where.chain);
-  const periods = c.layers.includes('chain')
-    ? db.prepare(`SELECT COUNT(*) AS n FROM provenance p ${chainWhere}`).get(...c.params.chain).n : 0;
   const unlinked = c.layers.includes('chain')
     ? db.prepare(`SELECT p.id, p.statement, p.label, p.owner_id, p.date_label FROM provenance p
-        ${chainWhere ? `${chainWhere} AND` : 'WHERE'} NOT EXISTS (SELECT 1 FROM provenance_objects po JOIN objects o ON o.id = po.object_id
-          WHERE po.provenance_id = p.id) ORDER BY COALESCE(p.date_from, p.date_to) IS NULL, COALESCE(p.date_from, p.date_to), p.id`)
-      .all(...c.params.chain) : [];
-  const page = db.prepare(`${m.sql} SELECT m.oid AS id FROM m JOIN objects o ON o.id = m.oid GROUP BY m.oid
-      ORDER BY ${ORDER[args.sort]} LIMIT ? OFFSET ?`).all(...m.params, args.limit, args.offset).map((r) => r.id);
-  const entries = page.length ? db.prepare(`${m.sql} SELECT m.oid, m.layer, m.pid FROM m WHERE m.oid IN (${placeholders(page.length)})`)
-    .all(...m.params, ...page) : [];
+        ${chainWhere ? `${chainWhere} AND` : 'WHERE'} NOT EXISTS (SELECT 1 FROM provenance_objects po WHERE po.provenance_id = p.id)
+        ORDER BY p.year_first IS NULL, p.year_first, COALESCE(p.date_from, p.date_to), p.id`).all(...c.params.chain) : [];
+  const page = db.prepare(`${m.sql} SELECT m.oid AS id, json_group_array(m.pid) FILTER (WHERE m.pid IS NOT NULL) AS pids,
+      MAX(m.layer = 'acquisition') AS acquired FROM m JOIN objects o ON o.id = m.oid GROUP BY m.oid
+      ORDER BY ${ORDER[args.sort]} LIMIT ? OFFSET ?`).all(...m.params, args.limit, args.offset);
 
   const warnings = [...c.warnings];
   if (total === 0 && !unlinked.length) {
@@ -317,15 +312,14 @@ export function searchProvenance(db, meta, args) {
   const stale = staleWarning(meta);
   if (stale) warnings.push(stale);
 
-  const rows = page.map((id) => {
-    const mine = entries.filter((e) => e.oid === id);
-    const pids = new Set(mine.filter((e) => e.layer === 'chain').map((e) => e.pid));
+  const rows = page.map(({ id, pids, acquired }) => {
+    const matched = new Set(JSON.parse(pids));
     const chain = chainRows(db, id);
     return prune({
       ...objectRow(db, id, args.lang),
       chain_length: chain.length || undefined,
-      matched_periods: chain.filter((p) => pids.has(p.id)).map((p) => ({ ...period(db, p, args.lang), seq: p.seq ?? undefined })),
-      matched_acquisition: mine.some((e) => e.layer === 'acquisition') ? acquisition(db, id, args.lang) : undefined,
+      matched_periods: chain.filter((p) => matched.has(p.id)).map((p) => ({ ...period(db, p, args.lang), seq: p.seq })),
+      matched_acquisition: acquired ? acquisition(db, id, args.lang) : undefined,
     });
   });
 
@@ -333,7 +327,7 @@ export function searchProvenance(db, meta, args) {
     const out = prune({
       total,
       ...paging(total, results.length, args.offset),
-      total_periods: periods,
+      total_periods: counts.periods + unlinked.length,
       total_acquisitions: counts.acquisitions ?? 0,
       layers: c.layers,
       sort: args.sort,
@@ -344,8 +338,6 @@ export function searchProvenance(db, meta, args) {
       data_as_of: meta.data_as_of,
     });
     out.results ??= [];
-    out.total_periods ??= 0;
-    out.total_acquisitions ??= 0;
     return out;
   };
   return fitResult({ rows, budget: RESULT_CHAR_LIMIT, build, render: renderText, noun: 'objects' });

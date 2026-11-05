@@ -12,7 +12,6 @@ import { fitResult } from '../lib/fit.js';
 import { paging, showing, pastEnd, tailLines } from '../lib/results.js';
 import {
   objectQueryShape, objectFilterShape, compileObjectQuery, VALUE_PAIRS, TERM_FILTER_FIELDS, creatorRowPairs,
-  ACQUISITION_YEAR, ACQUISITION_DATED,
 } from './object_filters.js';
 import { appliedOut, langIn, str } from './schemas.js';
 import { searchArgs } from '../lib/text.js';
@@ -46,7 +45,7 @@ const DIMENSIONS = {
   acquisition_type: filterDim('acquisition_type', 'term', 'how SKKG acquired it'),
   acquisition_decade: {
     kind: 'decade', about: 'decade of SKKG\'s acquisition',
-    pairs: `SELECT object_id AS oid, ${decade(ACQUISITION_YEAR)} AS k FROM acquisitions WHERE ${ACQUISITION_DATED}`,
+    pairs: `SELECT object_id AS oid, ${decade('year')} AS k FROM acquisitions WHERE year IS NOT NULL`,
     // Each object has at most one SKKG acquisition, so the year range lists the bucket exactly.
     // It replaces the caller's range, so it keeps only the decade's part of that range.
     filter: (k, args) => ({

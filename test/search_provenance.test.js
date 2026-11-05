@@ -3,16 +3,23 @@
 // - a filter of one layer (owner) is silently applied to the other, or the layer it belongs to is
 //   not searched alone, so acquisitions show up for an owner search
 // - filters of both layers together (owner and acquired_from) return an empty result without
-//   saying why, or `layer` contradicts a filter's layer without an error
+//   saying why, or the refusal points to a call that drops the chain filters; `layer` contradicts
+//   a filter's layer without an error
 // - prices in different currencies are compared, or a price filter without a currency runs
-// - SKKG's duplicate currency terms (DM, FF) miss the prices recorded under the other term
+// - SKKG's duplicate currency terms (DM, FF) miss the prices recorded under the other term, or a
+//   label of prices in two currencies is refused as unknown instead of ambiguous (search_provenance_unit)
 // - "zurich" misses "Zürich", or "Bern" matches "Bernhard" (matches inside a word)
 // - a period open at one end ("seit 2002", "o. D.–vmtl. 1979") misses the years on its open side,
-//   a single dated event (an auction day) matches later years, or an undated period matches a range
+//   a single dated event (an auction day) matches later years, a lone date qualified otherwise
+//   ("vor 16.12.1981", "spätestens 1907", "um 1965") is opened, or an undated period matches a range
+//   (every case of the rule is in scripts/tests/test_build_rules.py)
+// - the date sort disagrees with the year filter: a period open at its end sorts by its start date
+//   under date_desc, or one open at its start by its end date under date_asc
 // - an object with several matching periods is listed twice, or a period shared by several
 //   objects is counted once per object in total_periods
 // - a matching period that belongs to no object in the database is silently dropped, so the
-//   period counts of skkg_find_terms disagree with the filter, or the result is called empty
+//   period counts of skkg_find_terms disagree with the filter, or the result is called empty;
+//   the database links a period to an object it does not hold
 // - matched_periods holds periods that did not match, or lists them out of chain order
 // - an object that matched by its acquisition lacks matched_acquisition, or one that matched by its
 //   chain carries an acquisition that did not match
@@ -119,7 +126,10 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
     });
 
     await t.test('filters of both layers together, or against `layer`, are refused', async () => {
-      assert.match(await callError(client, NAME, { owner: STUKER, acquired_from: STUKER }), /`owner` applies to chain periods and `acquired_from`/);
+      const both = await callError(client, NAME, { owner: STUKER, acquired_from: STUKER });
+      assert.match(both, /`owner` applies to chain periods and `acquired_from`/);
+      assert.match(both, /two calls, one with the chain filters and one with the acquisition filters/);
+      assert.doesNotMatch(both, /skkg_search_objects/, 'that tool takes no chain filter');
       assert.match(await callError(client, NAME, { owner: STUKER, layer: 'acquisition' }), /pass layer "chain" or "both"/);
       assert.match(await callError(client, NAME, { acquisition_type: 'Auktion', layer: 'chain' }), /pass layer "acquisition" or "both"/);
     });
@@ -197,6 +207,14 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
       // "05.12.1991" (object/5017) is one day.
       assert.ok(await has({ year_from: 1991, year_to: 1991 }, 'provenance/7b7135aa-4d42-4bd8-b52a-f04d655e30dc'));
       assert.ok(!(await has({ year_from: 1992, year_to: 2020 }, 'provenance/7b7135aa-4d42-4bd8-b52a-f04d655e30dc')));
+      // A lone date with a qualifier other than "seit" is that year only, in either direction.
+      for (const [id, y] of [['provenance/2dd8b179-e7b8-45cc-b06b-2a0ed030b6e4', 1981], // vor 16.12.1981
+        ['provenance/a674fc16-e3cd-4be5-896c-a52c7cb4c963', 1907], // spätestens 10.11.1907
+        ['provenance/610d26c2-1f9e-4f76-9f13-8f244e85eb13', 1965]]) { // um 1965
+        assert.ok(await has({ year_from: y, year_to: y }, id), `${id} in ${y}`);
+        assert.ok(!(await has({ year_from: y + 1, year_to: 2020 }, id)), `${id} after ${y}`);
+        assert.ok(!(await has({ year_from: 1500, year_to: y - 1 }, id)), `${id} before ${y}`);
+      }
       // "o. D." (object/5866) has no date at all.
       assert.ok(!(await has({ year_from: -5000, year_to: 2100 }, 'provenance/a66c5b84-ae51-4fd1-bfcc-dbd9d6a82a49')));
       assert.match(await callError(client, NAME, { year_from: 1950, year_to: 1900 }), /later than `year_to`/);
@@ -225,11 +243,22 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
       for (const p of r.results.flatMap((x) => x.matched_periods)) assert.equal(p.owner.name, 'unbekannte:r Eigentümer:in');
     });
 
-    await t.test('sorting by date and by price keeps its order across pages', async () => {
-      const firstDate = (x) => [...(x.matched_periods ?? []).map((p) => p.date_from ?? p.date_to), x.matched_acquisition?.date]
-        .filter(Boolean).sort()[0];
-      const asc = (await all({ owner_type: 'Privatbesitzer:in' })).rows.map(firstDate).filter(Boolean);
+    await t.test('sorting by date follows the year filter and keeps its order across pages', async () => {
+      // The spec (notes/11): with one date, a period is open at its end when SKKG bounds the end at
+      // 9999 ("o. D.") or the begin says "seit", open at its start when the begin is bounded at 0001
+      // or the end says "bis". An open start sorts before every date, an open end after every date.
+      const openEnd = (p) => p.date_from && !p.date_to && (p.end?.to?.startsWith('9999') || ['seit', 'mindestens seit'].includes(p.begin?.qualifier));
+      const openStart = (p) => p.date_to && !p.date_from && (p.begin?.from?.startsWith('0001') || ['bis', 'spätestens bis'].includes(p.end?.qualifier));
+      const keys = (x, side) => [...(x.matched_periods ?? []).map((p) => (side === 'first'
+        ? (openStart(p) ? '' : p.date_from ?? p.date_to) : (openEnd(p) ? '9999' : p.date_to ?? p.date_from))),
+      x.matched_acquisition?.date].filter((k) => k !== undefined && k !== null).sort();
+      const asc = (await all({ owner_type: 'Privatbesitzer:in' })).rows.map((x) => keys(x, 'first')[0]).filter((k) => k !== undefined);
       assert.deepEqual(asc, [...asc].sort());
+      assert.equal(asc[0], '', 'a period open at its start comes first');
+      const desc = (await all({ owner_type: 'Privatbesitzer:in', sort: 'date_desc' })).rows.map((x) => keys(x, 'last').at(-1))
+        .filter((k) => k !== undefined);
+      assert.deepEqual(desc, [...desc].sort().reverse());
+      assert.equal(desc[0], '9999', 'a period open at its end comes first');
       const top = (x) => Math.max(...[...(x.matched_periods ?? []).map((p) => p.price?.value), x.matched_acquisition?.price?.value]
         .filter((v) => v !== undefined));
       const prices = (await all({ currency: 'GBP', sort: 'price_desc' })).rows.map(top);

@@ -35,7 +35,7 @@ from pathlib import Path
 
 from pyoxigraph import BlankNode, Literal, NamedNode, Store
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 D = "https://data.skkg.ch/"
 AAT = "http://vocab.getty.edu/aat/"
 PREFIX = """PREFIX crm: <http://www.cidoc-crm.org/cidoc-crm/>
@@ -149,7 +149,7 @@ CREATE TABLE acquisitions (
   object_id TEXT PRIMARY KEY, type_id TEXT, date TEXT, date_label TEXT, date_uncertain INTEGER,
   source_id TEXT, note TEXT, reference TEXT, price_value REAL, currency_id TEXT,
   currency_code TEXT, price_label TEXT, price_note TEXT, is_batch_price INTEGER DEFAULT 0,
-  price_chf REAL, conversion_rate REAL);
+  price_chf REAL, conversion_rate REAL, year INTEGER);
 
 CREATE TABLE multimedia (
   id TEXT PRIMARY KEY, label TEXT, name TEXT, usage_id TEXT, type_id TEXT, category_id TEXT,
@@ -163,7 +163,8 @@ CREATE TABLE provenance (
   begin_from TEXT, begin_to TEXT, end_qualifier_id TEXT, end_from TEXT, end_to TEXT,
   date_note TEXT, transaction_kind TEXT, transaction_type_id TEXT, owner_id TEXT,
   owner_type_id TEXT, place TEXT, price_value REAL, currency_id TEXT, currency_code TEXT,
-  price_label TEXT, price_note TEXT, is_batch_price INTEGER DEFAULT 0, status_id TEXT);
+  price_label TEXT, price_note TEXT, is_batch_price INTEGER DEFAULT 0, status_id TEXT,
+  year_first INTEGER, year_last INTEGER);
 CREATE TABLE provenance_objects (provenance_id TEXT, object_id TEXT, seq INTEGER);
 CREATE TABLE provenance_sources (provenance_id TEXT, seq INTEGER, type_id TEXT, note TEXT, url TEXT);
 CREATE TABLE provenance_characteristics (provenance_id TEXT, seq INTEGER, type_ids TEXT, note TEXT);
@@ -221,6 +222,7 @@ CREATE INDEX ix_om_obj ON object_multimedia(object_id);
 CREATE INDEX ix_om_mm ON object_multimedia(multimedia_id);
 CREATE INDEX ix_acq_source ON acquisitions(source_id);
 CREATE INDEX ix_acq_type ON acquisitions(type_id);
+CREATE INDEX ix_acq_year ON acquisitions(year);
 CREATE INDEX ix_prov_owner ON provenance(owner_id);
 CREATE INDEX ix_po_obj ON provenance_objects(object_id);
 CREATE INDEX ix_po_prov ON provenance_objects(provenance_id);
@@ -868,14 +870,33 @@ def load_objects(src, db, used):
     return len(rows)
 
 
+CURRENCY_ALIASES = {"DM": "DEM", "FF": "FRF", "SFR": "CHF", "SFR.": "CHF", "FR.": "CHF", "FR": "CHF",
+                    "SCHWEIZER FRANKEN": "CHF", "US-DOLLAR": "USD", "US$": "USD", "$": "USD", "£": "GBP",
+                    "€": "EUR", "EURO": "EUR"}
+
+
 def currency_code(label):
+    """The code prices are compared by: an alias's code, else the label itself, upper-cased."""
     if not label:
         return None
     s = label.strip().upper()
-    aliases = {"DM": "DEM", "FF": "FRF", "SFR": "CHF", "SFR.": "CHF", "FR.": "CHF", "FR": "CHF",
-               "SCHWEIZER FRANKEN": "CHF", "US-DOLLAR": "USD", "US$": "USD", "$": "USD", "£": "GBP",
-               "€": "EUR", "EURO": "EUR"}
-    return aliases.get(s, s)
+    return CURRENCY_ALIASES.get(s, s)
+
+
+def set_currency_codes(db):
+    """Store the currency code of every price. Returns the labels that are neither an alias nor
+    three letters like an ISO code, with the prices that use them: each becomes a code of its own,
+    which the currency filter of skkg_search_provenance then lists."""
+    terms = db.execute("SELECT id, label FROM terms WHERE facet = 'currency'").fetchall()
+    for table in ("acquisitions", "provenance"):
+        db.executemany(f"UPDATE {table} SET currency_code = ? WHERE currency_id = ?", [(currency_code(lab), t) for t, lab in terms])
+    odd = Counter()
+    for t, lab in terms:
+        s = (lab or "").strip().upper()
+        if s and s not in CURRENCY_ALIASES and not re.fullmatch(r"[A-Z]{3}", s):
+            odd[lab] += sum(db.execute(f"SELECT COUNT(*) FROM {table} WHERE currency_id = ? AND price_value IS NOT NULL", (t,)).fetchone()[0]
+                            for table in ("acquisitions", "provenance"))
+    return dict(sorted(odd.items()))
 
 
 def load_acquisitions(src, db, used):
@@ -917,7 +938,7 @@ def load_acquisitions(src, db, used):
                      d.get("note"), d.get("reference"), d.get("price"), d.get("currency"),
                      None, d.get("price_label"), d.get("price_note"),
                      1 if re.search(r"\bTotal\b", notes) else 0, c[0], c[1]))
-    db.executemany("INSERT OR REPLACE INTO acquisitions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+    db.executemany("INSERT OR REPLACE INTO acquisitions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)", rows)
     return len(rows)
 
 
@@ -1029,7 +1050,7 @@ def load_provenance(src, db, used):
                      d.get("price"), d.get("currency"), None,
                      d.get("price_label"), d.get("price_note"), 1 if re.search(r"\bTotal\b", notes) else 0,
                      d.get("status")))
-    db.executemany("INSERT INTO provenance VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+    db.executemany("INSERT INTO provenance VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL)", rows)
     po = q("provenance", f"""SELECT ?p ?o ?n WHERE {{ ?a crm:P140_assigned_attribute_to ?p ; crm:P16_used_specific_object ?o .
         {P} OPTIONAL {{ ?a crm:P141_assigned ?ord . ?ord crm:P190_has_symbolic_content ?n }} }}""")
     db.executemany("INSERT INTO provenance_objects VALUES (?,?,?)", [(p, o, integer(n)) for p, o, n in po])
@@ -1214,7 +1235,67 @@ def load_groups(src, db):
 
 # ---------------------------------------------------------------- derived data, FTS, checks
 
+# Links to objects the database does not hold, by (table, column). The period links are
+# dropped, since a period's chain is its objects; the others are counted (notes/09).
+OBJECT_LINKS = [("provenance_objects", "object_id"), ("literature_refs", "object_id"), ("object_relations", "target_id")]
+DROPPED_LINKS = {("provenance_objects", "object_id")}
+
+# A period with one date (notes/11): a begin "seit" says the owner held the object from that date
+# on, an end "bis" that it held the object until then. SKKG writes an unknown other side ("o. D.")
+# as a bound of 0001-01-01 or 9999-12-31. Every other qualifier qualifies the date itself ("um",
+# "vmtl.", "spätestens", "vor", "nach"), so the date is one event, e.g. an auction day.
+OPEN_END_QUALIFIERS = {"seit", "mindestens seit"}
+OPEN_START_QUALIFIERS = {"bis", "spätestens bis"}
+EVENT_QUALIFIERS = {"um", "ca.", "vmtl.", "wohl", "evtl.", "angeblich", "Anfang", "Mitte", "Ende",
+                    "spätestens", "mindestens", "vor", "nach", "frühestens ab"}
+OPEN_YEAR = 9999
+
+
+def period_span(date_from, date_to, begin_q, begin_from, end_q, end_to):
+    """(year_first, year_last, kind) of a period, with -9999 and 9999 for an open side and None
+    for no date. kind is 'unclassified' when a qualifier of the dated side is in no set above;
+    such a period is placed as an event and counted in the build report."""
+    if date_from and date_to:
+        return year(date_from), year(date_to), "two dates"
+    if not date_from and not date_to:
+        return None, None, "undated"
+    if date_from:
+        y, own, other = year(date_from), begin_q, end_q
+        known = (own is None or own in OPEN_END_QUALIFIERS | EVENT_QUALIFIERS) and other in (None, "o. D.")
+        if (end_to or "").startswith("9999") or own in OPEN_END_QUALIFIERS:
+            return y, OPEN_YEAR, "open end"
+        return y, y, "event" if known else "unclassified"
+    y, own, other = year(date_to), end_q, begin_q
+    known = (own is None or own in OPEN_START_QUALIFIERS | EVENT_QUALIFIERS) and other in (None, "o. D.")
+    if (begin_from or "").startswith("0001") or own in OPEN_START_QUALIFIERS:
+        return -OPEN_YEAR, y, "open start"
+    return y, y, "event" if known else "unclassified"
+
+
+def period_years(db):
+    """Store each period's year span, which the year filter and the date sort read."""
+    label = dict(db.execute("SELECT id, label FROM terms WHERE facet = 'date_qualifier'"))
+    kinds, unclassified, rows = Counter(), Counter(), []
+    for pid, df, dt, bq, bf, eq, et in db.execute(
+            "SELECT id, date_from, date_to, begin_qualifier_id, begin_from, end_qualifier_id, end_to FROM provenance").fetchall():
+        first, last, kind = period_span(df, dt, label.get(bq), bf, label.get(eq), et)
+        kinds[kind] += 1
+        if kind == "unclassified":
+            unclassified[f"{label.get(bq) or '-'} / {label.get(eq) or '-'}"] += 1
+        rows.append((first, last, pid))
+    db.executemany("UPDATE provenance SET year_first = ?, year_last = ? WHERE id = ?", rows)
+    return {"kinds": dict(sorted(kinds.items())), "unclassified": dict(sorted(unclassified.items()))}
+
+
 def derive(db):
+    missing = {}
+    for table, col in OBJECT_LINKS:
+        where = f"{col} LIKE 'object/%' AND {col} NOT IN (SELECT id FROM objects)"
+        missing[f"{table}.{col}"] = db.execute(f"SELECT COUNT(*) FROM {table} WHERE {where}").fetchone()[0]
+        if (table, col) in DROPPED_LINKS:
+            db.execute(f"DELETE FROM {table} WHERE {where}")
+    db.execute("UPDATE acquisitions SET year = CAST(substr(date, 1, 4) AS INTEGER) WHERE date GLOB '[0-9][0-9][0-9][0-9]*'")
+    spans = period_years(db)
     db.executescript("""
     UPDATE objects SET image_count = (SELECT COUNT(*) FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id
         WHERE om.object_id = objects.id AND m.iiif_service IS NOT NULL);
@@ -1228,6 +1309,7 @@ def derive(db):
     UPDATE objects SET has_provenance_chain = EXISTS (SELECT 1 FROM provenance_objects po WHERE po.object_id = objects.id);
     """)
     count_terms(db)
+    return {"object_links_to_missing": missing, "period_years": spans}
 
 
 # Every (term, record) link, by the kind of record, for the counts of skkg_find_terms. Object
@@ -1295,8 +1377,7 @@ CREATE TEMP TABLE term_uses AS
     UNION ALL SELECT category_id, 'images', id FROM multimedia
     UNION ALL SELECT license_id, 'images', id FROM multimedia;
 INSERT INTO term_uses SELECT u.term_id, 'objects', po.object_id FROM term_uses u
-    JOIN provenance_objects po ON po.provenance_id = u.rid JOIN objects o ON o.id = po.object_id
-    WHERE u.kind = 'provenance periods';
+    JOIN provenance_objects po ON po.provenance_id = u.rid WHERE u.kind = 'provenance periods';
 DELETE FROM term_uses WHERE term_id IS NULL OR term_id NOT IN (SELECT id FROM terms);
 CREATE INDEX temp.ix_tu ON term_uses(term_id, kind);
 """
@@ -1725,12 +1806,10 @@ def main():
     step("acquisitions", load_acquisitions, src, db, used)
     step("terms", load_terms, src, db, used)
     redacted = step("redaction", redact_names, src, db)
-    codes = [(currency_code(lab), t) for t, lab in db.execute("SELECT id, label FROM terms WHERE facet = 'currency'")]
-    for table in ("acquisitions", "provenance"):
-        db.executemany(f"UPDATE {table} SET currency_code = ? WHERE currency_id = ?", codes)
+    odd_currencies = step("currency codes", set_currency_codes, db)
     # Indexes first: the derived columns are correlated subqueries over the link tables.
     step("indexes", lambda: db.executescript(INDEXES) and "ok")
-    step("derived columns", lambda: derive(db) or "ok")
+    derived = step("derived columns", derive, db)
     step("fts", lambda: build_fts(db) or "ok")
 
     info = dump_info(args.headers, args.store)
@@ -1769,7 +1848,8 @@ def main():
               "privacy_checks": [{"check": c, "ok": k, "detail": d} for c, k, d in checks],
               "count_drops": drops, "object_terms_without_term": unknown_terms,
               "authors_not_in_label": lit["authors_not_in_label"], "redacted": redacted,
-              "acquisitions_after_dump": future,
+              "acquisitions_after_dump": future, "currency_labels_not_mapped": odd_currencies,
+              "object_links_to_missing": derived["object_links_to_missing"], "period_years": derived["period_years"],
               "size_bytes": tmp.stat().st_size, "unloaded_edges": edges, "query_timings": src.timings}
     Path(str(out) + ".report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1))
     Path(str(out) + ".report.md").write_text(render_report(report))
@@ -1800,6 +1880,13 @@ def render_report(r):
               + (", ".join(f"{k} {n}" for k, n in r["redacted"].items()) or "none") + ".", "",
               "Acquisition dates after the dump date (a year from 2100 on gets a filter the search schema refuses): "
               + (", ".join(f"{f['year']} ({f['acquisitions']})" for f in r["acquisitions_after_dump"]) or "none") + ".", "",
+              "Currency labels that are neither an alias nor an ISO-like code, so their prices get a code of their own "
+              "(label: prices): " + (", ".join(f"{k} ({n})" for k, n in r["currency_labels_not_mapped"].items()) or "none") + ".", "",
+              "Links to objects not in the database (provenance_objects rows are dropped, the others kept): "
+              + ", ".join(f"{k} {n}" for k, n in r["object_links_to_missing"].items()) + ".", "",
+              "Year spans of provenance periods: " + ", ".join(f"{k} {n}" for k, n in r["period_years"]["kinds"].items())
+              + "; with a qualifier the rule does not know, placed as one event (begin / end: periods): "
+              + (", ".join(f"{k} ({n})" for k, n in r["period_years"]["unclassified"].items()) or "none") + ".", "",
               "## Census edges not read by the build", "",
               "Edges of the shape census whose predicate no build query reads for that record type. "
               "New fields in a later dump appear here.", "", "| Root | Shape | Predicate | Subjects |", "|---|---|---|---:|"]

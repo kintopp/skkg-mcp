@@ -28,6 +28,21 @@ MUTATIONS = [
     ("ß also ss", "re.sub(\"ß|ss\", \"(?:ß|ss)\", re.escape(w))", "re.escape(w)", "redaction_replaces"),
     ("FTS content compared", "if Counter(rows) != Counter(db.execute(f\"SELECT * FROM {table}\").fetchall()):", "if False:", "fts_table or base_change"),
     ("website outside", "AND (website NOT LIKE 'http%' OR", "AND (0 AND", "website_fails"),
+    # The data rules of test_build_rules.py.
+    ("seit opens the end", "or own in OPEN_END_QUALIFIERS:", "or False:", "test_period_span"),
+    ("bis opens the start", "or own in OPEN_START_QUALIFIERS:", "or False:", "test_period_span"),
+    ("o. D. bound opens the end", "if (end_to or \"\").startswith(\"9999\")", "if False", "test_period_span"),
+    ("o. D. bound opens the start", "if (begin_from or \"\").startswith(\"0001\")", "if False", "test_period_span"),
+    ("a qualified lone date is one event", "OPEN_END_QUALIFIERS = {\"seit\", \"mindestens seit\"}",
+     "OPEN_END_QUALIFIERS = {\"seit\", \"mindestens seit\", \"vor\", \"um\", \"spätestens\", \"mindestens\", \"nach\"}", "test_period_span"),
+    ("unknown start qualifier counted", "known = (own is None or own in OPEN_END_QUALIFIERS | EVENT_QUALIFIERS) and other in (None, \"o. D.\")",
+     "known = True", "test_period_span or unknown_qualifiers"),
+    ("unknown end qualifier counted", "known = (own is None or own in OPEN_START_QUALIFIERS | EVENT_QUALIFIERS) and other in (None, \"o. D.\")",
+     "known = True", "test_period_span"),
+    ("period links to missing objects dropped", "if (table, col) in DROPPED_LINKS:", "if False:", "drops_period_links"),
+    ("links to missing objects counted", "missing[f\"{table}.{col}\"] = db.execute(", "missing[f\"{table}.{col}\"] = 0 and db.execute(", "drops_period_links"),
+    ("acquisition year stored", "db.execute(\"UPDATE acquisitions SET year =", "(\"UPDATE acquisitions SET year =", "year_spans"),
+    ("odd currency labels counted", "if s and s not in CURRENCY_ALIASES and not re.fullmatch(r\"[A-Z]{3}\", s):", "if False:", "currency_labels"),
 ]
 
 

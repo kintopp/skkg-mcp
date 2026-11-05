@@ -53,9 +53,6 @@ export const VALUE_PAIRS = Object.freeze({
   creator_role: creatorRowPairs('creator_role'),
   attribution: creatorRowPairs('attribution'),
 });
-// The year of SKKG's acquisition, for acquisitions whose date starts with one.
-export const ACQUISITION_YEAR = 'CAST(substr(date, 1, 4) AS INTEGER)';
-export const ACQUISITION_DATED = "date GLOB '[0-9][0-9][0-9][0-9]*'";
 
 // Term filters and their vocabulary facet. `?` stands for the (expanded) term ids.
 const TERM_FILTERS = {
@@ -73,7 +70,8 @@ const TERM_FILTERS = {
 };
 export const TERM_FILTER_FIELDS = Object.freeze(Object.keys(TERM_FILTERS));
 const filterSql = (field) => `o.id IN (SELECT oid FROM (${VALUE_PAIRS[field]}) WHERE k IN (?))`;
-const ACQUISITION_YEAR_IN = `o.id IN (SELECT object_id FROM acquisitions WHERE ${ACQUISITION_DATED} AND ${ACQUISITION_YEAR}`;
+// acquisitions.year is set by the build for dates that start with a year, else NULL.
+const ACQUISITION_YEAR_IN = 'o.id IN (SELECT object_id FROM acquisitions WHERE year';
 // The dating overlaps the range: its latest year reaches date_from, its earliest year date_to.
 const YEAR_FILTERS = [
   ['date_from', 'COALESCE(o.date_to, o.date_from) >= ?'],
