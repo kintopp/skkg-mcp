@@ -60,9 +60,10 @@ const description =
   'the start of a word in a label ("Radier" finds "Radierung"). Terms in use come first; among them, ' +
   'exact label matches, then the terms used most. Each term carries its id, its path in the hierarchy, its year range (epochs), ' +
   'its matches in GND, AAT, or Wikidata, how many objects use it (a photo licence: objects whose primary photo has it), ' +
-  'and `filter` and `filter_tool`: the search tool parameter that takes it (skkg_search_objects, or skkg_search_provenance ' +
-  'for the vocabularies of provenance periods). Currency terms carry none: `currency` of skkg_search_provenance takes the code, ' +
-  'which stands for every term of that currency. With `id`, returns one term with its broader and narrower terms. ' +
+  'and, when a search filter takes it, `filter` and `filter_tool`: that parameter and its tool (skkg_search_objects, or ' +
+  'skkg_search_provenance for the vocabularies of provenance periods); most vocabularies have none. Currency terms carry none either: ' +
+  '`currency` of skkg_search_provenance takes their ids and labels, but matches by code, so it also lists the prices recorded ' +
+  'under the other terms of that currency. With `id`, returns one term with its broader and narrower terms. ' +
   'With only `vocabulary`, lists that vocabulary. To search objects, use skkg_search_objects; ' +
   'its term filters take these labels or ids directly.';
 
@@ -98,7 +99,7 @@ const termRowOut = () => z.object({
   record_count: int().describe('Records of `record_kind` that use this term, for vocabularies of other records and of provenance periods, ' +
     'and for terms of SKKG\'s unnamed schemes, where record_kind is the kind of record that uses the term most'),
   record_kind: str(),
-  filter: str().describe('The parameter of filter_tool that takes this term'),
+  filter: str().describe('The parameter of filter_tool that takes this term; absent when no search filter takes it'),
   filter_tool: str().describe('The search tool whose `filter` parameter takes this term: skkg_search_objects or skkg_search_provenance'),
 });
 

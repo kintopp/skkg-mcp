@@ -6,7 +6,8 @@ import { LANGS, YEAR_MIN, YEAR_MAX } from '../config.js';
 
 // Input fields of the search filters. Every quoted example in a term field must be a label of
 // that field's vocabulary.
-export const termField = (what) => z.string().min(1).max(200).optional().describe(
+export const termValue = () => z.string().min(1).max(200);
+export const termField = (what) => termValue().optional().describe(
   `${what}. A term id ("type/…") or a German label, matched exactly except for case.`);
 // A record id, or for an actor filter an id or a name.
 export const idField = (what) => z.string().min(1).max(300).optional().describe(what);

@@ -13,9 +13,9 @@ import { fitResult } from '../lib/fit.js';
 import { capList, paging, showing, pastEnd, tailLines } from '../lib/results.js';
 import { objectRowLines, periodLines, periodRefLine, acquisitionLines } from '../lib/text.js';
 import { resolveTerms, actorFilter, assertRange, filterValues, valuesOfTerms, valuesHint, termName } from '../lib/filters.js';
-import { TERM_FILTERS as TERM_FILTERS_OF, VALUE_FILTERS } from './term_filters.js';
+import { TERM_FILTERS as TERM_FILTERS_OF, VALUE_FILTERS, priced } from './term_filters.js';
 import {
-  objectRowShape, periodShape, periodRefShape, acquisitionOut, appliedOut, langIn, int, termField, idField, yearField,
+  objectRowShape, periodShape, periodRefShape, acquisitionOut, appliedOut, langIn, int, termField, termValue, idField, yearField,
 } from './schemas.js';
 import {
   READ_ONLY_ANNOTATIONS, PROVENANCE_DEFAULT_LIMIT, PROVENANCE_MAX_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT, INVENTORY_ORDER,
@@ -83,7 +83,7 @@ const filterShape = {
     'undated entries never match. A period open at one end ("seit 1995", "1916–o. D.", "bis 1934") reaches every year on that side; ' +
     'a lone date with another qualifier ("um 1900", "vor 1997", "spätestens 1907") is that year only'),
   year_to: yearField('Latest year; see year_from'),
-  currency: z.string().min(1).max(200).optional().describe(
+  currency: termValue().optional().describe(
     'Currency of the price, an ISO code such as "CHF", "DEM", "FRF", "GBP" (SKKG\'s "DM" and "FF" are DEM and FRF), ' +
     'or a currency term id ("type/…"). ' +
     'Alone, it keeps the entries with a price in that currency'),
@@ -162,10 +162,10 @@ function resolveCurrency(db, value) {
   const codes = filterValues(db, CURRENCY.tool, CURRENCY.field);
   const v = value.trim();
   if (codes.includes(v.toUpperCase())) return v.toUpperCase();
-  const { ids } = resolveTerms(db, CURRENCY, v);
+  const { ids, matched } = resolveTerms(db, CURRENCY, v);
   const viaTerm = valuesOfTerms(db, CURRENCY.tool, CURRENCY.field, ids);
   if (viaTerm.length === 1) return viaTerm[0];
-  const named = v.startsWith('type/') ? termName(db, v) : `"${v}"`;
+  const named = matched.some((m) => m.id === v) ? termName(db, v) : `"${v}"`;
   if (viaTerm.length > 1) {
     throw new ToolError(`\`currency\`: ${named} names prices in several currencies (${viaTerm.join(', ')}).`,
       `Pass one of the codes, e.g. "${viaTerm[0]}".`);
@@ -246,7 +246,7 @@ function compile(db, args) {
   }
   if (args.currency !== undefined) {
     const code = resolveCurrency(db, args.currency);
-    for (const [layer, t] of [['chain', 'p'], ['acquisition', 'a']]) add(layer, `${t}.currency_code = ? AND ${t}.price_value IS NOT NULL`, code);
+    for (const [layer, t] of [['chain', 'p'], ['acquisition', 'a']]) add(layer, `${t}.currency_code = ? AND ${priced(t)}`, code);
     applied.currency = code;
   }
   for (const [field, op] of [['price_min', '>='], ['price_max', '<=']]) {

@@ -18,7 +18,10 @@
 //   sent to German labels instead of the codes
 // - a currency label or id passed to another filter ("DM" as owner_type, or as acquisition_type of
 //   skkg_search_objects) is refused without naming `currency`, or a currency term that no price
-//   uses ("RM") is sent to `currency`, which refuses it
+//   uses ("RM") is sent to `currency`, which refuses it; a label of priced terms of two
+//   currencies is sent to `currency` as it is, which refuses it as ambiguous, instead of with the
+//   codes; a currency term named by a label other than `terms.label`, or passed to
+//   skkg_search_objects, is sent somewhere that refuses it
 // - "zurich" misses "Zürich", or "Bern" matches "Bernhard" (matches inside a word)
 // - a period open at one end ("seit 2002", "o. D.–vmtl. 1979") misses the years on its open side,
 //   a single dated event (an auction day) matches later years, a lone date qualified otherwise
@@ -47,12 +50,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { withClient, callOk, callError, allPages, FIXTURE_DB } from './helpers.js';
+import { withClient, callOk, callError, allPages, makeTestDb, FIXTURE_DB } from './helpers.js';
 import { outputSchema } from '../src/tools/search_provenance.js';
 
 const NAME = 'skkg_search_provenance';
 const STUKER = 'person/2f30908d-e268-452a-bcbb-2d937a481320';
 const UNKNOWN_OWNER = 'person/9fd0bc02-113e-4806-8723-f3b6744f1411';
+
+// The codes a refusal's hint offers for `currency`: [] when it sends the value itself there,
+// undefined when it does not name `currency`.
+function currencyHint(text) {
+  const m = text.match(/`currency`(?: with the value ((?:"[^"]+"(?: or )?)+))?/);
+  if (!m) return undefined;
+  return m[1] ? [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]) : [];
+}
 
 test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.skip }, async (t) => {
   await withClient('search-provenance-test', async (client) => {
@@ -171,12 +182,19 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
         }
       }
       // Alone, a currency keeps only the entries priced in it: the few in GBP, none of the many in CHF.
-      const { first: gbp, rows } = await all({ currency: 'GBP' });
-      assert.ok(gbp.total > 0);
-      for (const x of rows) {
-        const prices = [...(x.matched_periods ?? []).map((p) => p.price), x.matched_acquisition?.price].filter(Boolean);
-        assert.ok(prices.length, x.id);
-        for (const p of prices) assert.equal(p.currency, 'GBP', x.id);
+      // object/fb96933f-… was acquired with the currency DEM but no price, so DEM must leave it out.
+      for (const code of ['GBP', 'DEM']) {
+        const { first, rows } = await all({ currency: code });
+        assert.ok(first.total > 0, code);
+        assert.ok(!rows.some((x) => x.id === 'object/fb96933f-902a-489b-8cb8-d3aa4c6b77a2'), code);
+        for (const x of rows) {
+          const prices = [...(x.matched_periods ?? []).map((p) => p.price), x.matched_acquisition?.price].filter(Boolean);
+          assert.ok(prices.length, x.id);
+          for (const p of prices) {
+            assert.equal(p.currency, code, x.id);
+            assert.equal(typeof p.value, 'number', x.id);
+          }
+        }
       }
       assert.match(await callError(client, NAME, { currency: 'XYZ' }), /The prices use CHF/);
     });
@@ -278,29 +296,35 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
         assert.match(dm, /is a term of the currency vocabulary, not of `owner_type`/, value);
         assert.match(dm, /Pass it as `currency`/, value);
       }
-    });
-
-    await t.test('every currency term sent to `currency` by another filter is taken there', async () => {
-      const db = new DatabaseSync(FIXTURE_DB.path, { readOnly: true });
-      const terms = db.prepare("SELECT id, label FROM terms WHERE facet = 'currency' ORDER BY id").all();
-      db.close();
-      const sent = new Set();
-      for (const { id, label } of terms) {
-        for (const value of [id, label]) {
-          if (!/Pass it as `currency`/.test(await callError(client, NAME, { owner_type: value }))) continue;
-          sent.add(id);
-          const r = await callOk(client, NAME, { currency: value, limit: 1 }, outputSchema);
-          assert.ok(r.total > 0, `${value} is sent to currency, which lists nothing`);
-        }
-      }
-      // "DM" has a price and "RM" none (type/20033/44198), so the check covers both cases.
-      assert.ok(sent.has('type/20033/287982'));
-      assert.ok(!sent.has('type/20033/44198'));
       const holz = await callError(client, NAME, { owner_type: 'Holz' });
       assert.match(holz, /"Holz" is a term of the material vocabulary, not of `owner_type`/);
       assert.match(holz, /This tool has no filter for it; skkg_search_objects takes it as `material`/);
       assert.match(holz, /skkg_find_terms with vocabulary "owner_type" lists the terms `owner_type` takes/);
       assert.doesNotMatch(holz, /Pass it as `material`/);
+    });
+
+    await t.test('every hint that sends a currency term to `currency` runs', async () => {
+      const db = new DatabaseSync(FIXTURE_DB.path, { readOnly: true });
+      const values = db.prepare(`SELECT id AS v FROM terms WHERE facet = 'currency'
+          UNION SELECT label FROM terms WHERE facet = 'currency' AND label IS NOT NULL
+          UNION SELECT label_de FROM terms WHERE facet = 'currency' AND label_de IS NOT NULL
+          UNION SELECT l.label FROM term_labels l JOIN terms t ON t.id = l.term_id WHERE t.facet = 'currency'`).all().map((r) => r.v);
+      db.close();
+      const sent = new Set();
+      for (const value of values) {
+        for (const [tool, field] of [[NAME, 'owner_type'], ['skkg_search_objects', 'acquisition_type']]) {
+          const codes = currencyHint(await callError(client, tool, { [field]: value }));
+          if (!codes) continue;
+          sent.add(value);
+          for (const currency of codes.length ? codes : [value]) {
+            const r = await callOk(client, NAME, { currency, limit: 1 }, outputSchema);
+            assert.ok(r.total > 0, `${tool} ${field} "${value}" is sent to currency "${currency}", which lists nothing`);
+          }
+        }
+      }
+      // "DM" has a price and "RM" none (type/20033/44198), so the check covers both cases.
+      for (const value of ['DM', 'type/20033/287982']) assert.ok(sent.has(value), value);
+      for (const value of ['RM', 'type/20033/44198']) assert.ok(!sent.has(value), value);
     });
 
     await t.test('the anonymisation of owners is returned as SKKG publishes it', async () => {
@@ -352,4 +376,24 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
       }
     });
   }, { env: { SKKG_DB_PATH: FIXTURE_DB.path } });
+});
+
+test('a label of priced terms of two currencies is sent to `currency` with both codes', { skip: FIXTURE_DB.skip }, async () => {
+  // No fixture label names terms of two codes, so a copy labels a CHF term and a DEM term "Zorkmid".
+  const copy = makeTestDb({ from: FIXTURE_DB.path });
+  copy.db.prepare(`INSERT INTO term_labels (term_id, lang, label)
+      VALUES ('type/20033/136689', 'de', 'Zorkmid'), ('type/20033/136690', 'de', 'Zorkmid')`).run();
+  copy.db.close();
+  try {
+    await withClient('search-provenance-ambiguous-label', async (client) => {
+      assert.match(await callError(client, NAME, { currency: 'Zorkmid' }), /"Zorkmid" names prices in several currencies \(CHF, DEM\)/);
+      for (const [tool, field] of [[NAME, 'owner_type'], ['skkg_search_objects', 'acquisition_type']]) {
+        const text = await callError(client, tool, { [field]: 'Zorkmid' });
+        assert.deepEqual(currencyHint(text), ['CHF', 'DEM'], text);
+        for (const currency of ['CHF', 'DEM']) assert.ok((await callOk(client, NAME, { currency, limit: 1 }, outputSchema)).total > 0, currency);
+      }
+    }, { env: { SKKG_DB_PATH: copy.path } });
+  } finally {
+    copy.cleanup();
+  }
 });

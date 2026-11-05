@@ -24,7 +24,8 @@
 // - paging repeats or skips a term, or has_more is true on the last page
 // - a hierarchical vocabulary stored outside object_terms (literature places) gets a false
 //   object_count_with_narrower of 0
-// - the description promises an order the ranking does not follow
+// - the description promises an order the ranking does not follow, or `filter` for every term,
+//   though most vocabularies have no search filter ("Stabil", a condition)
 // - a quote anywhere in the query turns off prefix matching for every word
 // - ranking mixes provenance-period counts with object counts, so "most used" disagrees with object_count
 // - an offset past the end prints an impossible range and gives no hint, or a term without
@@ -286,6 +287,18 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
       const props = tools.find((x) => x.name === NAME).outputSchema.properties;
       const termProps = (props.terms ?? props.term).items?.properties ?? (props.terms ?? props.term).properties;
       assert.match(termProps.object_count.description, /for a photo licence, objects whose primary photo has it/);
+    });
+
+    await t.test('the description promises `filter` only where a search filter takes the term', async () => {
+      const { tools } = await client.listTools();
+      const d = tools.find((x) => x.name === NAME).description;
+      assert.match(d, /when a search filter takes it, `filter` and `filter_tool`/);
+      assert.match(d, /most vocabularies have none/);
+      assert.match(d, /`currency` of skkg_search_provenance takes their ids and labels, but matches by code/);
+      // "Stabil" is a condition, a vocabulary no search filter takes.
+      const stabil = (await find({ id: 'type/25086/133788' })).term;
+      assert.ok(stabil.object_count > 0);
+      assert.equal(stabil.filter, undefined);
     });
 
     await t.test('words outside a quoted phrase still match as prefixes', async () => {

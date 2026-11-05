@@ -53,7 +53,8 @@ export const TERM_FILTERS = Object.freeze({
 // value is refused, so the hints of other filters send only terms with one. One value can stand for
 // several terms (DEM for "DM" and "DEM"), so skkg_find_terms gives the terms no `filter`: it would
 // not reproduce a term's count.
-const priced = (t) => `${t}.currency_code IS NOT NULL AND ${t}.price_value IS NOT NULL`;
+// The entries of alias `t` that have a price in a known currency: the codes `currency` offers, and the rows it matches.
+export const priced = (t) => `${t}.currency_code IS NOT NULL AND ${t}.price_value IS NOT NULL`;
 export const VALUE_FILTERS = Object.freeze({
   [SEARCH_PROVENANCE_TOOL_NAME]: Object.freeze({
     currency: {

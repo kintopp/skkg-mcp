@@ -12,19 +12,19 @@ import { MAX_NAME_MATCHES, WITHHELD_FACETS } from '../config.js';
 import { TERM_FILTERS, VALUE_FILTERS } from '../tools/term_filters.js';
 
 // Where the terms of each vocabulary (facet) go: the parameters of the search tools that take
-// them, as [{ tool, field, values }], the term filters in the order of TERM_FILTERS, then the value
+// them, as [{ tool, field, facet, values }], the term filters in the order of TERM_FILTERS, then the value
 // filters of VALUE_FILTERS (`values` true). Built once from their records.
 const FILTERS_OF_FACET = new Map();
 for (const [table, values] of [[TERM_FILTERS, false], [VALUE_FILTERS, true]]) {
   for (const [tool, fields] of Object.entries(table)) {
     for (const [field, { facet }] of Object.entries(fields)) {
       if (!FILTERS_OF_FACET.has(facet)) FILTERS_OF_FACET.set(facet, []);
-      FILTERS_OF_FACET.get(facet).push(Object.freeze({ tool, field, values }));
+      FILTERS_OF_FACET.get(facet).push(Object.freeze({ tool, field, facet, values }));
     }
   }
 }
 
-/** The parameters that take a facet's terms, as [{ tool, field, values }], term filters first. */
+/** The parameters that take a facet's terms, as [{ tool, field, facet, values }], term filters first. */
 export const filtersOfFacet = (facet) => FILTERS_OF_FACET.get(facet) ?? [];
 
 // A value filter's values, read once per database: the distinct values in order, and each term's.
@@ -32,7 +32,10 @@ function valueTable(db, tool, field) {
   return perDb(db, `values ${tool} ${field}`, () => {
     const pairs = db.prepare(VALUE_FILTERS[tool][field].values).all();
     const byTerm = new Map();
-    for (const { k, v } of pairs) byTerm.set(k, [...(byTerm.get(k) ?? []), v]);
+    for (const { k, v } of pairs) {
+      if (!byTerm.has(k)) byTerm.set(k, []);
+      byTerm.get(k).push(v);
+    }
     return { values: [...new Set(pairs.map((p) => p.v))].sort(), byTerm };
   });
 }
@@ -41,8 +44,10 @@ function valueTable(db, tool, field) {
 export const filterValues = (db, tool, field) => valueTable(db, tool, field).values;
 
 /** The values a value filter takes for the terms `ids`, distinct and in order. */
-export const valuesOfTerms = (db, tool, field, ids) =>
-  [...new Set(ids.flatMap((id) => valueTable(db, tool, field).byTerm.get(id) ?? []))].sort();
+export function valuesOfTerms(db, tool, field, ids) {
+  const { byTerm } = valueTable(db, tool, field);
+  return [...new Set(ids.flatMap((id) => byTerm.get(id) ?? []))].sort();
+}
 
 /** The values a value filter takes, as its refusals give them; undefined for a term filter. */
 export function valuesHint(db, tool, field) {
@@ -53,10 +58,27 @@ export function valuesHint(db, tool, field) {
 /** A term id with its label, as refusals name it. */
 export const termName = (db, id) => `"${id}" (${termLabel(db, id) ?? 'unlabelled'})`;
 
-// The filters that take the term `id` of `facet`: every term filter of its facet, and a value
-// filter only when the term has a value, since the filter refuses the others.
-const filtersOfTerm = (db, { id, facet }) =>
-  filtersOfFacet(facet).filter((f) => !f.values || valuesOfTerms(db, f.tool, f.field, [id]).length);
+// The filters that take `terms` ([{ id, facet }], all the terms one input names), as [{ f, values }]:
+// every term filter of their facets, and a value filter when the input's terms of its facet have a
+// value, since it refuses the others. A value filter resolves the input to the values of all those
+// terms together, so `values` lists them when there are several, and the hint offers them instead.
+function targetsOf(db, terms) {
+  const targets = [];
+  for (const facet of new Set(terms.map((t) => t.facet))) {
+    const ids = terms.filter((t) => t.facet === facet).map((t) => t.id);
+    for (const f of filtersOfFacet(facet)) {
+      if (!f.values) {
+        targets.push({ f });
+        continue;
+      }
+      const values = valuesOfTerms(db, f.tool, f.field, ids);
+      if (values.length) targets.push({ f, values: values.length > 1 ? values : undefined });
+    }
+  }
+  return targets;
+}
+
+const targetName = ({ f, values }) => `\`${f.field}\`${values ? ` with the value ${values.map((x) => `"${x}"`).join(' or ')}` : ''}`;
 
 // The facet names are the values of skkg_find_terms' `vocabulary`, so the hints name them as such.
 // A value filter names its values instead: skkg_find_terms gives its terms no filter.
@@ -66,13 +88,12 @@ const listedBy = ({ db, tool, field }, wanted) =>
 // Where `terms` ([{ id, facet }]) go instead of `field` of `tool`: its own parameters when it has
 // one, else those of the other tools, named with their tool. Never for an exclusion: the filters it
 // would name include objects, so following the hint would invert it.
-function otherFilterHint(where, terms, wanted) {
+function otherFilterHint(where, targets, wanted) {
   const { tool, exclusion } = where;
-  const targets = [...new Set(terms.flatMap((t) => filtersOfTerm(where.db, t)))];
-  const own = targets.filter((t) => t.tool === tool);
+  const own = targets.filter((t) => t.f.tool === tool);
   if (exclusion || !targets.length) return listedBy(where, wanted);
-  if (own.length) return `Pass it as ${own.map((t) => `\`${t.field}\``).join(' or ')}. ${listedBy(where, wanted)}`;
-  return `This tool has no filter for it; ${targets.map((t) => `${t.tool} takes it as \`${t.field}\``).join(', and ')}. ` +
+  if (own.length) return `Pass it as ${own.map(targetName).join(' or ')}. ${listedBy(where, wanted)}`;
+  return `This tool has no filter for it; ${targets.map((t) => `${t.f.tool} takes it as ${targetName(t)}`).join(', and ')}. ` +
     listedBy(where, wanted);
 }
 
@@ -98,18 +119,18 @@ export function resolveTerms(db, { tool, field, facet, narrower = false, exclusi
     if (t.facet !== facet) {
       throw new ToolError(`\`${field}\`: ${termName(db, v)} is a term of ` +
         `${t.facet ? vocabularies([t.facet]) : 'another vocabulary'}, not of \`${field}\`.`,
-      otherFilterHint(where, [t], facet));
+      otherFilterHint(where, targetsOf(db, [t]), facet));
     }
     ids = [v];
   } else {
     const entries = termsByLabel(db, v);
     ids = entries.filter((e) => e.facet === facet).map((e) => e.id);
     if (!ids.length) {
-      const sent = entries.filter((e) => filtersOfTerm(db, e).length);
-      const elsewhere = [...new Set(sent.map((e) => e.facet))];
+      const targets = targetsOf(db, entries);
+      const elsewhere = [...new Set(targets.map((t) => t.f.facet))];
       if (elsewhere.length) {
         throw new ToolError(`\`${field}\`: "${v}" is a term of ${vocabularies(elsewhere)}, not of \`${field}\`.`,
-          otherFilterHint(where, sent, facet));
+          otherFilterHint(where, targets, facet));
       }
       throw new ToolError(`\`${field}\`: no term of \`${field}\` is labelled "${v}".`, valuesHint(db, tool, field) ?? suggestTerms(db, facet, v));
     }
