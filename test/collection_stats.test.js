@@ -13,6 +13,8 @@
 // - exclude_attributions without a creator filter drops whole objects, but a bucket's creator-row
 //   filter moves it to that row, so a bucket offers a filter that lists other objects
 // - breakdown_other adds up the omitted values' counts and counts an object once per value
+// - a bucket of the caller's own filter field offers a filter that replaces the caller's, so a
+//   value the objects also have lists more objects than its count, without a word
 // - a bucket's include_narrower: false silently stops the caller's own term filters from expanding
 // - a leaf term's filter carries include_narrower: false, needlessly changing the caller's filters
 // - an acquisition decade bucket has no filter, or one that lists other objects
@@ -106,6 +108,18 @@ test('skkg_collection_stats against the fixture database', { skip: FIXTURE_DB.sk
       // A dimension outside the creator rows keeps its filters.
       const other = await stats({ dimension: 'material', exclude_attributions: ['nach'], top: 3 });
       assert.ok(other.buckets.every((b) => b.filter));
+    });
+
+    await t.test('a bucket of the caller\'s own field offers a filter only for a value that field matched', async () => {
+      const r = await stats({ dimension: 'material', material: 'Holz', top: 20 });
+      const offered = r.buckets.filter((b) => b.filter);
+      assert.ok(offered.length && offered.length < r.buckets.length, JSON.stringify(r.buckets.map((b) => b.filter)));
+      for (const b of offered) assert.equal(b.count, await searchTotal({ material: 'Holz', ...b.filter }), b.label);
+      assert.match(r.warnings.join(' '), /outside your own `material` filter carry no `filter`.*would replace yours/);
+      // A decade keeps its filter, narrowed to the caller's years.
+      const d = await stats({ dimension: 'acquisition_decade', acquisition_year_from: 1995, acquisition_year_to: 2003 });
+      assert.deepEqual(d.buckets.map((b) => b.filter), [
+        { acquisition_year_from: 1995, acquisition_year_to: 1999 }, { acquisition_year_from: 2000, acquisition_year_to: 2003 }]);
     });
 
     await t.test('only terms with narrower terms set include_narrower: false, and the clash is named', async () => {

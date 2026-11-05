@@ -47,7 +47,11 @@ const DIMENSIONS = {
     kind: 'decade', about: 'decade of SKKG\'s acquisition',
     pairs: `SELECT object_id AS oid, ${decade(ACQUISITION_YEAR)} AS k FROM acquisitions WHERE ${ACQUISITION_DATED}`,
     // Each object has at most one SKKG acquisition, so the year range lists the bucket exactly.
-    filter: (k) => ({ acquisition_year_from: k, acquisition_year_to: k + 9 }),
+    // It replaces the caller's range, so it keeps only the decade's part of that range.
+    filter: (k, args) => ({
+      acquisition_year_from: Math.max(k, args.acquisition_year_from ?? k),
+      acquisition_year_to: Math.min(k + 9, args.acquisition_year_to ?? k + 9),
+    }),
   },
   production_decade: {
     kind: 'decade', about: 'decade of production, only for objects dated within one decade; no filter',
@@ -130,8 +134,9 @@ const hasNarrower = (db, id) => stmt(db, 'SELECT 1 FROM terms WHERE broader_id =
 
 // A bucket's id or value and label. A term bucket counts the term as recorded, so the filter
 // of a term with narrower terms switches their expansion off.
-function bucket(db, dim, k, count, lang, withFilter = true) {
-  if (dim.kind === 'decade') return { value: k, label: decadeLabel(k), count, filter: dim.filter?.(k) };
+function bucket(db, dim, k, count, args, withFilter = true) {
+  const lang = args.lang;
+  if (dim.kind === 'decade') return { value: k, label: decadeLabel(k), count, filter: dim.filter?.(k, args) };
   const narrower = dim.kind === 'term' && hasNarrower(db, k);
   return {
     id: k,
@@ -212,7 +217,15 @@ export function collectionStats(db, meta, args) {
   const sorted = [...objectsOf].map(([k, set]) => ({ k, n: set.size }))
     .sort(order === 'count' ? (a, b) => b.n - a.n || byKey(a, b) : (a, b) => a.k - b.k);
   const rows = sorted.slice(args.offset, args.offset + top);
-  let buckets = rows.map((r) => bucket(db, dim, r.k, r.n, args.lang, rowFilters));
+  // A bucket's filter replaces the caller's filter of the same field, so it lists the bucket only
+  // for a value the caller's filter matched; another value is one the objects also have.
+  const own = dim.kind === 'term' && !dim.row && q.termIds[dim.field] ? new Set(q.termIds[dim.field]) : undefined;
+  const offered = (k) => rowFilters && (!own || own.has(k));
+  let buckets = rows.map((r) => bucket(db, dim, r.k, r.n, args, offered(r.k)));
+  if (rows.some((r) => !offered(r.k)) && own) {
+    warnings.push(`Buckets of values outside your own \`${dim.field}\` filter carry no \`filter\`: they count the objects that also have ` +
+      `such a value, and their filter would replace yours.`);
+  }
 
   if (sub && rows.length) {
     // Only the objects of the buckets shown are read for the breakdown.
@@ -239,7 +252,7 @@ export function collectionStats(db, meta, args) {
       return {
         ...b,
         breakdown: list.slice(0, args.breakdown_top).map((r) => {
-          const x = bucket(db, sub, r.k, r.n, args.lang);
+          const x = bucket(db, sub, r.k, r.n, args);
           return { id: x.id, value: x.value, label: x.label, count: x.count };
         }),
         breakdown_other: other || undefined,
@@ -295,7 +308,7 @@ export function collectionStats(db, meta, args) {
 
 function bucketText(b) {
   const lines = [`${b.count}\t${b.label ?? b.id ?? b.value}${b.id ? ` (${b.id})` : ''}`];
-  for (const x of b.breakdown ?? []) lines.push(`\t${x.count}\t${x.label ?? x.id ?? x.value}`);
+  for (const x of b.breakdown ?? []) lines.push(`\t${x.count}\t${x.label ?? x.id ?? x.value}${x.id ? ` (${x.id})` : ''}`);
   if (b.breakdown_other) lines.push(`\t${b.breakdown_other}\tother values`);
   if (b.breakdown_without_value) lines.push(`\t${b.breakdown_without_value}\twithout a value`);
   return lines.join('\n');

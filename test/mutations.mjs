@@ -98,7 +98,7 @@ const MUTATIONS = [
   ["src/tools/collection_stats.js", "can add up to more than total_objects", "may differ from total_objects", "stats multi-value description"],
   ["src/tools/collection_stats.js", "const narrower = dim.kind === 'term' && hasNarrower(db, k);", "const narrower = dim.kind === 'term';", "stats leaf filter unflagged"],
   ["src/tools/collection_stats.js", "    if (!ownTermFilters.length || args.include_narrower === false) return [];", "    return [];", "stats include_narrower clash warning"],
-  ["src/tools/collection_stats.js", "    filter: (k) => ({ acquisition_year_from: k, acquisition_year_to: k + 9 }),\n", "", "stats acquisition decade filter"],
+  ["src/tools/collection_stats.js", "    filter: (k, args) => ({\n      acquisition_year_from:", "    unused: (k, args) => ({\n      acquisition_year_from:", "stats acquisition decade filter"],
   ["src/tools/collection_stats.js", ".filter((r) => among.has(r.oid));", ";", "stats JavaScript restriction"],
   ["src/tools/collection_stats.js", "list exactly their objects when added to this call\\'s arguments", "list their objects", "stats filter promise"],
   ["src/lib/fit.js", "size: JSON.stringify(structured).length + text.length", "size: JSON.stringify(structured).length", "result size counts the text"],
@@ -182,6 +182,18 @@ const MUTATIONS = [
   ['src/tools/get_record.js', "(rs.length === 1 ? ref(rs[0]) : { references: rs.map(ref) })", "ref(rs[0])", 'record every reference kept'],
   ['src/tools/get_record.js', "counts: { objects: refsOf.size,", "counts: { objects: refs.length,", 'record literature object count'],
   ['src/tools/record_text.js', ", ...(r.references ?? []).map((x) => join(refRest(x), ' · '))]", "]", 'record text every reference'],
+  // invariants.test.js
+  ['src/lib/results.js', "    s.applied_filters && `Filters: ${appliedText(s.applied_filters)}.`,\n", "", 'text applied filters'],
+  ['src/lib/results.js', "? `${x.label ?? x.name} (${x.id})` : x.id)", "? `${x.label ?? x.name}` : x.id)", 'text applied filter ids'],
+  ['src/tools/collection_stats.js', "${x.label ?? x.id ?? x.value}${x.id ? ` (${x.id})` : ''}`);", "${x.label ?? x.id ?? x.value}`);", 'stats text breakdown ids'],
+  ['src/lib/text.js', "r.photographer && `photo ${actor(r.photographer)}`", "r.photographer && `photo ${nameOf(r.photographer)}`", 'photo rights photographer id'],
+  ['src/lib/text.js', "`holder ${actor(r.right_holder)}`", "`holder ${nameOf(r.right_holder)}`", 'photo rights holder id'],
+  ['src/tools/find_terms.js', "s.broader?.length && `Broader:", "false && `Broader:", 'term text broader ids'],
+  ['src/tools/collection_stats.js', "const offered = (k) => rowFilters && (!own || own.has(k));", "const offered = () => rowFilters;", 'stats own-field filter only for matched values'],
+  ['src/tools/collection_stats.js', "      `such a value, and their filter would replace yours.`);\n", "      '');\n", 'stats own-field warning'],
+  ['src/tools/collection_stats.js', "acquisition_year_from: Math.max(k, args.acquisition_year_from ?? k),", "acquisition_year_from: k,", 'stats decade filter within the caller range'],
+  ['src/tools/get_record.js', "provenance: provRefs.length, about: about.length },", "provenance: provRefs.length, about: 0 },", 'record about count'],
+  ['src/tools/object_filters.js', 'e.g. "Auktion", "Ankauf", "Schenkung"', 'e.g. "Auktion", "Kauf", "Schenkung"', 'example acquisition type'],
 ];
 
 // Restore the mutated file if the run is interrupted.

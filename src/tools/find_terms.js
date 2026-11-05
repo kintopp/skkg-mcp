@@ -267,7 +267,8 @@ const showing = (s) => (s.returned && s.total > s.returned ? `, showing ${s.offs
 
 function renderText(s) {
   const lines = s.term
-    ? [termLine(s.term), s.total && `${s.total} narrower terms${showing(s)}:`]
+    ? [termLine(s.term), s.broader?.length && `Broader: ${s.broader.map((b) => `${b.label ?? b.id} (${b.id})`).join(' > ')}`,
+      s.total && `${s.total} narrower terms${showing(s)}:`]
     : [`${s.total} terms${showing(s)}.`];
   (s.term ? s.narrower : s.results)?.forEach((t, i) => lines.push(`${s.offset + i + 1}. ${termLine(t)}`));
   return [...lines.filter(Boolean), ...tailLines(s)].join('\n');

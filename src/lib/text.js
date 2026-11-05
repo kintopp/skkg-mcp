@@ -9,7 +9,7 @@ export const span = (a, b) => (a && b ? (a === b ? a : `${a}–${b}`) : a ? `${a
 export const point = (a, b) => (b === undefined || b === null || a === b ? a : span(a, b));
 
 export const nameOf = (a) => a.name ?? a.id;
-export const actor = (a) => a && `${nameOf(a)} (${a.id})`;
+export const actor = (a) => a && (a.name ? `${a.name} (${a.id})` : a.id);
 // A creator with the id, and the attribution and influence that qualify the authorship.
 export const creatorRef = (c) => `${join([nameOf(c), c.role, c.attribution, c.relation === 'influence' && 'influence'])} (${c.id})`;
 export const obj = (r) => r && join([r.inventory_number, r.title ?? '(untitled)', r.id], ' · ');
@@ -22,10 +22,10 @@ export function priceText(p) {
 }
 
 export function photoRights(r) {
-  return join([r.image_license, r.right_holder && `holder ${nameOf(r.right_holder)}`,
-    r.original_right_holder && `original holder ${nameOf(r.original_right_holder)}`,
+  return join([r.image_license, r.right_holder && `holder ${actor(r.right_holder)}`,
+    r.original_right_holder && `original holder ${actor(r.original_right_holder)}`,
     r.rights_end_date && `rights until ${r.rights_end_date}`, r.rights_note,
-    r.photographer && `photo ${nameOf(r.photographer)}`, r.photo_date, r.credit_line && `credit: ${r.credit_line}`]);
+    r.photographer && `photo ${actor(r.photographer)}`, r.photo_date, r.credit_line && `credit: ${r.credit_line}`]);
 }
 
 /** A provenance period: a head line starting with `lead` (e.g. "1. "), then its details. */

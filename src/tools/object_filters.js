@@ -198,8 +198,9 @@ export function resolveActors(db, field, value) {
 }
 
 /**
- * Compiles the filters in `args` to { clauses, params, applied, warnings, creatorRow }.
- * `applied` echoes each filter with the terms, actors, and records it resolved to.
+ * Compiles the filters in `args` to { clauses, params, applied, warnings, creatorRow, termIds }.
+ * `applied` echoes each filter with the terms, actors, and records it resolved to; `termIds`
+ * gives each term filter's ids, narrower terms included when expanded.
  * `creatorRow` ({ sql, params } on `oc`) is the condition one creator row must meet, when a
  * creator filter is given.
  */
@@ -207,6 +208,7 @@ export function compileObjectFilters(db, args) {
   const clauses = [];
   const params = [];
   const applied = {};
+  const termIds = {};
   const warnings = [];
   const narrower = args.include_narrower !== false;
 
@@ -224,6 +226,7 @@ export function compileObjectFilters(db, args) {
   for (const [field, f] of Object.entries(TERM_FILTERS)) {
     if (args[field] === undefined) continue;
     const { ids, matched } = resolveTerms(db, field, f.facet, args[field], narrower);
+    termIds[field] = ids;
     if (f.creatorColumn) {
       creatorParts.push(`oc.${f.creatorColumn} IN (${placeholders(ids.length)})`);
       creatorParams.push(...ids);
@@ -301,7 +304,7 @@ export function compileObjectFilters(db, args) {
   }
 
   const creatorRow = creatorParts.length ? { sql: creatorParts.join(' AND '), params: creatorParams } : undefined;
-  return { clauses, params, applied, warnings, creatorRow };
+  return { clauses, params, applied, warnings, creatorRow, termIds };
 }
 
 /**
@@ -324,6 +327,7 @@ export function compileObjectQuery(db, args) {
     applied: filters.applied,
     warnings: filters.warnings,
     creatorRow: filters.creatorRow,
+    termIds: filters.termIds,
   };
 }
 
