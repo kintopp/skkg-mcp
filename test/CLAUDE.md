@@ -11,6 +11,7 @@ Extends the root `CLAUDE.md`: the offline suite is the only continuous layer, so
 - **Model-facing wording is behaviour** (descriptions, warnings, error suggestions, instructions). The model reads it, so assert the key phrases and don't loosen them under the refactor rule. Assert on `formatErrorText(err)`, which is what the model sees: `assert.throws(fn, /re/)` checks only `err.message` and misses the suggestion.
 - **Test at the highest offline boundary that pins the behaviour.** For a tool that is the handler against a test database: input in, `structuredContent` out, checked with `assertWireValid`. Don't duplicate a stronger test one level down.
 - **No test-only exports.** Test through the exported function that uses the helper.
+- **A new property gets its own `t.test`.** Never insert one into an existing test: a failure in either then hides the other's assertions, and the older test no longer covers what its name says.
 
 ## Harness
 

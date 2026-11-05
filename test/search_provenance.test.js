@@ -183,10 +183,15 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
       }
       // Alone, a currency keeps only the entries priced in it: the few in GBP, none of the many in CHF.
       // object/fb96933f-… was acquired with the currency DEM but no price, so DEM must leave it out.
+      const unpriced = 'object/fb96933f-902a-489b-8cb8-d3aa4c6b77a2';
+      const fixture = new DatabaseSync(FIXTURE_DB.path, { readOnly: true });
+      const acq = fixture.prepare('SELECT currency_code, price_value FROM acquisitions WHERE object_id = ?').all(unpriced);
+      fixture.close();
+      assert.deepEqual(acq.map((a) => [a.currency_code, a.price_value]), [['DEM', null]], 'the fixture still holds the unpriced DEM acquisition');
       for (const code of ['GBP', 'DEM']) {
         const { first, rows } = await all({ currency: code });
         assert.ok(first.total > 0, code);
-        assert.ok(!rows.some((x) => x.id === 'object/fb96933f-902a-489b-8cb8-d3aa4c6b77a2'), code);
+        assert.ok(!rows.some((x) => x.id === unpriced), code);
         for (const x of rows) {
           const prices = [...(x.matched_periods ?? []).map((p) => p.price), x.matched_acquisition?.price].filter(Boolean);
           assert.ok(prices.length, x.id);
@@ -389,8 +394,9 @@ test('a label of priced terms of two currencies is sent to `currency` with both 
       assert.match(await callError(client, NAME, { currency: 'Zorkmid' }), /"Zorkmid" names prices in several currencies \(CHF, DEM\)/);
       for (const [tool, field] of [[NAME, 'owner_type'], ['skkg_search_objects', 'acquisition_type']]) {
         const text = await callError(client, tool, { [field]: 'Zorkmid' });
-        assert.deepEqual(currencyHint(text), ['CHF', 'DEM'], text);
-        for (const currency of ['CHF', 'DEM']) assert.ok((await callOk(client, NAME, { currency, limit: 1 }, outputSchema)).total > 0, currency);
+        const codes = currencyHint(text);
+        assert.deepEqual(codes, ['CHF', 'DEM'], text);
+        for (const currency of codes) assert.ok((await callOk(client, NAME, { currency, limit: 1 }, outputSchema)).total > 0, currency);
       }
     }, { env: { SKKG_DB_PATH: copy.path } });
   } finally {

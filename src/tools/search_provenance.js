@@ -85,7 +85,7 @@ const filterShape = {
   year_to: yearField('Latest year; see year_from'),
   currency: termValue().optional().describe(
     'Currency of the price, an ISO code such as "CHF", "DEM", "FRF", "GBP" (SKKG\'s "DM" and "FF" are DEM and FRF), ' +
-    'or a currency term id ("type/…"). ' +
+    'or the id ("type/…") or a label of a currency term with a price. ' +
     'Alone, it keeps the entries with a price in that currency'),
   price_min: priceField('Lowest price, in `currency`, which it needs. A batch price (is_batch_price) is the price of all objects of the batch'),
   price_max: priceField('Highest price, in `currency`; see price_min'),
