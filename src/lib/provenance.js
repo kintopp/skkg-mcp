@@ -50,6 +50,9 @@ export function period(db, p, lang) {
   };
 }
 
+/** The short form of a period (a `provenance` row with id, statement, label, owner_id, date_label). */
+export const periodRef = (db, p) => ({ id: p.id, statement: p.statement ?? p.label, owner: actorRef(db, p.owner_id), date: p.date_label });
+
 /** SKKG's acquisition of an object; undefined when it has none. */
 export function acquisition(db, objectId, lang) {
   const a = stmt(db, 'SELECT * FROM acquisitions WHERE object_id = ?').get(objectId);

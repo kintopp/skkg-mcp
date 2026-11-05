@@ -2,7 +2,7 @@
 // short lines, never JSON. Hosts differ in which channel they show the model.
 
 import { showing, tailLines } from '../lib/results.js';
-import { present, join, span, point, nameOf, actor, list, photoRights, periodLines, objectRowLines, searchArgs } from '../lib/text.js';
+import { present, join, span, point, nameOf, actor, list, photoRights, periodLines, periodRefLine, objectRowLines, searchArgs } from '../lib/text.js';
 
 // A line of parts, or nothing when every part is empty.
 const line = (parts, sep) => join(parts, sep) || undefined;
@@ -123,8 +123,7 @@ const SECTION_TEXT = {
   relations: (rs) => ['Relations:', ...rs.map(relationLine)],
   external,
   literature: (ls) => ['Literature:', ...ls.map(litLine)],
-  provenance: (ps) => ['Provenance periods it documents:', ...ps.map((p) => `- ${join([p.statement, p.owner && `owner ${actor(p.owner)}`, p.date,
-    ...refBits(p), p.note, p.citation, p.id], ' · ')}`)],
+  provenance: (ps) => ['Provenance periods it documents:', ...ps.map((p) => `- ${periodRefLine(p, [...refBits(p), p.note, p.citation])}`)],
   about: (as) => ['About:', ...as.map((a) => `- ${join([a.label ?? a.id, a.type, a.role, a.id], ' · ')}`)],
   images: (ms) => ['Images:', ...ms.map((m) => `- ${join([m.id, m.label, m.usage, m.width && m.height && `${m.width}×${m.height}`], ' · ')}\n` +
     `   ${join([photoRights(m.rights), m.rights.iiif_service], ' · ')}`)],

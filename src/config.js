@@ -17,6 +17,14 @@ export const RESULT_CHAR_CEILING = posIntEnv('SKKG_RESULT_CHAR_CEILING', 150000,
 // What a tool's structured result may use of the ceiling.
 export const RESULT_CHAR_LIMIT = Math.floor(RESULT_CHAR_CEILING * 0.9);
 
+// The search tools whose filters other tools point to (src/lib/filters.js).
+export const SEARCH_OBJECTS_TOOL_NAME = 'skkg_search_objects';
+export const SEARCH_PROVENANCE_TOOL_NAME = 'skkg_search_provenance';
+// The years a year filter accepts. The build stores an open side of a provenance period as
+// -9999 or 9999 (scripts/build_db.py, OPEN_YEAR), which must stay outside this range.
+export const YEAR_MIN = -5000;
+export const YEAR_MAX = 2100;
+
 export const SEARCH_DEFAULT_LIMIT = 10;
 export const SEARCH_MAX_LIMIT = 50;
 export const MAX_QUERY_LEN = 500;

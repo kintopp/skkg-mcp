@@ -9,8 +9,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeTestDb } from './helpers.js';
-import { formatErrorText } from '../src/lib/errors.js';
+import { makeTestDb, errorOf } from './helpers.js';
 import { searchProvenance } from '../src/tools/search_provenance.js';
 
 const META = { data_as_of: '2026-10-28' };
@@ -44,15 +43,6 @@ function currencyDb() {
     },
   });
 }
-
-const errorOf = (fn) => {
-  try {
-    fn();
-  } catch (e) {
-    return formatErrorText(e);
-  }
-  assert.fail('expected a refusal');
-};
 
 test('a currency label of prices in two currencies is refused as ambiguous, naming both codes', () => {
   const t = currencyDb();

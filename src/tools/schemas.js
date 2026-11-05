@@ -1,14 +1,24 @@
-// Output-schema building blocks. Each is a factory: zod instances must not be shared
-// between fields, or the JSON Schema export emits $ref.
+// Schema building blocks. Each is a factory: zod instances must not be shared between fields,
+// or the JSON Schema export emits $ref.
 
 import { z } from 'zod';
-import { LANGS } from '../config.js';
+import { LANGS, YEAR_MIN, YEAR_MAX } from '../config.js';
+
+// Input fields of the search filters. Every quoted example in a term field must be a label of
+// that field's vocabulary.
+export const termField = (what) => z.string().min(1).max(200).optional().describe(
+  `${what}. A term id ("type/…") or a German label, matched exactly except for case.`);
+// A record id, or for an actor filter an id or a name.
+export const idField = (what) => z.string().min(1).max(300).optional().describe(what);
+export const yearField = (what) => z.number().int().min(YEAR_MIN).max(YEAR_MAX).optional().describe(what);
 
 export const str = () => z.string().optional();
 export const int = () => z.number().int().optional();
 
 export const termOut = () => z.object({ id: z.string(), label: str() });
 export const actorOut = () => z.object({ id: z.string(), name: str() });
+// The short form of a provenance period (periodRef in src/lib/provenance.js).
+export const periodRefShape = () => ({ id: z.string(), statement: str(), owner: actorOut().optional(), date: str() });
 export const objectRefOut = () => z.object({ id: z.string(), inventory_number: str(), title: str(), website_url: str() });
 
 export const creatorOut = () => z.object({

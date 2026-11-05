@@ -12,10 +12,10 @@ import { objectQueryShape, objectFilterShape, hasObjectFilter, compileObjectQuer
 import { objectRowShape, appliedOut, langIn } from './schemas.js';
 import { objectRowLines } from '../lib/text.js';
 import {
-  READ_ONLY_ANNOTATIONS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT, INVENTORY_ORDER,
+  READ_ONLY_ANNOTATIONS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT, INVENTORY_ORDER, SEARCH_OBJECTS_TOOL_NAME,
 } from '../config.js';
 
-export const SEARCH_OBJECTS_TOOL_NAME = 'skkg_search_objects';
+export { SEARCH_OBJECTS_TOOL_NAME };
 
 const ORDER = {
   relevance: 'bm25(objects_fts, 0, 5, 3, 1, 1, 10), ' + INVENTORY_ORDER,

@@ -14,7 +14,8 @@
 // - an example value in a filter description is not a label of that filter's vocabulary
 // - a lower-case umlaut ("öl") misses its label ("Öl"), because SQLite folds ASCII only
 // - a label of another vocabulary is answered with "translate it" instead of the right filter,
-//   or the hint names only one of several vocabularies
+//   or the hint names only one of several vocabularies; a term that only skkg_search_provenance
+//   filters ("Auktionshaus", an owner type) gets no hint, or one naming its filter as this tool's
 // - with a creator filter, exclude_attributions drops an object through a creator row other than
 //   the one the filter matched
 // - the hint for a wrong exclude_attributions value names an inclusion filter, inverting the exclusion
@@ -28,7 +29,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { withClient, callOk, callError, FIXTURE_DB } from './helpers.js';
+import { withClient, callOk, callError, allPages, FIXTURE_DB } from './helpers.js';
 import { outputSchema } from '../src/tools/search_objects.js';
 
 const NAME = 'skkg_search_objects';
@@ -163,6 +164,13 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
       assert.match(both, /`material`/);
     });
 
+    await t.test('a term that only skkg_search_provenance filters is sent there, named as its filter', async () => {
+      const text = await callError(client, NAME, { object_type: 'Auktionshaus' });
+      assert.match(text, /"Auktionshaus" is a owner_type term, not a object_type term/);
+      assert.match(text, /This tool has no filter for it; skkg_search_provenance takes it as `owner_type`/);
+      assert.doesNotMatch(text, /Pass it as/);
+    });
+
     await t.test('a wrong exclude_attributions value is never sent to an inclusion filter', async () => {
       // "Verlag" is a creator role; creator_role would include publishers instead of excluding them.
       const text = await callError(client, NAME, { exclude_attributions: ['Verlag'] });
@@ -186,20 +194,11 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
     });
 
     await t.test('paging with next_offset neither repeats nor skips, and the last page has no more', async () => {
-      const args = { object_type: 'Malerei auf textilem Bildträger', limit: 50 };
-      const seen = [];
-      let page = await search(args);
-      const total = page.total;
+      const { first, last, rows } = await allPages(search, { object_type: 'Malerei auf textilem Bildträger' }, { limit: 50, maxPages: 20 });
+      const { total } = first;
+      const seen = rows.map((r) => r.id);
       assert.ok(total > 100, 'needs at least three pages');
-      // Bounded, so a has_more that never turns false fails instead of hanging.
-      for (let pages = 1; ; pages++) {
-        seen.push(...ids(page));
-        if (!page.has_more) break;
-        assert.ok(pages < 20, 'has_more never turned false');
-        assert.equal(page.next_offset, seen.length);
-        page = await search({ ...args, offset: page.next_offset });
-      }
-      assert.equal(page.next_offset, undefined);
+      assert.equal(last.next_offset, undefined);
       assert.equal(seen.length, total);
       assert.equal(new Set(seen).size, total);
     });

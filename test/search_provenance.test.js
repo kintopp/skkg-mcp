@@ -26,7 +26,8 @@
 //   chain carries an acquisition that did not match
 // - a batch price is not flagged
 // - date or price sorting puts entries out of order, or paging repeats or skips an object
-// - a term label of another vocabulary is pointed to a filter this tool does not have
+// - a term label of another vocabulary is pointed to a filter this tool does not have as if it
+//   were this tool's, or a term that only skkg_search_objects filters ("Holz") gets no pointer there
 // - the anonymisation ("unbekannte:r Eigentümer:in") is dropped or replaced
 // - a result row lacks its rights (image_license, object_copyright)
 // - results violate the output schema
@@ -34,7 +35,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { withClient, callOk, callError, FIXTURE_DB } from './helpers.js';
+import { withClient, callOk, callError, allPages, FIXTURE_DB } from './helpers.js';
 import { outputSchema } from '../src/tools/search_provenance.js';
 
 const NAME = 'skkg_search_provenance';
@@ -46,18 +47,7 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
     const search = (args) => callOk(client, NAME, args, outputSchema);
     const ids = (r) => r.results.map((x) => x.id);
     const periodIds = (r) => r.results.flatMap((x) => (x.matched_periods ?? []).map((p) => p.id));
-    // Every page of a search, bounded so that a has_more that never turns false fails.
-    async function all(args) {
-      const rows = [];
-      let page = await search({ ...args, limit: 25 });
-      for (let n = 1; ; n++) {
-        rows.push(...page.results);
-        if (!page.has_more) return { first: page, rows };
-        assert.ok(n < 100, 'has_more never turned false');
-        assert.equal(page.next_offset, rows.length);
-        page = await search({ ...args, limit: 25, offset: page.next_offset });
-      }
-    }
+    const all = (args) => allPages(search, args);
 
     await t.test('a call without a filter is refused with an example', async () => {
       const text = await callError(client, NAME, {});
@@ -227,7 +217,7 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
       for (const p of rows.flatMap((r) => r.matched_periods)) assert.equal(p.transaction.kind, 'custody', p.id);
     });
 
-    await t.test('term filters match their vocabulary and point only to this tool\'s filters', async () => {
+    await t.test('term filters match their vocabulary, and hints name the tool of a filter this one lacks', async () => {
       const r = await search({ certainty: 'vermutlich', limit: 25 });
       for (const p of r.results.flatMap((x) => x.matched_periods)) assert.equal(p.certainty, 'vermutlich', p.id);
       const src = await search({ source_type: 'Archivquelle (extern)', limit: 25 });
@@ -235,7 +225,9 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
         assert.ok(p.sources.some((s) => s.type === 'Archivquelle (extern)'), p.id);
       }
       assert.match(await callError(client, NAME, { owner_type: 'Auktion' }), /Pass it as `acquisition_type`/);
-      assert.doesNotMatch(await callError(client, NAME, { owner_type: 'Holz' }), /`material`/);
+      const holz = await callError(client, NAME, { owner_type: 'Holz' });
+      assert.match(holz, /This tool has no filter for it; skkg_search_objects takes it as `material`/);
+      assert.doesNotMatch(holz, /Pass it as `material`/);
     });
 
     await t.test('the anonymisation of owners is returned as SKKG publishes it', async () => {

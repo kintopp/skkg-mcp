@@ -52,6 +52,20 @@ export function periodLines(p, lead = '') {
   ];
 }
 
+/** The short form of a period on one line, with `extra` fields before its id. */
+export const periodRefLine = (p, extra = []) => join([p.statement, p.owner && `owner ${actor(p.owner)}`, p.date, ...extra, p.id], ' · ');
+
+/**
+ * SKKG's acquisition of an object: a line starting with `lead`, then its note on a line of its own
+ * (indented by `noteIndent`), or with `inlineNote` at the end of the line, its line breaks as " / ".
+ */
+export function acquisitionLines(a, { lead = 'Acquisition: ', noteIndent = '  ', inlineNote = false } = {}) {
+  const note = inlineNote ? a.note?.replace(/\s*\n\s*/g, ' / ') : undefined;
+  return [`${lead}${join([a.type, a.date_label ?? a.date, a.date_uncertain && 'date uncertain', a.source && `from ${actor(a.source)}`,
+    a.reference && `ref. ${a.reference}`, a.price && `price ${priceText(a.price)}`, note])}`,
+  !inlineNote && a.note && `${noteIndent}${a.note}`];
+}
+
 /** An object row of a search result or a record's object list, numbered `n`. */
 export function objectRowLines(r, n) {
   const what = [r.object_type, (r.creators ?? []).map(creatorRef).join('; '), r.date].filter(Boolean).join(' · ');

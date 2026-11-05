@@ -6,36 +6,39 @@ import { withTool, toolResult } from '../lib/tool.js';
 import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
 import { stmt, perDb, placeholders } from '../lib/sql.js';
-import { actorRef } from '../lib/labels.js';
 import { termsByLabel } from '../lib/terms.js';
 import { objectRow } from '../lib/objects.js';
-import { period, acquisition, chainRows } from '../lib/provenance.js';
+import { period, periodRef, acquisition, chainRows } from '../lib/provenance.js';
 import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
 import { capList, paging, showing, pastEnd, tailLines } from '../lib/results.js';
-import { join, objectRowLines, periodLines, actor, priceText } from '../lib/text.js';
-import { resolveTerms, resolveActors, assertRange, nameWarning } from './object_filters.js';
-import { objectRowShape, periodShape, acquisitionOut, actorOut, appliedOut, langIn, str, int } from './schemas.js';
+import { objectRowLines, periodLines, periodRefLine, acquisitionLines } from '../lib/text.js';
+import { TERM_FILTERS as TERM_FILTERS_OF, resolveTerms, actorFilter, assertRange } from '../lib/filters.js';
+import {
+  objectRowShape, periodShape, periodRefShape, acquisitionOut, appliedOut, langIn, int, termField, idField, yearField,
+} from './schemas.js';
 import {
   READ_ONLY_ANNOTATIONS, PROVENANCE_DEFAULT_LIMIT, PROVENANCE_MAX_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT, INVENTORY_ORDER,
+  SEARCH_PROVENANCE_TOOL_NAME,
 } from '../config.js';
 
-export const SEARCH_PROVENANCE_TOOL_NAME = 'skkg_search_provenance';
+export { SEARCH_PROVENANCE_TOOL_NAME };
 
-// Term filters, with the column of their layer's table (`p` provenance, `a` acquisitions).
-const TERM_FILTERS = {
-  owner_type: { facet: 'owner_type', layer: 'chain', sql: 'p.owner_type_id' },
-  certainty: { facet: 'certainty', layer: 'chain', sql: 'p.certainty_id' },
-  holding_kind: { facet: 'holding_kind', layer: 'chain', sql: 'p.holding_kind_id' },
-  transaction_type: { facet: 'transaction_type', layer: 'chain', sql: 'p.transaction_type_id' },
-  source_type: { facet: 'source_type', layer: 'chain', exists: 'SELECT 1 FROM provenance_sources s WHERE s.provenance_id = p.id AND s.type_id' },
-  acquisition_type: { facet: 'acquisition_type', layer: 'acquisition', sql: 'a.type_id' },
+// The term filters (parameter → facet) are the table's in src/lib/filters.js; this is where each
+// one's values are, with its layer: the column of `p` (provenance) or `a` (acquisitions), or an
+// EXISTS over the period's rows.
+const TERM_FILTERS = TERM_FILTERS_OF[SEARCH_PROVENANCE_TOOL_NAME];
+const TERM_SQL = {
+  owner_type: { layer: 'chain', sql: 'p.owner_type_id' },
+  certainty: { layer: 'chain', sql: 'p.certainty_id' },
+  holding_kind: { layer: 'chain', sql: 'p.holding_kind_id' },
+  transaction_type: { layer: 'chain', sql: 'p.transaction_type_id' },
+  source_type: { layer: 'chain', exists: 'SELECT 1 FROM provenance_sources s WHERE s.provenance_id = p.id AND s.type_id' },
+  acquisition_type: { layer: 'acquisition', sql: 'a.type_id' },
 };
-// The filter of this tool that takes a facet's terms, for hints and for skkg_find_terms.
-export const PROVENANCE_FIELD_OF_FACET = Object.freeze(Object.fromEntries(Object.entries(TERM_FILTERS).map(([field, f]) => [f.facet, field])));
 // The layer of every filter that applies to one layer only; the others apply to both.
 const LAYER_OF = {
-  ...Object.fromEntries(Object.entries(TERM_FILTERS).map(([field, f]) => [field, f.layer])),
+  ...Object.fromEntries(Object.keys(TERM_FILTERS).map((field) => [field, TERM_SQL[field].layer])),
   owner: 'chain', transaction_kind: 'chain', place: 'chain', acquired_from: 'acquisition',
 };
 const LAYERS = { chain: ['chain'], acquisition: ['acquisition'], both: ['chain', 'acquisition'] };
@@ -65,15 +68,12 @@ const description =
   'For the whole chain of one object, use skkg_get_object with include ["provenance", "acquisition"]; ' +
   'for a period, skkg_get_record with its id; for labels of the term filters, skkg_find_terms.';
 
-const termField = (what) => z.string().min(1).max(200).optional().describe(
-  `${what}. A term id ("type/…") or a German label, matched exactly except for case.`);
-const yearField = (what) => z.number().int().min(-5000).max(2100).optional().describe(what);
 const priceField = (what) => z.number().min(0).optional().describe(what);
 
 // The filters; inputSchema adds the controls. Every quoted example in a term field must be a label
 // of that field's vocabulary.
 const filterShape = {
-  owner: z.string().min(1).max(300).optional().describe(
+  owner: idField(
     'Owner of a chain period: an actor id ("person/…") or a name ("Stuker", "Galerie Kornfeld"). A name matches every person ' +
     'or institution whose name contains all its words; applied_filters lists them'),
   owner_type: termField('Kind of owner, e.g. "Privatbesitzer:in", "Auktionshaus", "Galerie"'),
@@ -88,7 +88,7 @@ const filterShape = {
     'ignoring case and accents; applied_filters lists the places matched'),
   source_type: termField('Type of a period\'s source, e.g. "Archivquelle (SKKG)", "Archivquelle (extern)", "Kommentar (Fussnote)"'),
   acquisition_type: termField('How SKKG acquired the object, e.g. "Auktion", "Freihandkauf", "Schenkung"'),
-  acquired_from: z.string().min(1).max(300).optional().describe(
+  acquired_from: idField(
     'Who SKKG acquired the object from: an actor id or a name, as for `owner`'),
   year_from: yearField('Earliest year. A chain period matches when its dates overlap the range, an acquisition when its year is in it; ' +
     'undated entries never match. A period open at one end ("seit 1995", "1916–o. D.", "bis 1934") reaches every year on that side; ' +
@@ -137,7 +137,7 @@ export const outputSchema = z.object({
   layers: z.array(z.enum([...LAYERS.both])).describe('The layers searched, after the filters that belong to one layer'),
   sort: z.string(),
   results: z.array(resultOut),
-  unlinked_periods: z.array(z.object({ id: z.string(), statement: str(), owner: actorOut().optional(), date: str() })).optional()
+  unlinked_periods: z.array(z.object(periodRefShape())).optional()
     .describe('Matching periods that belong to no object in the database; skkg_get_record returns each by its id'),
   applied_filters: appliedOut().optional(),
   warnings: z.array(z.string()).optional(),
@@ -222,19 +222,20 @@ function compile(db, args) {
   const applied = {};
   const warnings = [];
 
-  for (const [field, f] of Object.entries(TERM_FILTERS)) {
+  for (const [field, facet] of Object.entries(TERM_FILTERS)) {
     if (args[field] === undefined) continue;
-    const { ids, matched } = resolveTerms(db, field, f.facet, args[field], false, PROVENANCE_FIELD_OF_FACET);
+    const { ids, matched } = resolveTerms(db, SEARCH_PROVENANCE_TOOL_NAME, field, facet, args[field], false);
+    const f = TERM_SQL[field];
     const inList = `IN (${placeholders(ids.length)})`;
     add(f.layer, f.exists ? `EXISTS (${f.exists} ${inList})` : `${f.sql} ${inList}`, ...ids);
     applied[field] = matched;
   }
   for (const [field, column] of [['owner', 'p.owner_id'], ['acquired_from', 'a.source_id']]) {
     if (args[field] === undefined) continue;
-    const { ids, byName } = resolveActors(db, field, args[field]);
-    add(LAYER_OF[field], `${column} IN (${placeholders(ids.length)})`, ...ids);
-    applied[field] = ids.map((id) => actorRef(db, id));
-    if (byName && ids.length > 1) warnings.push(nameWarning(field, args[field], ids.length));
+    const a = actorFilter(db, field, args[field]);
+    add(LAYER_OF[field], `${column} ${a.inList}`, ...a.ids);
+    applied[field] = a.applied;
+    if (a.warning) warnings.push(a.warning);
   }
   if (args.transaction_kind !== undefined) {
     add(LAYER_OF.transaction_kind, 'p.transaction_kind = ?', args.transaction_kind);
@@ -292,7 +293,6 @@ export function searchProvenance(db, meta, args) {
   // An acquisition is one per object, so only the chain layer needs DISTINCT.
   const counts = db.prepare(`${m.sql} SELECT ${c.layers.includes('chain') ? 'COUNT(DISTINCT m.oid)' : 'COUNT(*)'} AS objects,
       COUNT(DISTINCT m.pid) AS periods, SUM(m.layer = 'acquisition') AS acquisitions FROM m`).get(...m.params);
-  const total = counts.objects;
   // The periods of no object (the build drops links to objects it does not hold) are listed apart.
   const chainWhere = whereSql(c.where.chain);
   const unlinked = c.layers.includes('chain')
@@ -303,16 +303,14 @@ export function searchProvenance(db, meta, args) {
       MAX(m.layer = 'acquisition') AS acquired FROM m JOIN objects o ON o.id = m.oid GROUP BY m.oid
       ORDER BY ${ORDER[args.sort]} LIMIT ? OFFSET ?`).all(...m.params, args.limit, args.offset);
 
-  const warnings = [...c.warnings];
-  if (total === 0 && !unlinked.length) {
+  const { warnings } = c;
+  if (counts.objects === 0 && !unlinked.length) {
     warnings.push(`No ${c.layers.length > 1 ? 'chain period or acquisition' : c.layers[0] === 'chain' ? 'chain period' : 'acquisition'} ` +
       'matches these filters together. Only a few hundred objects have a chain before SKKG; drop one filter at a time to see which one empties the result.');
   }
   const ctx = { warnings, totals: {} };
-  const unlinkedRows = capList(unlinked, 'unlinked_periods', ctx).map((p) => ({
-    id: p.id, statement: p.statement ?? p.label, owner: actorRef(db, p.owner_id), date: p.date_label,
-  }));
-  const past = pastEnd(args.offset, total, 'objects');
+  const unlinkedRows = capList(unlinked, 'unlinked_periods', ctx).map((p) => periodRef(db, p));
+  const past = pastEnd(args.offset, counts.objects, 'objects');
   if (past) warnings.push(past);
   const stale = staleWarning(meta);
   if (stale) warnings.push(stale);
@@ -330,8 +328,8 @@ export function searchProvenance(db, meta, args) {
 
   const build = (results) => {
     const out = prune({
-      total,
-      ...paging(total, results.length, args.offset),
+      total: counts.objects,
+      ...paging(counts.objects, results.length, args.offset),
       total_periods: counts.periods + unlinked.length,
       total_acquisitions: counts.acquisitions ?? 0,
       layers: c.layers,
@@ -348,11 +346,6 @@ export function searchProvenance(db, meta, args) {
   return fitResult({ rows, budget: RESULT_CHAR_LIMIT, build, render: renderText, noun: 'objects' });
 }
 
-function acquisitionLine(a) {
-  return `   SKKG acquisition: ${join([a.type, a.date_label ?? a.date, a.date_uncertain && 'date uncertain',
-    a.source && `from ${actor(a.source)}`, a.reference && `ref. ${a.reference}`, a.price && `price ${priceText(a.price)}`, a.note?.replace(/\s*\n\s*/g, ' / ')])}`;
-}
-
 function renderText(s) {
   const matched = [s.layers.includes('chain') && `${s.total_periods} chain periods`,
     s.layers.includes('acquisition') && `${s.total_acquisitions} SKKG acquisitions`].filter(Boolean).join(' and ');
@@ -361,11 +354,10 @@ function renderText(s) {
     objectRowLines(r, s.offset + i + 1),
     r.chain_length && `   Chain of ${r.chain_length} periods${r.matched_periods ? '; matched:' : ''}`,
     ...(r.matched_periods ?? []).flatMap((p) => periodLines(p, `   ${p.seq ?? '?'}. `).filter(Boolean).map((l, j) => (j ? `   ${l}` : l))),
-    r.matched_acquisition && acquisitionLine(r.matched_acquisition),
+    ...(r.matched_acquisition ? acquisitionLines(r.matched_acquisition, { lead: '   SKKG acquisition: ', inlineNote: true }) : []),
   ].filter(Boolean));
   const unlinked = s.unlinked_periods?.length
-    ? ['Matching periods of no object in the database:', ...s.unlinked_periods.map((p) => `- ${join([p.statement, p.date,
-      p.owner && `owner ${actor(p.owner)}`, p.id], ' · ')}`)] : [];
+    ? ['Matching periods of no object in the database:', ...s.unlinked_periods.map((p) => `- ${periodRefLine(p)}`)] : [];
   return [head, ...lines, ...unlinked, ...tailLines(s)].join('\n');
 }
 

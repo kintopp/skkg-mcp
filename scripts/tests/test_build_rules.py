@@ -21,17 +21,11 @@ Ways the rules could fail, which the tests below pin:
 
 Run: uv run --with pyoxigraph --with pytest python -I -m pytest -q scripts/tests
 """
-import importlib.util
-import os
 import sqlite3
-from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location("build_db", ROOT / "scripts" / "build_db.py")
-b = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(b)
+from support import DB, STORE, b
 
 # (date_from, date_to, begin qualifier, begin_from, end qualifier, end_to) -> (first, last, kind,
 # classified), with the date labels of the full dump they stand for.
@@ -153,14 +147,6 @@ def test_currency_labels_that_are_no_alias_and_no_iso_code_are_counted():
     assert dict(db.execute("SELECT object_id, currency_code FROM acquisitions")) == {"object/1": "DEM", "object/2": "RM", "object/3": "RM"}
 
 
-def newest(pattern):
-    found = sorted(ROOT.glob(pattern))
-    return found[-1] if found else None
-
-
-DB = Path(os.environ["SKKG_FIXTURE_DB"]) if os.environ.get("SKKG_FIXTURE_DB") else newest("data/db/skkg-partial-*.sqlite")
-
-
 @pytest.mark.skipif(not (DB and DB.exists()), reason="needs the fixture database (test/CLAUDE.md)")
 def test_the_fixture_links_no_period_to_a_missing_object():
     db = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
@@ -177,9 +163,6 @@ def test_every_column_that_holds_object_ids_declares_its_link():
                if (t, c) != ("objects", "id") and db.execute(f"SELECT 1 FROM {t} WHERE {c} IN (SELECT id FROM objects) LIMIT 1").fetchone()}
     assert holding - declared == set()
     assert len(declared) >= 18
-
-
-STORE = Path(os.environ["SKKG_TEST_STORE"]) if os.environ.get("SKKG_TEST_STORE") else newest("data/oxigraph/partial-*")
 
 
 @pytest.mark.skipif(not (STORE and STORE.exists()), reason="needs the partial Oxigraph store (test/CLAUDE.md)")

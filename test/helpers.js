@@ -9,6 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { AjvJsonSchemaValidator } from '@modelcontextprotocol/client/validators/ajv';
+import { formatErrorText } from '../src/lib/errors.js';
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const SERVER_ENTRY = join(ROOT, 'src', 'index.js');
@@ -79,6 +80,32 @@ export async function callError(client, name, args) {
   assert.equal(res.isError, true, `${name} should have failed: ${JSON.stringify(res.structuredContent)?.slice(0, 200)}`);
   assert.equal(res.structuredContent, undefined);
   return res.content[0].text;
+}
+
+// Every page of a search, following next_offset: { first, last, rows }. Each next_offset must
+// equal the rows seen so far, and the walk is bounded, so a has_more that never turns false fails
+// instead of hanging.
+export async function allPages(call, args, { limit = 25, maxPages = 100 } = {}) {
+  const rows = [];
+  const first = await call({ ...args, limit });
+  let page = first;
+  for (let n = 1; ; n++) {
+    rows.push(...page.results);
+    if (!page.has_more) return { first, last: page, rows };
+    assert.ok(n < maxPages, 'has_more never turned false');
+    assert.equal(page.next_offset, rows.length);
+    page = await call({ ...args, limit, offset: page.next_offset });
+  }
+}
+
+// The error text the model sees (message and suggestion) of a call that must throw a ToolError.
+export function errorOf(fn) {
+  try {
+    fn();
+  } catch (e) {
+    return formatErrorText(e);
+  }
+  assert.fail('expected a refusal');
 }
 
 // A throwaway database file with `meta` and the given tables, each created with an

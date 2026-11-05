@@ -12,16 +12,7 @@ import { termsByLabel } from '../lib/terms.js';
 import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
 import { paging, showing, pastEnd, tailLines } from '../lib/results.js';
-import { FIELD_OF_FACET } from './object_filters.js';
-import { SEARCH_OBJECTS_TOOL_NAME } from './search_objects.js';
-import { PROVENANCE_FIELD_OF_FACET, SEARCH_PROVENANCE_TOOL_NAME } from './search_provenance.js';
-
-// The search tool and parameter that take a facet's terms; skkg_search_objects first, as the
-// acquisition types are filters of both.
-const FILTER_OF_FACET = Object.freeze({
-  ...Object.fromEntries(Object.entries(PROVENANCE_FIELD_OF_FACET).map(([facet, field]) => [facet, [SEARCH_PROVENANCE_TOOL_NAME, field]])),
-  ...Object.fromEntries(Object.entries(FIELD_OF_FACET).map(([facet, field]) => [facet, [SEARCH_OBJECTS_TOOL_NAME, field]])),
-});
+import { filtersOfFacet } from '../lib/filters.js';
 import { langIn, str, int, termOut as termRefOut } from './schemas.js';
 import {
   WITHHELD_FACETS, READ_ONLY_ANNOTATIONS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT,
@@ -134,7 +125,8 @@ function termRow(db, t, lang) {
   const up = ancestors(db, t.id);
   const label = termLabel(db, t.id, lang);
   const languages = [t.label_de, t.label_en, t.label_fr].filter(Boolean);
-  const [tool, field] = FILTER_OF_FACET[t.facet] ?? [];
+  // The first tool that filters the facet: skkg_search_objects for the acquisition types, which both take.
+  const { tool, field } = filtersOfFacet(t.facet)[0] ?? {};
   return prune({
     id: t.id,
     label,

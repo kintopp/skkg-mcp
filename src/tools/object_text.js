@@ -3,7 +3,7 @@
 
 import { tailLines } from '../lib/results.js';
 import {
-  present, join, span, point, actor, obj, list, priceText, photoRights, periodLines, creatorRef,
+  present, join, span, point, obj, list, photoRights, periodLines, creatorRef, acquisitionLines,
 } from '../lib/text.js';
 
 const creatorLine = (c) => `- ${creatorRef(c)}`;
@@ -35,11 +35,7 @@ function textBlock(t) {
   return `${join([t.title ?? 'Text', about && `(${about})`], ' ')}:\n${t.text ?? ''}`;
 }
 
-function acquisition(a) {
-  return [`Acquisition: ${join([a.type, a.date_label ?? a.date, a.date_uncertain && 'date uncertain',
-    a.source && `from ${actor(a.source)}`, a.reference && `ref. ${a.reference}`, a.price && `price ${priceText(a.price)}`])}`,
-  a.note && `  ${a.note}`];
-}
+const acquisition = (a) => acquisitionLines(a);
 
 function provenance(p) {
   return [`Provenance: ${join([p.status, p.status_text], ' — ')}`, ...(p.periods ?? []).flatMap((x, i) => periodLines(x, `${i + 1}. `)),

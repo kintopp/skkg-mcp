@@ -15,28 +15,13 @@ Values from the store are injected but never printed: assertions compare check n
 
 Run: uv run --with pyoxigraph --with pytest python -I -m pytest -q scripts/tests
 """
-import importlib.util
-import os
 import shutil
 import sqlite3
 import unicodedata
-from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location("build_db", ROOT / "scripts" / "build_db.py")
-b = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(b)
-
-
-def newest(pattern):
-    found = sorted(ROOT.glob(pattern))
-    return found[-1] if found else None
-
-
-STORE = Path(os.environ["SKKG_TEST_STORE"]) if os.environ.get("SKKG_TEST_STORE") else newest("data/oxigraph/partial-*")
-DB = Path(os.environ["SKKG_FIXTURE_DB"]) if os.environ.get("SKKG_FIXTURE_DB") else newest("data/db/skkg-partial-*.sqlite")
+from support import DB, STORE, b
 pytestmark = pytest.mark.skipif(not (STORE and DB and STORE.exists() and DB.exists()),
                                 reason="needs the partial Oxigraph store and fixture database (test/CLAUDE.md)")
 

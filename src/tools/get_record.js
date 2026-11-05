@@ -12,11 +12,11 @@ import { asStr, withArticle } from '../lib/format.js';
 import { termLabel, actorRef, recordLabel } from '../lib/labels.js';
 import { imageRights } from '../lib/rights.js';
 import { objectRow, RELATION } from '../lib/objects.js';
-import { period } from '../lib/provenance.js';
+import { period, periodRef } from '../lib/provenance.js';
 import { capList, paging, pastEnd } from '../lib/results.js';
 import { fitLists } from '../lib/fit.js';
 import { renderRecordText } from './record_text.js';
-import { actorOut, imageRightsOut, objectRowShape, periodShape, langIn, str, int } from './schemas.js';
+import { actorOut, imageRightsOut, objectRowShape, periodShape, periodRefShape, langIn, str, int } from './schemas.js';
 import {
   READ_ONLY_ANNOTATIONS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT, INVENTORY_ORDER,
 } from '../config.js';
@@ -170,7 +170,7 @@ export const outputSchema = z.object({
   }).optional(),
   literature: litOut(),
   provenance: z.array(z.object({
-    id: z.string(), statement: str(), owner: actorOut().optional(), date: str(),
+    ...periodRefShape(),
     page: str(), figure: str(), catalogue: str(), note: str(), citation: str(),
   })).optional(),
   about: z.array(z.object({ id: z.string(), type: str(), label: str(), role: str() })).optional(),
@@ -438,9 +438,9 @@ function getLiterature(db, id, want, args, ctx) {
   }
   if (want.has('provenance')) {
     out.provenance = capList(provRefs, 'provenance', ctx).map((r) => {
-      const p = stmt(db, 'SELECT statement, label, owner_id, date_label FROM provenance WHERE id = ?').get(r.provenance_id);
+      const p = stmt(db, 'SELECT id, statement, label, owner_id, date_label FROM provenance WHERE id = ?').get(r.provenance_id);
       return {
-        id: r.provenance_id, statement: p.statement ?? p.label, owner: actorRef(db, p.owner_id), date: p.date_label,
+        ...periodRef(db, p),
         page: asStr(r.page), figure: asStr(r.figure), catalogue: asStr(r.catalogue), note: r.note, citation: own(r.citation),
       };
     });

@@ -13,7 +13,7 @@ import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveId, websiteUrl } from '../src/lib/ids.js';
 import { ToolError, formatErrorText } from '../src/lib/errors.js';
-import { makeTestDb } from './helpers.js';
+import { makeTestDb, errorOf } from './helpers.js';
 
 const UUID = '73118131-1b5e-4a44-9d1c-0c3f6f1f2a10';
 const ACTOR = 'actor/4F1C2B3A-1111-2222-3333-ABCDEFABCDEF';
@@ -66,9 +66,8 @@ test('a number that is both the id and the inventory number of the same object r
 
 test('an id of another record type is refused with the tool to use', () => {
   // The model sees message and suggestion together.
-  const text = (fn) => { try { fn(); } catch (e) { return formatErrorText(e); } return ''; };
-  assert.match(text(() => resolveId(t.db, 'person/77', OBJ)), /skkg_get_record/);
-  assert.match(text(() => resolveId(t.db, 'object/2432', { types: ['person', 'actor'] })), /skkg_get_object/);
+  assert.match(errorOf(() => resolveId(t.db, 'person/77', OBJ)), /skkg_get_record/);
+  assert.match(errorOf(() => resolveId(t.db, 'object/2432', { types: ['person', 'actor'] })), /skkg_get_object/);
 });
 
 test('a plain id is tried against every accepted type', () => {
