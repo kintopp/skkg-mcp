@@ -1,9 +1,14 @@
-// Provenance periods and prices as SKKG records them, shared by the chain of skkg_get_object
-// and the provenance records of skkg_get_record.
+// Provenance periods, SKKG acquisitions, and prices as SKKG records them, shared by
+// skkg_get_object, skkg_get_record, and skkg_search_provenance.
 
 import { stmt } from './sql.js';
 import { termLabel, actorRef, termListLabels } from './labels.js';
 import { NOT_RECORDED } from './rights.js';
+import { asStr } from './format.js';
+
+/** The periods of an object's chain (`provenance` rows with their `seq`), in SKKG's chain order. */
+export const chainRows = (db, objectId) => stmt(db, `SELECT p.*, po.seq FROM provenance_objects po JOIN provenance p ON p.id = po.provenance_id
+    WHERE po.object_id = ? ORDER BY po.seq IS NULL, po.seq, COALESCE(p.date_from, p.begin_from)`).all(objectId);
 
 /** The price of an acquisition or provenance row; undefined when it has none. */
 export function price(db, r, lang) {
@@ -42,5 +47,21 @@ export function period(db, p, lang) {
       .map((s) => ({ type: termLabel(db, s.type_id, lang), note: s.note, url: s.url })),
     characteristics: stmt(db, 'SELECT type_ids, note FROM provenance_characteristics WHERE provenance_id = ? ORDER BY seq IS NULL, seq').all(p.id)
       .map((c) => ({ types: termListLabels(db, c.type_ids, lang), note: c.note })),
+  };
+}
+
+/** SKKG's acquisition of an object; undefined when it has none. */
+export function acquisition(db, objectId, lang) {
+  const a = stmt(db, 'SELECT * FROM acquisitions WHERE object_id = ?').get(objectId);
+  if (!a) return undefined;
+  return {
+    type: termLabel(db, a.type_id, lang),
+    date: a.date,
+    date_label: a.date_label,
+    date_uncertain: a.date_uncertain ? true : undefined,
+    source: actorRef(db, a.source_id),
+    reference: asStr(a.reference),
+    note: a.note,
+    price: price(db, a, lang),
   };
 }

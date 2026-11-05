@@ -66,6 +66,18 @@ export const priceOut = () => z.object({
   conversion_rate: z.number().optional(),
 });
 
+// SKKG's acquisition of an object (src/lib/provenance.js `acquisition`).
+export const acquisitionOut = () => z.object({
+  type: str(),
+  date: str(),
+  date_label: str(),
+  date_uncertain: z.boolean().optional(),
+  source: actorOut().optional(),
+  reference: str().describe('Lot or reference number, e.g. of an auction'),
+  note: str(),
+  price: priceOut().optional(),
+});
+
 const boundOut = () => z.object({ qualifier: str(), from: str(), to: str() }).optional();
 
 // The fields of a provenance period (src/lib/provenance.js `period`), without its id.

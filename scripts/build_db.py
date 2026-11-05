@@ -1295,7 +1295,8 @@ CREATE TEMP TABLE term_uses AS
     UNION ALL SELECT category_id, 'images', id FROM multimedia
     UNION ALL SELECT license_id, 'images', id FROM multimedia;
 INSERT INTO term_uses SELECT u.term_id, 'objects', po.object_id FROM term_uses u
-    JOIN provenance_objects po ON po.provenance_id = u.rid WHERE u.kind = 'provenance periods';
+    JOIN provenance_objects po ON po.provenance_id = u.rid JOIN objects o ON o.id = po.object_id
+    WHERE u.kind = 'provenance periods';
 DELETE FROM term_uses WHERE term_id IS NULL OR term_id NOT IN (SELECT id FROM terms);
 CREATE INDEX temp.ix_tu ON term_uses(term_id, kind);
 """

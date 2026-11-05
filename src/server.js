@@ -5,6 +5,7 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { SERVER_NAME, SERVER_VERSION, SERVER_INSTRUCTIONS, CACHE_HINTS, CHANNEL_PROBE_ENV } from './config.js';
 import { registerSearchObjectsTool } from './tools/search_objects.js';
+import { registerSearchProvenanceTool } from './tools/search_provenance.js';
 import { registerGetObjectTool } from './tools/get_object.js';
 import { registerGetRecordTool } from './tools/get_record.js';
 import { registerFindTermsTool } from './tools/find_terms.js';
@@ -23,6 +24,7 @@ export function createServer() {
     },
   );
   registerSearchObjectsTool(server);
+  registerSearchProvenanceTool(server);
   registerGetObjectTool(server);
   registerGetRecordTool(server);
   registerFindTermsTool(server);

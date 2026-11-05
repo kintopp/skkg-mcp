@@ -126,16 +126,18 @@ export function objectFilterShape() {
 const FILTER_KEYS = Object.keys(objectFilterShape()).filter((k) => k !== 'include_narrower');
 export const hasObjectFilter = (args) => FILTER_KEYS.some((k) => args[k] !== undefined);
 
-// Points to the filters that take `facets`. Never for exclude_attributions: the filters it
-// would name include objects, so following the hint would invert the exclusion.
-function otherFilterHint(field, facets, wanted) {
-  const fields = facets.map((f) => FIELD_OF_FACET[f]).filter(Boolean);
+// Points to the filters that take `facets`, among a tool's own (`fieldOf`: facet → its filter).
+// Never for exclude_attributions: the filters it would name include objects, so following the
+// hint would invert the exclusion.
+function otherFilterHint(field, facets, wanted, fieldOf) {
+  const fields = facets.map((f) => fieldOf[f]).filter(Boolean);
   if (field === 'exclude_attributions' || !fields.length) return `\`${field}\` takes ${wanted} terms only.`;
   return `Pass it as ${fields.map((f) => `\`${f}\``).join(' or ')}, or pass a ${wanted} term.`;
 }
 
-// Resolves a term filter value to term ids of `facet`. Throws a ToolError with suggestions.
-export function resolveTerms(db, field, facet, value, narrower) {
+// Resolves a term filter value to term ids of `facet`. Throws a ToolError with suggestions;
+// `fieldOf` maps the facets of the calling tool's term filters to the filters, for its hints.
+export function resolveTerms(db, field, facet, value, narrower, fieldOf = FIELD_OF_FACET) {
   const v = value.trim();
   let ids;
   if (v.startsWith('type/')) {
@@ -143,17 +145,17 @@ export function resolveTerms(db, field, facet, value, narrower) {
     if (!t || WITHHELD_FACETS.includes(t.facet)) throw new ToolError(`\`${field}\`: no term "${v}".`, 'Pass a German label instead, or check the id.');
     if (t.facet !== facet) {
       throw new ToolError(`\`${field}\`: "${v}" (${termLabel(db, v) ?? 'unlabelled'}) belongs to the ${t.facet ?? 'other'} vocabulary, not to ${facet}.`,
-        otherFilterHint(field, [t.facet], facet));
+        otherFilterHint(field, [t.facet], facet, fieldOf));
     }
     ids = [v];
   } else {
     const entries = termsByLabel(db, v);
     ids = entries.filter((e) => e.facet === facet).map((e) => e.id);
     if (!ids.length) {
-      const elsewhere = [...new Set(entries.map((e) => e.facet).filter((f) => FIELD_OF_FACET[f]))];
+      const elsewhere = [...new Set(entries.map((e) => e.facet).filter((f) => fieldOf[f]))];
       if (elsewhere.length) {
         throw new ToolError(`\`${field}\`: "${v}" is a ${elsewhere.join(' and ')} term, not a ${facet} term.`,
-          otherFilterHint(field, elsewhere, facet));
+          otherFilterHint(field, elsewhere, facet, fieldOf));
       }
       throw new ToolError(`\`${field}\`: no ${facet} term is labelled "${v}".`, suggestTerms(db, facet, v));
     }
@@ -337,13 +339,13 @@ export function compileObjectQuery(db, args) {
   };
 }
 
-function assertRange(args, from, to) {
+export function assertRange(args, from, to) {
   if (args[from] !== undefined && args[to] !== undefined && args[from] > args[to]) {
     throw new ToolError(`\`${from}\` (${args[from]}) is later than \`${to}\` (${args[to]}).`, `Swap the two values.`);
   }
 }
 
-function nameWarning(field, value, n) {
+export function nameWarning(field, value, n) {
   return `\`${field}\` "${value}" matched ${n} persons or institutions, all of them included (see applied_filters.${field}). ` +
     `Pass one actor id, e.g. "${field}": "person/…", to keep only one.`;
 }

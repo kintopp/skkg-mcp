@@ -20,6 +20,9 @@ export const RESULT_CHAR_LIMIT = Math.floor(RESULT_CHAR_CEILING * 0.9);
 export const SEARCH_DEFAULT_LIMIT = 10;
 export const SEARCH_MAX_LIMIT = 50;
 export const MAX_QUERY_LEN = 500;
+// skkg_search_provenance lists each object's matching periods, so its pages are shorter.
+export const PROVENANCE_DEFAULT_LIMIT = 5;
+export const PROVENANCE_MAX_LIMIT = 25;
 // Buckets per page of skkg_collection_stats; with a breakdown each bucket carries a list, so fewer fit.
 export const STATS_DEFAULT_TOP = 25;
 export const STATS_MAX_TOP = 200;

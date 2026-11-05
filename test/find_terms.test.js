@@ -37,6 +37,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { withClient, callOk, callError, FIXTURE_DB } from './helpers.js';
 import { outputSchema } from '../src/tools/find_terms.js';
 import { outputSchema as searchSchema } from '../src/tools/search_objects.js';
+import { outputSchema as provenanceSchema } from '../src/tools/search_provenance.js';
 
 const NAME = 'skkg_find_terms';
 const MALEREI = 'type/21087/140347';
@@ -97,6 +98,15 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
       let checked = 0;
       for (const vocabulary of vocabularies) {
         for (const x of (await find({ vocabulary, limit: 15 })).results.filter((y) => y.filter)) {
+          if (x.filter_tool === 'skkg_search_provenance') {
+            const r = await callOk(client, x.filter_tool, { [x.filter]: x.id, limit: 1 }, provenanceSchema);
+            assert.equal(x.object_count ?? 0, r.total, `${vocabulary} ${x.label} objects`);
+            assert.equal(x.record_count ?? 0, x.record_kind === 'provenance periods' ? r.total_periods : r.total_acquisitions,
+              `${vocabulary} ${x.label} ${x.record_kind}`);
+            checked++;
+            continue;
+          }
+          assert.equal(x.filter_tool, 'skkg_search_objects', `${vocabulary} ${x.label}`);
           assert.equal(x.object_count, await searchTotal({ [x.filter]: x.id, include_narrower: false }), `${vocabulary} ${x.label}`);
           if (x.object_count_with_narrower !== undefined) {
             assert.equal(x.object_count_with_narrower, await searchTotal({ [x.filter]: x.id }), `${vocabulary} ${x.label} with narrower`);
@@ -153,7 +163,7 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
       assert.equal(ch.record_count, n);
     });
 
-    await t.test('every term of provenance periods counts the objects of its periods', async () => {
+    await t.test('every term of provenance periods counts the objects of its periods that are in the database', async () => {
       const db = new DatabaseSync(FIXTURE_DB.path, { readOnly: true });
       const expected = db.prepare(`WITH uses(term_id, pid) AS (
           SELECT certainty_id, id FROM provenance UNION ALL SELECT holding_kind_id, id FROM provenance
@@ -163,7 +173,7 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
           UNION ALL SELECT type_id, provenance_id FROM provenance_sources
           UNION ALL SELECT j.value, c.provenance_id FROM provenance_characteristics c, json_each(c.type_ids) j)
         SELECT u.term_id AS id, COUNT(DISTINCT po.object_id) AS n FROM uses u
-        LEFT JOIN provenance_objects po ON po.provenance_id = u.pid
+        LEFT JOIN (provenance_objects po JOIN objects o ON o.id = po.object_id) ON po.provenance_id = u.pid
         WHERE u.term_id IN (SELECT id FROM terms) GROUP BY u.term_id`).all();
       db.close();
       assert.ok(expected.some((x) => x.id === 'type/54160/233013'), 'the provenance status "abgeschlossen"');

@@ -12,12 +12,12 @@ import { asStr } from '../lib/format.js';
 import { termLabel, actorRef, objectRef, termListLabels } from '../lib/labels.js';
 import { objectRights, imageRights } from '../lib/rights.js';
 import { objectCreators, objectFacetLabels } from '../lib/objects.js';
-import { price, period } from '../lib/provenance.js';
+import { period, acquisition, chainRows } from '../lib/provenance.js';
 import { capList } from '../lib/results.js';
 import { fitLists } from '../lib/fit.js';
 import { renderObjectText, SECTIONS } from './object_text.js';
 import {
-  actorOut, creatorOut, objectRefOut, objectRightsOut, imageRightsOut, priceOut, periodShape, langIn, str, int,
+  actorOut, creatorOut, objectRefOut, objectRightsOut, imageRightsOut, acquisitionOut, periodShape, langIn, str, int,
 } from './schemas.js';
 import { READ_ONLY_ANNOTATIONS, SECTION_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT } from '../config.js';
 
@@ -88,16 +88,7 @@ export const outputSchema = z.object({
     condition: z.array(z.object({ conditions: z.array(z.string()).optional(), note: str(), date: str() })).optional(),
   }).optional(),
   texts: z.array(z.object({ title: str(), text: str(), type: str(), source: str() })).optional(),
-  acquisition: z.object({
-    type: str(),
-    date: str(),
-    date_label: str(),
-    date_uncertain: z.boolean().optional(),
-    source: actorOut().optional(),
-    reference: str().describe('Lot or reference number, e.g. of an auction'),
-    note: str(),
-    price: priceOut().optional(),
-  }).optional(),
+  acquisition: acquisitionOut().optional(),
   provenance: z.object({
     status: str(),
     status_text: str(),
@@ -188,21 +179,6 @@ function texts(db, o, lang) {
     .map((t) => ({ title: t.title, text: t.text, type: termLabel(db, t.type_id, lang), source: t.source }));
 }
 
-function acquisition(db, o, lang) {
-  const a = stmt(db, 'SELECT * FROM acquisitions WHERE object_id = ?').get(o.id);
-  if (!a) return undefined;
-  return {
-    type: termLabel(db, a.type_id, lang),
-    date: a.date,
-    date_label: a.date_label,
-    date_uncertain: a.date_uncertain ? true : undefined,
-    source: actorRef(db, a.source_id),
-    reference: asStr(a.reference),
-    note: a.note,
-    price: price(db, a, lang),
-  };
-}
-
 const dayAfter = (iso) => {
   const d = new Date(`${iso}T00:00:00Z`);
   if (Number.isNaN(d.getTime())) return undefined;
@@ -211,8 +187,7 @@ const dayAfter = (iso) => {
 };
 
 function provenance(db, o, lang) {
-  const rows = stmt(db, `SELECT p.*, po.seq FROM provenance_objects po JOIN provenance p ON p.id = po.provenance_id
-      WHERE po.object_id = ? ORDER BY po.seq IS NULL, po.seq, COALESCE(p.date_from, p.begin_from)`).all(o.id);
+  const rows = chainRows(db, o.id);
   const periods = rows.map((p, i) => ({
     ...period(db, p, lang),
     seq: p.seq ?? undefined,
@@ -307,7 +282,7 @@ export function getObject(db, meta, args) {
     production: want.has('production') ? production(db, o, lang, creators) : undefined,
     physical: want.has('physical') ? physical(db, o, lang, ctx) : undefined,
     texts: want.has('texts') ? texts(db, o, lang) : undefined,
-    acquisition: want.has('acquisition') ? acquisition(db, o, lang) : undefined,
+    acquisition: want.has('acquisition') ? acquisition(db, o.id, lang) : undefined,
     provenance: want.has('provenance') ? provenance(db, o, lang) : undefined,
     exhibitions: want.has('exhibitions') ? exhibitions(db, o, lang, ctx) : undefined,
     literature: want.has('literature') ? literature(db, o, ctx) : undefined,

@@ -22,6 +22,7 @@ import { withClient, callSent, FIXTURE_DB } from './helpers.js';
 import { outputSchema as objectSchema } from '../src/tools/get_object.js';
 import { outputSchema as recordSchema } from '../src/tools/get_record.js';
 import { outputSchema as searchSchema } from '../src/tools/search_objects.js';
+import { outputSchema as provenanceSchema } from '../src/tools/search_provenance.js';
 import { outputSchema as statsSchema } from '../src/tools/collection_stats.js';
 import { outputSchema as termsSchema } from '../src/tools/find_terms.js';
 
@@ -29,6 +30,7 @@ const SCHEMAS = {
   skkg_get_object: objectSchema,
   skkg_get_record: recordSchema,
   skkg_search_objects: searchSchema,
+  skkg_search_provenance: provenanceSchema,
   skkg_collection_stats: statsSchema,
   skkg_find_terms: termsSchema,
 };
@@ -43,6 +45,12 @@ const FILTERS = [
   { part_of: 'objectgroup/99555438-962d-480c-bef7-b3168556289e' }, { creator_role: 'Verlag', attribution: 'nach' },
   { exclude_attributions: ['nach'] }, { exclude_attributions: ['nach'], creator: 'person/36' }, { image_license: 'CC0 1.0' },
   { acquisition_year_from: 1995, acquisition_year_to: 2003 }, { date_from: 1800, date_to: 1850 }, { has_provenance_chain: true },
+];
+const PROVENANCE_FILTERS = [
+  { owner: 'person/114' }, { owner: 'Stuker', year_from: 1986, year_to: 1986 }, { owner_type: 'Auktionshaus' },
+  { certainty: 'vermutlich' }, { transaction_kind: 'custody' }, { place: 'Zürich' }, { source_type: 'Website' },
+  { acquisition_type: 'Schenkung' }, { acquired_from: 'person/36' }, { currency: 'CHF', price_min: 10000, sort: 'price_desc' },
+  { year_from: 1950, year_to: 1960 },
 ];
 const DIMENSIONS = ['creator', 'creator_role', 'attribution', 'material', 'object_type', 'acquisition_decade', 'image_license'];
 
@@ -61,12 +69,14 @@ function sweepCalls(path, n) {
       ...['actors', 'literature', 'exhibitions', 'provenance', 'object_groups', 'addresses']
         .flatMap((t) => spread(db, t, n).map((id) => ['skkg_get_record', { id, include: ['all'], limit: 50 }])),
       ...FILTERS.map((f) => ['skkg_search_objects', { ...f, limit: 50 }]),
+      ...PROVENANCE_FILTERS.map((f) => ['skkg_search_provenance', { ...f, limit: 25 }]),
       ...[{}, ...FILTERS].flatMap((f) => DIMENSIONS.map((dimension) => ['skkg_collection_stats', { ...f, dimension, top: 10 }])),
       ...['creator', 'material'].map((dimension) => ['skkg_collection_stats', { dimension, breakdown: 'epoch', top: 10 }]),
       ...[{ query: 'Radierung' }, { vocabulary: 'material' }, { id: 'type/21087/140347' }]
         .map((a) => ['skkg_find_terms', { limit: 50, ...a }]),
       // Offsets past the end of every list tool.
       ['skkg_search_objects', { material: 'Holz', offset: PAST, limit: 5 }],
+      ['skkg_search_provenance', { owner_type: 'Auktionshaus', offset: PAST }],
       ['skkg_collection_stats', { dimension: 'material', offset: PAST }],
       ['skkg_find_terms', { vocabulary: 'material', offset: PAST }],
       ['skkg_get_record', { id: 'person/36', include: ['all'], offset: PAST }],
@@ -143,7 +153,7 @@ test('every tool keeps its invariants over a sweep of the fixture database', { s
         assert.ok((structured.warnings ?? []).some((w) => w.startsWith(`\`offset\` ${PAST} is past the end`)), `${name}: ${structured.warnings}`);
         past++;
       }
-      assert.equal(past, 4);
+      assert.equal(past, 5);
     });
 
     await t.test('every summary count equals its section, or the total its cap warning gives', () => {

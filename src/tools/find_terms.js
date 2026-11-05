@@ -13,6 +13,15 @@ import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
 import { paging, showing, pastEnd, tailLines } from '../lib/results.js';
 import { FIELD_OF_FACET } from './object_filters.js';
+import { SEARCH_OBJECTS_TOOL_NAME } from './search_objects.js';
+import { PROVENANCE_FIELD_OF_FACET, SEARCH_PROVENANCE_TOOL_NAME } from './search_provenance.js';
+
+// The search tool and parameter that take a facet's terms; skkg_search_objects first, as the
+// acquisition types are filters of both.
+const FILTER_OF_FACET = Object.freeze({
+  ...Object.fromEntries(Object.entries(PROVENANCE_FIELD_OF_FACET).map(([facet, field]) => [facet, [SEARCH_PROVENANCE_TOOL_NAME, field]])),
+  ...Object.fromEntries(Object.entries(FIELD_OF_FACET).map(([facet, field]) => [facet, [SEARCH_OBJECTS_TOOL_NAME, field]])),
+});
 import { langIn, str, int, termOut as termRefOut } from './schemas.js';
 import {
   WITHHELD_FACETS, READ_ONLY_ANNOTATIONS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT,
@@ -60,8 +69,8 @@ const description =
   'the start of a word in a label ("Radier" finds "Radierung"). Terms in use come first; among them, ' +
   'exact label matches, then the terms used most. Each term carries its id, its path in the hierarchy, its year range (epochs), ' +
   'its matches in GND, AAT, or Wikidata, how many objects use it (a photo licence: objects whose primary photo has it), ' +
-  'and `filter`: the skkg_search_objects ' +
-  'parameter that takes it. With `id`, returns one term with its broader and narrower terms. ' +
+  'and `filter` and `filter_tool`: the search tool parameter that takes it (skkg_search_objects, or skkg_search_provenance ' +
+  'for the vocabularies of provenance periods). With `id`, returns one term with its broader and narrower terms. ' +
   'With only `vocabulary`, lists that vocabulary. To search objects, use skkg_search_objects; ' +
   'its term filters take these labels or ids directly.';
 
@@ -97,7 +106,8 @@ const termRowOut = () => z.object({
   record_count: int().describe('Records of `record_kind` that use this term, for vocabularies of other records and of provenance periods, ' +
     'and for terms of SKKG\'s unnamed schemes, where record_kind is the kind of record that uses the term most'),
   record_kind: str(),
-  filter: str().describe('The skkg_search_objects parameter that takes this term'),
+  filter: str().describe('The parameter of filter_tool that takes this term'),
+  filter_tool: str().describe('The search tool whose `filter` parameter takes this term: skkg_search_objects or skkg_search_provenance'),
 });
 
 export const outputSchema = z.object({
@@ -124,7 +134,7 @@ function termRow(db, t, lang) {
   const up = ancestors(db, t.id);
   const label = termLabel(db, t.id, lang);
   const languages = [t.label_de, t.label_en, t.label_fr].filter(Boolean);
-  const field = FIELD_OF_FACET[t.facet];
+  const [tool, field] = FILTER_OF_FACET[t.facet] ?? [];
   return prune({
     id: t.id,
     label,
@@ -141,6 +151,7 @@ function termRow(db, t, lang) {
     record_count: t.record_kind ? t.record_count : undefined,
     record_kind: t.record_kind ?? undefined,
     filter: field,
+    filter_tool: tool,
   });
 }
 
@@ -259,7 +270,7 @@ function termLine(t) {
     t.object_count_with_narrower !== undefined && `${t.object_count_with_narrower} with narrower`,
     t.record_count !== undefined && `${t.record_count} ${t.record_kind}`].filter(Boolean).join(', ');
   const years = t.year_from !== undefined || t.year_to !== undefined ? ` (${t.year_from ?? '?'}–${t.year_to ?? '?'})` : '';
-  return [`${t.path ?? t.label ?? t.id}${years} — ${t.vocabulary}`, counts, t.id, t.filter && `filter: ${t.filter}`]
+  return [`${t.path ?? t.label ?? t.id}${years} — ${t.vocabulary}`, counts, t.id, t.filter && `filter: ${t.filter_tool} ${t.filter}`]
     .filter(Boolean).join(' · ');
 }
 
