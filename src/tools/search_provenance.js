@@ -41,13 +41,13 @@ const LAYER_OF = {
 const LAYERS = { chain: ['chain'], acquisition: ['acquisition'], both: ['chain', 'acquisition'] };
 const layerFilters = (layer) => Object.keys(LAYER_OF).filter((k) => LAYER_OF[k] === layer).join(', ');
 
-// Dates sort by the year spans the build stores (provenance.year_first and year_last, where an open
-// side is a year beyond every filter; acquisitions.year), so the sort agrees with the year filter.
-// The recorded date breaks ties: within a year it is that year's date, and among periods open on
-// the same side it is the date they record.
+// Dates sort by the keys the build stores per side (provenance.sort_first and sort_last,
+// acquisitions.sort_key): the year of the year filter, an open side beyond every year, then the
+// date recorded for that side. So the sort agrees with the year filter, and the entry that sets an
+// object's year also breaks its ties.
 const ORDER = {
-  date_asc: 'MIN(m.first) IS NULL, MIN(m.first), MIN(m.first_date), ' + INVENTORY_ORDER,
-  date_desc: 'MAX(m.last) IS NULL, MAX(m.last) DESC, MAX(m.last_date) DESC, ' + INVENTORY_ORDER,
+  date_asc: 'MIN(m.first_key) IS NULL, MIN(m.first_key), ' + INVENTORY_ORDER,
+  date_desc: 'MAX(m.last_key) IS NULL, MAX(m.last_key) DESC, ' + INVENTORY_ORDER,
   price_desc: 'MAX(m.price) IS NULL, MAX(m.price) DESC, ' + INVENTORY_ORDER,
   inventory_number: INVENTORY_ORDER,
 };
@@ -70,8 +70,9 @@ const termField = (what) => z.string().min(1).max(200).optional().describe(
 const yearField = (what) => z.number().int().min(-5000).max(2100).optional().describe(what);
 const priceField = (what) => z.number().min(0).optional().describe(what);
 
-// Every quoted example in a term field must be a label of that field's vocabulary.
-const inputSchema = z.object({
+// The filters; inputSchema adds the controls. Every quoted example in a term field must be a label
+// of that field's vocabulary.
+const filterShape = {
   owner: z.string().min(1).max(300).optional().describe(
     'Owner of a chain period: an actor id ("person/…") or a name ("Stuker", "Galerie Kornfeld"). A name matches every person ' +
     'or institution whose name contains all its words; applied_filters lists them'),
@@ -98,6 +99,10 @@ const inputSchema = z.object({
     'Alone, it keeps the entries with a price in that currency'),
   price_min: priceField('Lowest price, in `currency`, which it needs. A batch price (is_batch_price) is the price of all objects of the batch'),
   price_max: priceField('Highest price, in `currency`; see price_min'),
+};
+const FILTERS = Object.keys(filterShape);
+const inputSchema = z.object({
+  ...filterShape,
   layer: z.enum(Object.keys(LAYERS)).default('both').describe(
     'chain (periods before SKKG), acquisition (SKKG\'s own acquisitions), or both (default)'),
   sort: z.enum(Object.keys(ORDER)).default('date_asc').describe(
@@ -109,8 +114,6 @@ const inputSchema = z.object({
   offset: z.number().int().min(0).max(100_000).default(0),
   lang: langIn(),
 }).strict();
-const NOT_FILTERS = new Set(['layer', 'sort', 'limit', 'offset', 'lang']);
-const FILTERS = Object.keys(inputSchema.shape).filter((k) => !NOT_FILTERS.has(k));
 
 const resultOut = z.object({
   ...objectRowShape(),
@@ -162,16 +165,18 @@ function resolvePlaces(db, value) {
   return hits;
 }
 
-// The currency codes the prices use; the build normalises SKKG's duplicate terms to one code each.
+// The currency codes of the recorded prices, in code order; the build normalises SKKG's duplicate
+// terms to one code each. Only codes with a price are offered, since the filter keeps priced entries.
+const PRICED = 'currency_code IS NOT NULL AND price_value IS NOT NULL';
 function resolveCurrency(db, value) {
-  const codes = perDb(db, 'currencyCodes', () => db.prepare(`SELECT currency_code AS c FROM acquisitions WHERE currency_code IS NOT NULL
-      UNION SELECT currency_code FROM provenance WHERE currency_code IS NOT NULL ORDER BY 1`).all().map((r) => r.c));
+  const codes = perDb(db, 'currencyCodes', () => db.prepare(`SELECT currency_code AS c FROM acquisitions WHERE ${PRICED}
+      UNION SELECT currency_code FROM provenance WHERE ${PRICED} ORDER BY 1`).all().map((r) => r.c));
   const v = value.trim();
   if (codes.includes(v.toUpperCase())) return v.toUpperCase();
   const ids = termsByLabel(db, v).filter((t) => t.facet === 'currency').map((t) => t.id);
-  const viaTerm = ids.length ? stmt(db, `SELECT currency_code AS c FROM acquisitions WHERE currency_id IN (${placeholders(ids.length)})
-      UNION SELECT currency_code FROM provenance WHERE currency_id IN (${placeholders(ids.length)})`).all(...ids, ...ids)
-    .map((r) => r.c).filter(Boolean) : [];
+  const viaTerm = ids.length ? stmt(db, `SELECT currency_code AS c FROM acquisitions WHERE ${PRICED} AND currency_id IN (${placeholders(ids.length)})
+      UNION SELECT currency_code FROM provenance WHERE ${PRICED} AND currency_id IN (${placeholders(ids.length)}) ORDER BY 1`)
+    .all(...ids, ...ids).map((r) => r.c) : [];
   if (viaTerm.length === 1) return viaTerm[0];
   if (viaTerm.length > 1) {
     throw new ToolError(`\`currency\`: "${v}" is the label of prices in several currencies (${viaTerm.join(', ')}).`,
@@ -264,21 +269,21 @@ function compile(db, args) {
 const list = (fields) => fields.map((f) => `\`${f}\``).join(', ');
 const whereSql = (parts) => (parts.length ? `WHERE ${parts.join(' AND ')}` : '');
 
-// The matching entries as (oid, layer, pid, first, last, first_date, last_date, price), over the layers searched.
+// The matching entries as (oid, layer, pid, first_key, last_key, price), over the layers searched.
 function entriesSql(c) {
   const parts = [];
   const params = [];
   if (c.layers.includes('chain')) {
-    parts.push(`SELECT po.object_id, 'chain', p.id, p.year_first, p.year_last, COALESCE(p.date_from, p.date_to),
-        COALESCE(p.date_to, p.date_from), p.price_value FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id ${whereSql(c.where.chain)}`);
+    parts.push(`SELECT po.object_id, 'chain', p.id, p.sort_first, p.sort_last, p.price_value
+        FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id ${whereSql(c.where.chain)}`);
     params.push(...c.params.chain);
   }
   if (c.layers.includes('acquisition')) {
-    parts.push(`SELECT a.object_id, 'acquisition', NULL, a.year, a.year, a.date, a.date, a.price_value FROM acquisitions a
+    parts.push(`SELECT a.object_id, 'acquisition', NULL, a.sort_key, a.sort_key, a.price_value FROM acquisitions a
         ${whereSql(c.where.acquisition)}`);
     params.push(...c.params.acquisition);
   }
-  return { sql: `WITH m(oid, layer, pid, first, last, first_date, last_date, price) AS (${parts.join(' UNION ALL ')})`, params };
+  return { sql: `WITH m(oid, layer, pid, first_key, last_key, price) AS (${parts.join(' UNION ALL ')})`, params };
 }
 
 export function searchProvenance(db, meta, args) {
@@ -293,7 +298,7 @@ export function searchProvenance(db, meta, args) {
   const unlinked = c.layers.includes('chain')
     ? db.prepare(`SELECT p.id, p.statement, p.label, p.owner_id, p.date_label FROM provenance p
         ${chainWhere ? `${chainWhere} AND` : 'WHERE'} NOT EXISTS (SELECT 1 FROM provenance_objects po WHERE po.provenance_id = p.id)
-        ORDER BY p.year_first IS NULL, p.year_first, COALESCE(p.date_from, p.date_to), p.id`).all(...c.params.chain) : [];
+        ORDER BY p.sort_first IS NULL, p.sort_first, p.id`).all(...c.params.chain) : [];
   const page = db.prepare(`${m.sql} SELECT m.oid AS id, json_group_array(m.pid) FILTER (WHERE m.pid IS NOT NULL) AS pids,
       MAX(m.layer = 'acquisition') AS acquired FROM m JOIN objects o ON o.id = m.oid GROUP BY m.oid
       ORDER BY ${ORDER[args.sort]} LIMIT ? OFFSET ?`).all(...m.params, args.limit, args.offset);

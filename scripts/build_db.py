@@ -35,7 +35,7 @@ from pathlib import Path
 
 from pyoxigraph import BlankNode, Literal, NamedNode, Store
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 D = "https://data.skkg.ch/"
 AAT = "http://vocab.getty.edu/aat/"
 PREFIX = """PREFIX crm: <http://www.cidoc-crm.org/cidoc-crm/>
@@ -118,38 +118,38 @@ CREATE TABLE addresses (
 
 CREATE TABLE objects (
   id TEXT PRIMARY KEY, inventory_number TEXT, label TEXT, title TEXT, object_type_id TEXT,
-  number_of_parts TEXT, date_label TEXT, date_from INTEGER, date_to INTEGER, parent_id TEXT,
+  number_of_parts TEXT, date_label TEXT, date_from INTEGER, date_to INTEGER, parent_id TEXT REFERENCES objects(id),
   credit_line TEXT, edition TEXT, material_statement TEXT, provenance_status_id TEXT,
   provenance_status_text TEXT, redaction_status_id TEXT, created TEXT, updated TEXT,
   manifest_url TEXT, primary_multimedia_id TEXT, has_image INTEGER DEFAULT 0,
   image_license_id TEXT, image_count INTEGER DEFAULT 0, has_provenance_chain INTEGER DEFAULT 0);
-CREATE TABLE object_terms (object_id TEXT, facet TEXT, term_id TEXT, seq INTEGER, note TEXT);
-CREATE TABLE object_titles (object_id TEXT, seq INTEGER, title TEXT, short_title TEXT,
+CREATE TABLE object_terms (object_id TEXT REFERENCES objects(id), facet TEXT, term_id TEXT, seq INTEGER, note TEXT);
+CREATE TABLE object_titles (object_id TEXT REFERENCES objects(id), seq INTEGER, title TEXT, short_title TEXT,
   type_id TEXT, language_id TEXT, note TEXT);
-CREATE TABLE object_dates (object_id TEXT, seq INTEGER, label TEXT, year_from INTEGER,
+CREATE TABLE object_dates (object_id TEXT REFERENCES objects(id), seq INTEGER, label TEXT, year_from INTEGER,
   year_to INTEGER, epoch_id TEXT, basis_id TEXT, prefix_id TEXT, suffix_id TEXT, note TEXT);
-CREATE TABLE object_creators (object_id TEXT, seq INTEGER, actor_id TEXT, relation TEXT,
+CREATE TABLE object_creators (object_id TEXT REFERENCES objects(id), seq INTEGER, actor_id TEXT, relation TEXT,
   role_id TEXT, attribution_id TEXT);
-CREATE TABLE object_inscriptions (object_id TEXT, seq INTEGER, text TEXT, type_ids TEXT,
+CREATE TABLE object_inscriptions (object_id TEXT REFERENCES objects(id), seq INTEGER, text TEXT, type_ids TEXT,
   note TEXT, translation TEXT);
-CREATE TABLE object_texts (object_id TEXT, seq INTEGER, title TEXT, text TEXT, type_id TEXT,
+CREATE TABLE object_texts (object_id TEXT REFERENCES objects(id), seq INTEGER, title TEXT, text TEXT, type_id TEXT,
   source TEXT);
-CREATE TABLE object_parts (object_id TEXT, part_id TEXT, seq INTEGER, label TEXT, type_id TEXT,
+CREATE TABLE object_parts (object_id TEXT REFERENCES objects(id), part_id TEXT, seq INTEGER, label TEXT, type_id TEXT,
   note TEXT, prefix TEXT);
-CREATE TABLE object_dimensions (object_id TEXT, part_id TEXT, dimension TEXT, value TEXT,
+CREATE TABLE object_dimensions (object_id TEXT REFERENCES objects(id), part_id TEXT, dimension TEXT, value TEXT,
   unit_id TEXT, label TEXT);
-CREATE TABLE object_identifiers (object_id TEXT, type_id TEXT, value TEXT);
-CREATE TABLE object_links (object_id TEXT, seq INTEGER, url TEXT, type_id TEXT, note TEXT);
-CREATE TABLE object_conditions (object_id TEXT, condition_ids TEXT, note TEXT, date TEXT);
-CREATE TABLE object_relations (object_id TEXT, target_id TEXT, type_id TEXT, label TEXT);
-CREATE TABLE object_multimedia (object_id TEXT, multimedia_id TEXT, seq INTEGER,
+CREATE TABLE object_identifiers (object_id TEXT REFERENCES objects(id), type_id TEXT, value TEXT);
+CREATE TABLE object_links (object_id TEXT REFERENCES objects(id), seq INTEGER, url TEXT, type_id TEXT, note TEXT);
+CREATE TABLE object_conditions (object_id TEXT REFERENCES objects(id), condition_ids TEXT, note TEXT, date TEXT);
+CREATE TABLE object_relations (object_id TEXT REFERENCES objects(id), target_id TEXT REFERENCES objects(id), type_id TEXT, label TEXT);
+CREATE TABLE object_multimedia (object_id TEXT REFERENCES objects(id), multimedia_id TEXT, seq INTEGER,
   is_primary INTEGER DEFAULT 0);
 
 CREATE TABLE acquisitions (
-  object_id TEXT PRIMARY KEY, type_id TEXT, date TEXT, date_label TEXT, date_uncertain INTEGER,
+  object_id TEXT PRIMARY KEY REFERENCES objects(id), type_id TEXT, date TEXT, date_label TEXT, date_uncertain INTEGER,
   source_id TEXT, note TEXT, reference TEXT, price_value REAL, currency_id TEXT,
   currency_code TEXT, price_label TEXT, price_note TEXT, is_batch_price INTEGER DEFAULT 0,
-  price_chf REAL, conversion_rate REAL, year INTEGER);
+  price_chf REAL, conversion_rate REAL, year INTEGER, sort_key TEXT);
 
 CREATE TABLE multimedia (
   id TEXT PRIMARY KEY, label TEXT, name TEXT, usage_id TEXT, type_id TEXT, category_id TEXT,
@@ -164,8 +164,8 @@ CREATE TABLE provenance (
   date_note TEXT, transaction_kind TEXT, transaction_type_id TEXT, owner_id TEXT,
   owner_type_id TEXT, place TEXT, price_value REAL, currency_id TEXT, currency_code TEXT,
   price_label TEXT, price_note TEXT, is_batch_price INTEGER DEFAULT 0, status_id TEXT,
-  year_first INTEGER, year_last INTEGER);
-CREATE TABLE provenance_objects (provenance_id TEXT, object_id TEXT, seq INTEGER);
+  year_first INTEGER, year_last INTEGER, sort_first TEXT, sort_last TEXT);
+CREATE TABLE provenance_objects (provenance_id TEXT, object_id TEXT REFERENCES objects(id), seq INTEGER);
 CREATE TABLE provenance_sources (provenance_id TEXT, seq INTEGER, type_id TEXT, note TEXT, url TEXT);
 CREATE TABLE provenance_characteristics (provenance_id TEXT, seq INTEGER, type_ids TEXT, note TEXT);
 
@@ -175,7 +175,7 @@ CREATE TABLE literature (
   series_id TEXT, volume TEXT, edition TEXT, pages TEXT, citation TEXT, language_id TEXT,
   urls TEXT);
 CREATE TABLE literature_actors (literature_id TEXT, actor_id TEXT, kind TEXT, role_id TEXT, seq INTEGER);
-CREATE TABLE literature_refs (literature_id TEXT, ref_id TEXT, object_id TEXT,
+CREATE TABLE literature_refs (literature_id TEXT, ref_id TEXT, object_id TEXT REFERENCES objects(id),
   provenance_id TEXT, shows_object INTEGER DEFAULT 0, page TEXT, figure TEXT, catalogue TEXT,
   sort INTEGER, note TEXT, citation TEXT);
 CREATE TABLE literature_links (literature_id TEXT, target_id TEXT, role_id TEXT);
@@ -186,11 +186,11 @@ CREATE TABLE exhibitions (
 CREATE TABLE exhibition_venues (exhibition_id TEXT, address_id TEXT, kind TEXT, type_id TEXT,
   date_from TEXT, date_to TEXT, note TEXT);
 CREATE TABLE exhibition_organisers (exhibition_id TEXT, address_id TEXT, role_id TEXT, seq INTEGER);
-CREATE TABLE exhibition_objects (exhibition_id TEXT, object_id TEXT);
+CREATE TABLE exhibition_objects (exhibition_id TEXT, object_id TEXT REFERENCES objects(id));
 CREATE TABLE exhibition_multimedia (exhibition_id TEXT, multimedia_id TEXT);
 
 CREATE TABLE object_groups (id TEXT PRIMARY KEY, label TEXT, description TEXT);
-CREATE TABLE object_group_members (group_id TEXT, object_id TEXT);
+CREATE TABLE object_group_members (group_id TEXT, object_id TEXT REFERENCES objects(id));
 """
 
 INDEXES = """
@@ -222,7 +222,7 @@ CREATE INDEX ix_om_obj ON object_multimedia(object_id);
 CREATE INDEX ix_om_mm ON object_multimedia(multimedia_id);
 CREATE INDEX ix_acq_source ON acquisitions(source_id);
 CREATE INDEX ix_acq_type ON acquisitions(type_id);
-CREATE INDEX ix_acq_year ON acquisitions(year);
+CREATE INDEX ix_acq_year ON acquisitions(year, object_id, sort_key, price_value);
 CREATE INDEX ix_prov_owner ON provenance(owner_id);
 CREATE INDEX ix_po_obj ON provenance_objects(object_id);
 CREATE INDEX ix_po_prov ON provenance_objects(provenance_id);
@@ -283,6 +283,21 @@ def year(value):
         return None
     m = re.match(r"\s*(-?\d{1,4})(?!\d)", value)
     return int(m.group(1)) if m else None
+
+
+# A side of a provenance period that SKKG leaves open is stored as this year or its negative,
+# beyond every year the search tools accept (notes/11).
+OPEN_YEAR = 9999
+
+
+def sort_key(y, date):
+    """The text the date sorts compare: the year, shifted so every year from -9999 to 9999 sorts
+    as text, then the recorded date, which breaks ties within the year and among open sides.
+    None when there is no year, so the entry sorts with the undated ones."""
+    if y is None:
+        return None
+    assert -OPEN_YEAR <= y <= OPEN_YEAR, y
+    return f"{y + OPEN_YEAR + 1:05d} {date}"
 
 
 def num(value):
@@ -934,11 +949,12 @@ def load_acquisitions(src, db, used):
     for a, d in acq.items():
         c = conv.get(d.get("payment"), (None, None))
         notes = " ".join(x for x in (d.get("price_note"), d.get("note"), d.get("price_label")) if x)
+        y = year(d.get("date"))
         rows.append((d["o"], d.get("type"), d.get("date"), d.get("date_label"), d.get("uncertain"), d.get("source"),
                      d.get("note"), d.get("reference"), d.get("price"), d.get("currency"),
                      None, d.get("price_label"), d.get("price_note"),
-                     1 if re.search(r"\bTotal\b", notes) else 0, c[0], c[1]))
-    db.executemany("INSERT OR REPLACE INTO acquisitions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)", rows)
+                     1 if re.search(r"\bTotal\b", notes) else 0, c[0], c[1], y, sort_key(y, d.get("date"))))
+    db.executemany("INSERT OR REPLACE INTO acquisitions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
     return len(rows)
 
 
@@ -1050,7 +1066,7 @@ def load_provenance(src, db, used):
                      d.get("price"), d.get("currency"), None,
                      d.get("price_label"), d.get("price_note"), 1 if re.search(r"\bTotal\b", notes) else 0,
                      d.get("status")))
-    db.executemany("INSERT INTO provenance VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL)", rows)
+    db.executemany("INSERT INTO provenance VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,NULL,NULL)", rows)
     po = q("provenance", f"""SELECT ?p ?o ?n WHERE {{ ?a crm:P140_assigned_attribute_to ?p ; crm:P16_used_specific_object ?o .
         {P} OPTIONAL {{ ?a crm:P141_assigned ?ord . ?ord crm:P190_has_symbolic_content ?n }} }}""")
     db.executemany("INSERT INTO provenance_objects VALUES (?,?,?)", [(p, o, integer(n)) for p, o, n in po])
@@ -1235,66 +1251,81 @@ def load_groups(src, db):
 
 # ---------------------------------------------------------------- derived data, FTS, checks
 
-# Links to objects the database does not hold, by (table, column). The period links are
-# dropped, since a period's chain is its objects; the others are counted (notes/09).
-OBJECT_LINKS = [("provenance_objects", "object_id"), ("literature_refs", "object_id"), ("object_relations", "target_id")]
+# Of the links to objects (the columns the DDL declares REFERENCES objects(id)), those whose rows
+# are dropped when the object is not in the database, or the link is NULL: a period's chain is its
+# objects. The links of the other columns to missing objects are counted and kept (notes/09).
 DROPPED_LINKS = {("provenance_objects", "object_id")}
 
-# A period with one date (notes/11): a begin "seit" says the owner held the object from that date
-# on, an end "bis" that it held the object until then. SKKG writes an unknown other side ("o. D.")
-# as a bound of 0001-01-01 or 9999-12-31. Every other qualifier qualifies the date itself ("um",
-# "vmtl.", "spätestens", "vor", "nach"), so the date is one event, e.g. an auction day.
-OPEN_END_QUALIFIERS = {"seit", "mindestens seit"}
-OPEN_START_QUALIFIERS = {"bis", "spätestens bis"}
-EVENT_QUALIFIERS = {"um", "ca.", "vmtl.", "wohl", "evtl.", "angeblich", "Anfang", "Mitte", "Ende",
-                    "spätestens", "mindestens", "vor", "nach", "frühestens ab"}
-OPEN_YEAR = 9999
+
+def object_links(db):
+    """Every (table, column) that the DDL declares a link to objects."""
+    tables = [t for (t,) in db.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")]
+    return [(t, fk[3]) for t in tables for fk in db.execute(f"PRAGMA foreign_key_list({t})") if fk[2] == "objects"]
+
+
+# A period with one date (notes/11). The qualifier of the dated side either opens the other side
+# (a begin "seit": held from that date on; an end "bis": held until then) or qualifies the date
+# itself ("um", "vmtl.", "spätestens", "vor", "nach"), so the date is one event, e.g. an auction
+# day. SKKG writes an unknown other side as the qualifier "o. D." with a bound of 9999-12-31 or
+# 0001-01-01, which opens that side too. A qualifier in neither set, such as "frühestens ab"
+# (used once, next to an "o. D." end), is left unclassified: the period is placed by its bound
+# alone and counted in the build report, so a new or lone use is seen.
+OPENS_OTHER_SIDE = {"from": {"seit", "mindestens seit"}, "to": {"bis", "spätestens bis"}}
+DATE_QUALIFIERS = {"um", "ca.", "vmtl.", "wohl", "evtl.", "angeblich", "Anfang", "Mitte", "Ende",
+                   "spätestens", "mindestens", "vor", "nach"}
+UNKNOWN_SIDE = {None, "o. D."}
+UNKNOWN_BOUND = {"from": "9999", "to": "0001"}
 
 
 def period_span(date_from, date_to, begin_q, begin_from, end_q, end_to):
-    """(year_first, year_last, kind) of a period, with -9999 and 9999 for an open side and None
-    for no date. kind is 'unclassified' when a qualifier of the dated side is in no set above;
-    such a period is placed as an event and counted in the build report."""
+    """(year_first, year_last, kind, classified) of a period, with -9999 and 9999 for an open side.
+    A date without a year, like no date, gives None and never matches a year filter. classified
+    is False when the rule does not know a qualifier of the period or a date has no year; the
+    build report counts those periods."""
     if date_from and date_to:
-        return year(date_from), year(date_to), "two dates"
+        first, last = year(date_from), year(date_to)
+        if first is None or last is None:
+            return None, None, "date without a year", False
+        return first, last, "two dates", True
     if not date_from and not date_to:
-        return None, None, "undated"
-    if date_from:
-        y, own, other = year(date_from), begin_q, end_q
-        known = (own is None or own in OPEN_END_QUALIFIERS | EVENT_QUALIFIERS) and other in (None, "o. D.")
-        if (end_to or "").startswith("9999") or own in OPEN_END_QUALIFIERS:
-            return y, OPEN_YEAR, "open end"
-        return y, y, "event" if known else "unclassified"
-    y, own, other = year(date_to), end_q, begin_q
-    known = (own is None or own in OPEN_START_QUALIFIERS | EVENT_QUALIFIERS) and other in (None, "o. D.")
-    if (begin_from or "").startswith("0001") or own in OPEN_START_QUALIFIERS:
-        return -OPEN_YEAR, y, "open start"
-    return y, y, "event" if known else "unclassified"
+        return None, None, "undated", True
+    side, y, own, other, bound = (("from", year(date_from), begin_q, end_q, end_to) if date_from
+                                  else ("to", year(date_to), end_q, begin_q, begin_from))
+    if y is None:
+        return None, None, "date without a year", False
+    classified = (own is None or own in OPENS_OTHER_SIDE[side] | DATE_QUALIFIERS) and other in UNKNOWN_SIDE
+    if own in OPENS_OTHER_SIDE[side] or (bound or "").startswith(UNKNOWN_BOUND[side]):
+        return (y, OPEN_YEAR, "open end", classified) if side == "from" else (-OPEN_YEAR, y, "open start", classified)
+    return y, y, "event", classified
 
 
 def period_years(db):
-    """Store each period's year span, which the year filter and the date sort read."""
+    """Store each period's year span, which the year filter reads, and its sort keys, which the
+    date sorts read: the earliest side with the date recorded for it, and the latest."""
     label = dict(db.execute("SELECT id, label FROM terms WHERE facet = 'date_qualifier'"))
     kinds, unclassified, rows = Counter(), Counter(), []
     for pid, df, dt, bq, bf, eq, et in db.execute(
             "SELECT id, date_from, date_to, begin_qualifier_id, begin_from, end_qualifier_id, end_to FROM provenance").fetchall():
-        first, last, kind = period_span(df, dt, label.get(bq), bf, label.get(eq), et)
+        first, last, kind, classified = period_span(df, dt, label.get(bq), bf, label.get(eq), et)
         kinds[kind] += 1
-        if kind == "unclassified":
-            unclassified[f"{label.get(bq) or '-'} / {label.get(eq) or '-'}"] += 1
-        rows.append((first, last, pid))
-    db.executemany("UPDATE provenance SET year_first = ?, year_last = ? WHERE id = ?", rows)
+        if not classified:
+            unclassified[f"{label.get(bq) or '-'} / {label.get(eq) or '-'} ({kind})"] += 1
+        rows.append((first, last, sort_key(first, df or dt), sort_key(last, dt or df), pid))
+    db.executemany("UPDATE provenance SET year_first = ?, year_last = ?, sort_first = ?, sort_last = ? WHERE id = ?", rows)
     return {"kinds": dict(sorted(kinds.items())), "unclassified": dict(sorted(unclassified.items()))}
 
 
 def derive(db):
     missing = {}
-    for table, col in OBJECT_LINKS:
-        where = f"{col} LIKE 'object/%' AND {col} NOT IN (SELECT id FROM objects)"
+    links = object_links(db)
+    assert DROPPED_LINKS <= set(links), DROPPED_LINKS - set(links)
+    for table, col in links:
+        where = f"{col} NOT IN (SELECT id FROM objects)"
+        if (table, col) in DROPPED_LINKS:
+            where = f"({col} IS NULL OR {where})"
         missing[f"{table}.{col}"] = db.execute(f"SELECT COUNT(*) FROM {table} WHERE {where}").fetchone()[0]
         if (table, col) in DROPPED_LINKS:
             db.execute(f"DELETE FROM {table} WHERE {where}")
-    db.execute("UPDATE acquisitions SET year = CAST(substr(date, 1, 4) AS INTEGER) WHERE date GLOB '[0-9][0-9][0-9][0-9]*'")
     spans = period_years(db)
     db.executescript("""
     UPDATE objects SET image_count = (SELECT COUNT(*) FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id
@@ -1820,7 +1851,7 @@ def main():
     # Acquisition dates after the dump are wrong, and a decade from 2100 on gets a filter that
     # the search schema refuses (acquisition_year_to has a maximum of 2100).
     future = [{"year": y, "acquisitions": n} for y, n in db.execute(
-        "SELECT substr(date, 1, 4), COUNT(*) FROM acquisitions WHERE date > ? GROUP BY 1 ORDER BY 1",
+        "SELECT year, COUNT(*) FROM acquisitions WHERE date > ? GROUP BY year ORDER BY year",
         (info.get("data_as_of", "9999"),))]
     tables = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '%fts%' ORDER BY name")]
     counts = {t: db.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tables}
@@ -1882,10 +1913,12 @@ def render_report(r):
               + (", ".join(f"{f['year']} ({f['acquisitions']})" for f in r["acquisitions_after_dump"]) or "none") + ".", "",
               "Currency labels that are neither an alias nor an ISO-like code, so their prices get a code of their own "
               "(label: prices): " + (", ".join(f"{k} ({n})" for k, n in r["currency_labels_not_mapped"].items()) or "none") + ".", "",
-              "Links to objects not in the database (provenance_objects rows are dropped, the others kept): "
+              "Links to objects not in the database, for every column the schema declares a link to objects "
+              "(provenance_objects rows are dropped, with those of no object; the others are kept): "
               + ", ".join(f"{k} {n}" for k, n in r["object_links_to_missing"].items()) + ".", "",
               "Year spans of provenance periods: " + ", ".join(f"{k} {n}" for k, n in r["period_years"]["kinds"].items())
-              + "; with a qualifier the rule does not know, placed as one event (begin / end: periods): "
+              + "; not classified by the rule, because it does not know a qualifier or a date has no year, so placed "
+              "by their bounds alone (begin / end (placed as): periods): "
               + (", ".join(f"{k} ({n})" for k, n in r["period_years"]["unclassified"].items()) or "none") + ".", "",
               "## Census edges not read by the build", "",
               "Edges of the shape census whose predicate no build query reads for that record type. "

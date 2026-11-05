@@ -3,6 +3,8 @@
 // - a label that names prices in two currencies is refused as "no price is recorded", which sends
 //   the caller looking for a currency that exists, instead of naming the codes to choose from
 // - an ambiguous label silently picks one of the codes
+// - a code of rows without a price is offered (as one of the ambiguous codes, or among "the prices
+//   use"), so following the hint finds nothing, or the codes are listed in no fixed order
 // (Duplicate terms of one currency, "DM" and "DEM", are tested on the fixture in search_provenance.test.js.)
 
 import { test } from 'node:test';
@@ -15,26 +17,29 @@ const META = { data_as_of: '2026-10-28' };
 const ARGS = { layer: 'both', sort: 'date_asc', limit: 25, offset: 0 };
 
 function currencyDb() {
-  // "Franken" is a label of a CHF term and of an FRF term.
+  // "Franken" is a label of a CHF term, an FRF term, and a DEM term whose only row has no price.
+  // The rows give FRF before CHF, so only an ORDER BY lists CHF first.
   return makeTestDb({
     tables: {
       terms: {
         columns: ['label', 'label_de', 'facet'],
         rows: [{ id: 'type/c/1', label: 'CHF', facet: 'currency' }, { id: 'type/c/2', label: 'FRF', facet: 'currency' },
-          { id: 'type/c/3', label: 'CHF', facet: 'currency' }],
+          { id: 'type/c/3', label: 'CHF', facet: 'currency' }, { id: 'type/c/4', label: 'DEM', facet: 'currency' }],
       },
       term_labels: {
         columns: ['term_id', 'label'],
-        rows: [{ id: 'l1', term_id: 'type/c/1', label: 'Franken' }, { id: 'l2', term_id: 'type/c/2', label: 'Franken' }],
+        rows: [{ id: 'l1', term_id: 'type/c/1', label: 'Franken' }, { id: 'l2', term_id: 'type/c/2', label: 'Franken' },
+          { id: 'l4', term_id: 'type/c/4', label: 'Franken' }],
       },
       acquisitions: {
         columns: ['object_id', 'currency_id', 'currency_code', 'price_value'],
-        rows: [{ id: 'a1', object_id: 'object/1', currency_id: 'type/c/1', currency_code: 'CHF', price_value: '10' },
-          { id: 'a2', object_id: 'object/2', currency_id: 'type/c/3', currency_code: 'CHF', price_value: '20' }],
+        rows: [{ id: 'a1', object_id: 'object/1', currency_id: 'type/c/2', currency_code: 'FRF', price_value: '30' },
+          { id: 'a2', object_id: 'object/2', currency_id: 'type/c/3', currency_code: 'CHF', price_value: '20' },
+          { id: 'a3', object_id: 'object/3', currency_id: 'type/c/4', currency_code: 'DEM', price_value: null }],
       },
       provenance: {
         columns: ['currency_id', 'currency_code', 'price_value'],
-        rows: [{ id: 'provenance/1', currency_id: 'type/c/2', currency_code: 'FRF', price_value: '30' }],
+        rows: [{ id: 'provenance/1', currency_id: 'type/c/1', currency_code: 'CHF', price_value: '10' }],
       },
     },
   });

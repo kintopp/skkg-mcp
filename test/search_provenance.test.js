@@ -14,7 +14,8 @@
 //   ("vor 16.12.1981", "spätestens 1907", "um 1965") is opened, or an undated period matches a range
 //   (every case of the rule is in scripts/tests/test_build_rules.py)
 // - the date sort disagrees with the year filter: a period open at its end sorts by its start date
-//   under date_desc, or one open at its start by its end date under date_asc
+//   under date_desc, or one open at its start by its end date under date_asc; an object's tie-break
+//   comes from another entry than the one that sets its year
 // - an object with several matching periods is listed twice, or a period shared by several
 //   objects is counted once per object in total_periods
 // - a matching period that belongs to no object in the database is silently dropped, so the
@@ -246,19 +247,24 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
     await t.test('sorting by date follows the year filter and keeps its order across pages', async () => {
       // The spec (notes/11): with one date, a period is open at its end when SKKG bounds the end at
       // 9999 ("o. D.") or the begin says "seit", open at its start when the begin is bounded at 0001
-      // or the end says "bis". An open start sorts before every date, an open end after every date.
+      // or the end says "bis". An open start sorts before every date, an open end after every date,
+      // and periods open on the same side sort by the date they record. An object's key is that of
+      // the entry that comes first, so its tie-break is that entry's date, not another's.
       const openEnd = (p) => p.date_from && !p.date_to && (p.end?.to?.startsWith('9999') || ['seit', 'mindestens seit'].includes(p.begin?.qualifier));
       const openStart = (p) => p.date_to && !p.date_from && (p.begin?.from?.startsWith('0001') || ['bis', 'spätestens bis'].includes(p.end?.qualifier));
-      const keys = (x, side) => [...(x.matched_periods ?? []).map((p) => (side === 'first'
-        ? (openStart(p) ? '' : p.date_from ?? p.date_to) : (openEnd(p) ? '9999' : p.date_to ?? p.date_from))),
-      x.matched_acquisition?.date].filter((k) => k !== undefined && k !== null).sort();
-      const asc = (await all({ owner_type: 'Privatbesitzer:in' })).rows.map((x) => keys(x, 'first')[0]).filter((k) => k !== undefined);
+      // Rank 0 sorts before every date, 2 after; the dates of the fixture are all YYYY-MM-DD.
+      const first = (p) => (openStart(p) ? `0 ${p.date_to}` : `1 ${p.date_from ?? p.date_to}`);
+      const last = (p) => (openEnd(p) ? `2 ${p.date_from}` : `1 ${p.date_to ?? p.date_from}`);
+      const keys = (x, key) => (x.matched_periods ?? []).filter((p) => p.date_from || p.date_to).map(key).sort();
+      // Every dated period of the chain layer: the fixture's objects whose tie-break needs the entry that sets the year.
+      const dated = { layer: 'chain', year_from: -5000 };
+      const asc = (await all(dated)).rows.map((x) => keys(x, first)[0]).filter((k) => k !== undefined);
       assert.deepEqual(asc, [...asc].sort());
-      assert.equal(asc[0], '', 'a period open at its start comes first');
-      const desc = (await all({ owner_type: 'Privatbesitzer:in', sort: 'date_desc' })).rows.map((x) => keys(x, 'last').at(-1))
+      assert.ok(asc[0].startsWith('0 ') && asc[1].startsWith('0 '), 'periods open at their start come first');
+      const desc = (await all({ ...dated, sort: 'date_desc' })).rows.map((x) => keys(x, last).at(-1))
         .filter((k) => k !== undefined);
       assert.deepEqual(desc, [...desc].sort().reverse());
-      assert.equal(desc[0], '9999', 'a period open at its end comes first');
+      assert.ok(desc[0].startsWith('2 ') && desc[1].startsWith('2 '), 'periods open at their end come first');
       const top = (x) => Math.max(...[...(x.matched_periods ?? []).map((p) => p.price?.value), x.matched_acquisition?.price?.value]
         .filter((v) => v !== undefined));
       const prices = (await all({ currency: 'GBP', sort: 'price_desc' })).rows.map(top);
