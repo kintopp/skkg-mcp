@@ -12,9 +12,13 @@ never replaces a good database. Run from the project root, e.g.:
       --census data/derived/shape_census-20261028.json
 
 Privacy rules (notes/06, notes/09) are enforced here, not in the server: the given names,
-surnames and alternative names of address records are never read, an address that has
+surnames and alternative names of address records are never written. An address that has
 them gets a label built from its organisation (or "Privatperson") and place, and loses its
-coordinates and website. "Unbekannte:r" owners are flagged as anonymised in either case. Stub objects and stub multimedia records (no skkg: class) are not loaded.
+coordinates and website. The full names of those persons that no SKKG person record carries
+are replaced by "Privatperson" in the object and term fields the website does not show.
+"Unbekannte:r" owners are flagged as anonymised in either case. Stub objects and stub
+multimedia records (no skkg: class) are not loaded. The privacy checks compare the result
+with the store by queries of their own; scripts/tests/ injects leaks to prove they fail.
 """
 import argparse
 import json
@@ -23,6 +27,7 @@ import re
 import sqlite3
 import sys
 import time
+import unicodedata
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -301,7 +306,7 @@ def fts_text(*parts):
 
 def is_anonymisation(label):
     """SKKG's placeholder for owners it does not name, in either capitalisation."""
-    return (label or "").casefold().startswith("unbekannte:r")
+    return (label or "").strip().casefold().startswith("unbekannte:r")
 
 
 def scheme_of(term_id):
@@ -754,9 +759,6 @@ def load_objects(src, db, used):
             ins[i][5] = v
     db.executemany("INSERT INTO object_inscriptions VALUES (?,?,?,?,?,?)",
                    [(v[0], v[1], v[2], json.dumps(v[3]) if v[3] else None, v[4], v[5]) for v in ins.values()])
-    by_obj_ins = defaultdict(list)
-    for v in ins.values():
-        by_obj_ins[v[0]].extend([v[2], v[5]])
 
     # Object texts.
     otexts = q("object", f"""SELECT ?o ?n ?ti ?v ?t ?c WHERE {{ {O} ?o crm:P67i_is_referred_to_by ?x .
@@ -768,9 +770,6 @@ def load_objects(src, db, used):
     db.executemany("INSERT INTO object_texts VALUES (?,?,?,?,?,?)",
                    [(o, integer(n), ti, v, t, c) for o, n, ti, v, t, c in otexts])
     used.update(r[4] for r in otexts)
-    by_obj_texts = defaultdict(list)
-    for o, _, ti, v, _, _ in otexts:
-        by_obj_texts[o].extend([ti, v])
 
     # Parts and dimensions.
     parts = {}
@@ -849,7 +848,7 @@ def load_objects(src, db, used):
     db.executemany("INSERT INTO object_multimedia VALUES (?,?,?,?)", [tuple(v) for v in om.values()])
 
     # Object rows.
-    rows, fts = [], []
+    rows = []
     for o, inventory in inv.items():
         ts = sorted(by_obj_dates.get(o, []), key=lambda v: (v[1] is None, v[1] or 0))
         yrs0 = [v[3] for v in ts if v[3] is not None]
@@ -862,18 +861,10 @@ def load_objects(src, db, used):
                      "; ".join(v[2] for v in ts if v[2]) or None, min(yrs0) if yrs0 else None,
                      max(yrs1) if yrs1 else None, parent.get(o), tx.get(AAT_CREDIT), tx.get(AAT_EDITION),
                      tx.get(AAT_MATERIAL_STATEMENT), ps[0], ps[1], m[0], m[1], m[2], manifest.get(o)))
-        fts.append((o, fts_text(*tl), fts_text(label.get(o)), fts_text(*by_obj_ins.get(o, [])),
-                    fts_text(*by_obj_texts.get(o, []), tx.get(AAT_MATERIAL_STATEMENT), tx.get(AAT_EDITION)),
-                    inventory))
     db.executemany("INSERT INTO objects (id, inventory_number, label, title, object_type_id, number_of_parts, "
                    "date_label, date_from, date_to, parent_id, credit_line, edition, material_statement, "
                    "provenance_status_id, provenance_status_text, redaction_status_id, created, updated, "
                    "manifest_url) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
-    other_ids = defaultdict(list)
-    for o, _, v in idents:
-        other_ids[o].append(v)
-    db.executemany("INSERT INTO objects_fts VALUES (?,?,?,?,?,?)",
-                   [(f[0], f[1], f[2], f[3], f[4], " ".join([f[5]] + other_ids.get(f[0], []))) for f in fts])
     return len(rows)
 
 
@@ -1240,8 +1231,10 @@ def derive(db):
 
 
 # Every (term, record) link, by the kind of record, for the counts of skkg_find_terms. Object
-# links include those through provenance periods and multimedia. A term absent here is unused.
-# A photo licence counts the objects whose primary photo has it, as the image_license filter does.
+# links include those through multimedia, and every period link also counts the period's objects
+# (the INSERT below), so no provenance column can lack its object rows. A term absent here is
+# unused. A photo licence counts the objects whose primary photo has it, as the image_license
+# filter does.
 TERM_USES = """
 CREATE TEMP TABLE term_uses AS
     SELECT term_id, 'objects' AS kind, object_id AS rid FROM object_terms
@@ -1262,14 +1255,6 @@ CREATE TEMP TABLE term_uses AS
     UNION ALL SELECT type_id, 'objects', object_id FROM object_parts
     UNION ALL SELECT unit_id, 'objects', object_id FROM object_dimensions
     UNION ALL SELECT j.value, 'objects', i.object_id FROM object_inscriptions i, json_each(i.type_ids) j
-    UNION ALL SELECT p.certainty_id, 'objects', po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id
-    UNION ALL SELECT p.holding_kind_id, 'objects', po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id
-    UNION ALL SELECT p.transaction_type_id, 'objects', po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id
-    UNION ALL SELECT p.owner_type_id, 'objects', po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id
-    UNION ALL SELECT p.currency_id, 'objects', po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id
-    UNION ALL SELECT p.begin_qualifier_id, 'objects', po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id
-    UNION ALL SELECT p.end_qualifier_id, 'objects', po.object_id FROM provenance p JOIN provenance_objects po ON po.provenance_id = p.id
-    UNION ALL SELECT ps.type_id, 'objects', po.object_id FROM provenance_sources ps JOIN provenance_objects po ON po.provenance_id = ps.provenance_id
     UNION ALL SELECT image_license_id, 'objects', id FROM objects
     UNION ALL SELECT m.usage_id, 'objects', om.object_id FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id
     UNION ALL SELECT m.type_id, 'objects', om.object_id FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id
@@ -1309,6 +1294,8 @@ CREATE TEMP TABLE term_uses AS
     UNION ALL SELECT type_id, 'images', id FROM multimedia
     UNION ALL SELECT category_id, 'images', id FROM multimedia
     UNION ALL SELECT license_id, 'images', id FROM multimedia;
+INSERT INTO term_uses SELECT u.term_id, 'objects', po.object_id FROM term_uses u
+    JOIN provenance_objects po ON po.provenance_id = u.rid WHERE u.kind = 'provenance periods';
 DELETE FROM term_uses WHERE term_id IS NULL OR term_id NOT IN (SELECT id FROM terms);
 CREATE INDEX temp.ix_tu ON term_uses(term_id, kind);
 """
@@ -1354,22 +1341,42 @@ def count_terms(db):
     db.execute("DROP TABLE term_uses")
 
 
-def build_fts(db):
-    db.executemany("INSERT INTO actors_fts VALUES (?,?)", [
-        (a, fts_text(*names)) for a, names in _group(db.execute("""
-            SELECT id, label FROM actors UNION ALL SELECT id, name FROM actors WHERE name IS NOT NULL
-            UNION ALL SELECT id, corporate_name FROM actors WHERE corporate_name IS NOT NULL
-            UNION ALL SELECT actor_id, name FROM actor_names""")).items()])
+def fts_rows(db):
+    """The rows of each FTS table, projected from the base tables. The privacy checks require the
+    FTS tables to hold exactly these rows, so they carry nothing the base tables do not."""
+    def lists(sql):
+        out = defaultdict(list)
+        for k, *vs in db.execute(sql).fetchall():
+            out[k].extend(vs)
+        return out
+    titles = lists("SELECT object_id, title FROM object_titles ORDER BY seq IS NULL, seq, rowid")
+    inscriptions = lists("SELECT object_id, text, translation FROM object_inscriptions ORDER BY rowid")
+    texts = lists("SELECT object_id, title, text FROM object_texts ORDER BY rowid")
+    idents = lists("SELECT object_id, value FROM object_identifiers ORDER BY rowid")
+    objects = [(o, fts_text(*titles.get(o, [])), fts_text(lab), fts_text(*inscriptions.get(o, [])),
+                fts_text(*texts.get(o, []), mat, ed), " ".join(x for x in [inv, *idents.get(o, [])] if x is not None))
+               for o, inv, lab, mat, ed in db.execute(
+                   "SELECT id, inventory_number, label, material_statement, edition FROM objects ORDER BY rowid").fetchall()]
+    actors = [(a, fts_text(*names)) for a, names in _group(db.execute("""
+        SELECT id, label FROM actors UNION ALL SELECT id, name FROM actors WHERE name IS NOT NULL
+        UNION ALL SELECT id, corporate_name FROM actors WHERE corporate_name IS NOT NULL
+        UNION ALL SELECT actor_id, name FROM actor_names""")).items()]
     authors = _group(db.execute("SELECT la.literature_id, a.label FROM literature_actors la JOIN actors a ON a.id = la.actor_id"))
-    db.executemany("INSERT INTO literature_fts VALUES (?,?,?,?)", [
-        (l, fts_text(t, lab), fts_text(*authors.get(l, [])), fts_text(s))
-        for l, t, lab, s in db.execute("SELECT id, title, label, series FROM literature").fetchall()])
+    literature = [(l, fts_text(t, lab), fts_text(*authors.get(l, [])), fts_text(s))
+                  for l, t, lab, s in db.execute("SELECT id, title, label, series FROM literature").fetchall()]
     venues = _group(db.execute("""SELECT ev.exhibition_id, ad.label FROM exhibition_venues ev
         JOIN addresses ad ON ad.id = ev.address_id"""))
-    db.executemany("INSERT INTO exhibitions_fts VALUES (?,?,?)", [
-        (e, fts_text(t, lab), fts_text(*venues.get(e, []))) for e, t, lab in db.execute("SELECT id, title, label FROM exhibitions").fetchall()])
-    db.executemany("INSERT INTO terms_fts VALUES (?,?)", [
-        (t, fts_text(*labs)) for t, labs in _group(db.execute("SELECT term_id, label FROM term_labels")).items()])
+    exhibitions = [(e, fts_text(t, lab), fts_text(*venues.get(e, [])))
+                   for e, t, lab in db.execute("SELECT id, title, label FROM exhibitions").fetchall()]
+    terms = [(t, fts_text(*labs)) for t, labs in _group(db.execute("SELECT term_id, label FROM term_labels")).items()]
+    return {"objects_fts": objects, "actors_fts": actors, "literature_fts": literature,
+            "exhibitions_fts": exhibitions, "terms_fts": terms}
+
+
+def build_fts(db):
+    for table, rows in fts_rows(db).items():
+        if rows:
+            db.executemany(f"INSERT INTO {table} VALUES ({','.join('?' * len(rows[0]))})", rows)
 
 
 def _group(cursor):
@@ -1380,40 +1387,252 @@ def _group(cursor):
     return out
 
 
-def privacy_checks(src, db):
+# ---------------------------------------------------------------- private names in text
+
+REDACTED = "Privatperson"
+# Fields the website does not show, where a protected name is replaced (notes/09).
+REDACT_FIELDS = (("object_identifiers", "value"), ("object_conditions", "note"), ("object_relations", "label"),
+                 ("terms", "label"), ("terms", "label_de"), ("terms", "label_en"), ("terms", "label_fr"),
+                 ("term_labels", "label"))
+# Fields the website shows whole, names included, so they keep them (notes/09). A protected name
+# anywhere else fails the build, so a field that starts to carry one gets a decision first.
+NAMES_SHOWN = {("acquisitions", "note"), ("object_dates", "note"), ("exhibitions", "label"), ("exhibitions", "title")}
+
+
+WORD = re.compile(r"\w+")
+
+
+def _nfc(s):
+    return unicodedata.normalize("NFC", s)
+
+
+def _name_key(s):
+    return " ".join(w for w in re.split(r"[\s,]+", _nfc(s).casefold()) if w)
+
+
+def _name_pattern(form):
+    """'Given Surname' or 'Surname, Given' with any spacing, "ß" also written "ss"."""
+    word = lambda w: re.sub("ß|ss", "(?:ß|ss)", re.escape(w))
+    return r"\s*,\s*".join(r"\s+".join(map(word, part.split())) for part in form.split(","))
+
+
+class Names:
+    """Full names of private persons, found in any case, Unicode form and spacing. A match inside
+    the person's own organisation is allowed, as it is in the address label."""
+
+    def __init__(self, persons):
+        """persons: {address id: (name forms, organisation or None)}."""
+        self.count = len(persons)
+        self.owners, self.orgs = defaultdict(set), {}
+        forms = set()
+        for a, (fs, org) in persons.items():
+            self.orgs[a] = org
+            for f in fs:
+                self.owners[_name_key(f)].add(a)
+                forms.add(_nfc(f))
+        alt = lambda fs: r"(?<!\w)(?:" + "|".join(sorted(map(_name_pattern, fs), key=len, reverse=True)) + r")(?!\w)"
+        # A match contains every word of its form, so a text without any of these words has none.
+        self.words = {w for f in forms for w in re.findall(r"\w+", f.casefold())}
+        # The folded pattern finds what the case-insensitive one misses, e.g. "ß" written "ss".
+        self.fold_rx = re.compile(alt({f.casefold() for f in forms})) if forms else None
+        self.case_rx = re.compile(alt(forms), re.IGNORECASE) if forms else None
+
+    def spans(self, text, fold):
+        """The text in NFC (casefolded with fold) and the spans of protected names in it."""
+        v = _nfc(text)
+        v = v.casefold() if fold else v
+        rx = self.fold_rx if fold else self.case_rx
+        if not rx:
+            return v, []
+        return v, [m.span() for m in rx.finditer(v)
+                   if not any(self._in_org(v, m.span(), a, fold) for a in self.owners[_name_key(m.group())])]
+
+    def _in_org(self, v, span, a, fold):
+        org = self.orgs.get(a)
+        if not org:
+            return False
+        org = _nfc(org).casefold() if fold else _nfc(org)
+        return any(m.start() <= span[0] and span[1] <= m.end()
+                   for m in re.finditer(re.escape(org), v, 0 if fold else re.IGNORECASE))
+
+    def found(self, text):
+        return not self.words.isdisjoint(WORD.findall(_nfc(text).casefold())) and bool(self.spans(text, fold=True)[1])
+
+    def redact(self, text):
+        v, spans = self.spans(text, fold=False)
+        if not spans:
+            return text
+        for s, e in reversed(spans):
+            v = v[:s] + REDACTED + v[e:]
+        return v
+
+
+def protected_names(src):
+    """Full names of private address persons that no SKKG person record carries (notes/09), with
+    each person's organisation. Read only to find the names in text; they are never written."""
+    q = lambda query: src.q("address", query)
+    parts = defaultdict(lambda: defaultdict(list))
+    for a, t, v in q(f"""SELECT ?a ?t ?v WHERE {{ ?a a skkg:Address ; crm:P1_is_identified_by ?n .
+        ?n crm:P106_is_composed_of ?p . ?p crm:P2_has_type ?t ; crm:P190_has_symbolic_content ?v
+        VALUES ?t {{ <{AAT_GIVEN}> <{AAT_SURNAME}> <{AAT_ORG}> }} }}"""):
+        parts[a][t].append(v)
+    for a, v in q("""SELECT ?a ?v WHERE { ?a a skkg:Address ; crm:P1_is_identified_by ?n .
+        FILTER(CONTAINS(STR(?n), '/altname/')) ?n rdfs:label ?v }"""):
+        parts[a]["alt"].append(v)
+    # Names of person records: labels, names, alternative names, GND names. One query per branch,
+    # as a UNION inside a join is very slow on Oxigraph.
+    public = []
+    actor = "?a a ?c VALUES ?c { crm:E21_Person crm:E39_Actor crm:E74_Group skkg:Actor }"
+    for pattern in ("?a rdfs:label ?v", "?a skos:prefLabel ?v", "?a crm:P1_is_identified_by ?n . ?n crm:P190_has_symbolic_content ?v",
+                    "?a crmdig:L54_is_same-as ?g . ?g gndo:preferredName ?v", "?a crmdig:L54_is_same-as ?g . ?g gndo:variantName ?v"):
+        public += [v for a, v in src.q("person", f"SELECT ?a ?v WHERE {{ {actor} {pattern} }}")
+                   if a.startswith(("person/", "actor/")) and a != ANON_ACTOR]
+    public = "\n".join(_name_key(v) for v in public)
+    is_public = lambda f: re.search(rf"(?<!\w){re.escape(_name_key(f))}(?!\w)", public)
+    out = {}
+    for a, p in parts.items():
+        forms = list(p["alt"])
+        for g in p[AAT_GIVEN]:
+            for s in p[AAT_SURNAME]:
+                forms += [f"{g} {s}", f"{s}, {g}", f"{s} {g}"]
+        if forms and not any(map(is_public, forms)):
+            out[a] = (forms, min(p[AAT_ORG]) if p[AAT_ORG] else None)
+    return out
+
+
+def redact_names(src, db):
+    """Replace protected names in REDACT_FIELDS; returns the rows changed per field."""
+    names = Names(protected_names(src))
+    out = {}
+    for table, col in REDACT_FIELDS:
+        rows = [(new, rid) for rid, v in db.execute(f"SELECT rowid, {col} FROM {table} WHERE {col} IS NOT NULL").fetchall()
+                if (new := names.redact(v)) != v]
+        db.executemany(f"UPDATE {table} SET {col} = ? WHERE rowid = ?", rows)
+        if rows:
+            out[f"{table}.{col}"] = len(rows)
+    return out
+
+
+# ---------------------------------------------------------------- privacy checks
+
+def privacy_expectations(src):
+    """What the privacy checks compare the database with, read from the store by queries of their
+    own, so that a loader bug does not blind the check that should catch it."""
+    q = lambda query: src.q("check", query)
+    pref, org, place, region = (defaultdict(set) for _ in range(4))
+    for a, v in q("SELECT ?a ?v WHERE { ?a a skkg:Address ; skos:prefLabel ?v FILTER(LANG(?v) = '' || LANG(?v) = 'de') }"):
+        pref[a].add(v)
+    for a, v in q(f"""SELECT ?a ?v WHERE {{ ?a a skkg:Address ; crm:P1_is_identified_by ?n . ?n crm:P106_is_composed_of ?p .
+        ?p crm:P2_has_type <{AAT_ORG}> ; crm:P190_has_symbolic_content ?v }}"""):
+        org[a].add(v)
+    for a, p, v in q("""SELECT ?a ?p ?v WHERE { ?a a skkg:Address ; crm:P76_has_contact_point ?c .
+        ?c crm:P106_is_composed_of ?p . ?p crm:P190_has_symbolic_content ?v }"""):
+        {"place": place, "region": region}.get(p.rsplit("/", 1)[-1], {}).setdefault(a, set()).add(v)
+    # Private: any name part that is not an organisation, or any identifier besides the name
+    # (an alternative name). Broader than the loader's test on purpose: a new kind of part fails.
+    private = {a for (a,) in q(f"""SELECT DISTINCT ?a WHERE {{ ?a a skkg:Address ; crm:P1_is_identified_by ?n .
+        ?n crm:P106_is_composed_of ?p . FILTER NOT EXISTS {{ ?p crm:P2_has_type <{AAT_ORG}> }} }}""")}
+    private |= {a for a, n in q("SELECT ?a ?n WHERE { ?a a skkg:Address ; crm:P1_is_identified_by ?n }")
+                if not n.endswith(("/name", "/order"))}
+    private.add(ANON_ADDRESS)
+    anon = {ANON_ACTOR}
+    for pred in ("rdfs:label", "skos:prefLabel"):
+        anon |= {a for a, v in q(f"""SELECT ?a ?v WHERE {{ ?a a ?c VALUES ?c {{ crm:E21_Person crm:E39_Actor crm:E74_Group skkg:Actor }}
+            ?a {pred} ?v }}""") if is_anonymisation(v)}
+    owners = {(p, o) for p, o in q("""SELECT ?p ?o WHERE { ?p a skkg:Provenance ; crm:P9_consists_of ?tr .
+        ?tr crm:P11_had_participant ?ac . ?ac crm:P107_has_current_or_former_member ?o }""") if o in anon}
+    sources = {(o, s) for o, s in q("""SELECT ?o ?s WHERE { ?o a skkg:Object ; crm:P24i_changed_ownership_through ?a .
+        ?a a crm:E8_Acquisition ; crm:P23_transferred_title_from ?s }""") if s in anon}
+    return {"pref": pref, "org": org, "place": place, "region": region, "private": private & pref.keys(),
+            "anon": anon, "owners": owners, "sources": sources, "names": Names(protected_names(src))}
+
+
+def _schema(conn):
+    return {t: [r[1] for r in conn.execute(f'PRAGMA table_info("{t.replace(chr(34), chr(34) * 2)}")')]
+            for (t,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")}
+
+
+def privacy_checks(db, exp):
     """Return a list of (check, ok, detail). The build fails when any check is not ok."""
     out = []
-    cols = {r[1] for r in db.execute("PRAGMA table_info(addresses)")}
-    out.append(("address table has no name columns", not ({"first_name", "surname", "given_name", "last_name"} & cols), ""))
-    n = db.execute("SELECT COUNT(*) FROM addresses WHERE is_private_person = 1 AND (latitude IS NOT NULL OR longitude IS NOT NULL)").fetchone()[0]
-    out.append(("no private address has coordinates", n == 0, f"{n} rows"))
-    n = db.execute("SELECT COUNT(*) FROM addresses WHERE is_private_person = 1 AND website IS NOT NULL").fetchone()[0]
-    out.append(("no private address has a website", n == 0, f"{n} rows"))
-    # LIKE ignores ASCII case, so this also catches the lowercase "unbekannte:r Eigentümer:in".
-    n = db.execute("SELECT COUNT(*) FROM actors WHERE label LIKE 'unbekannte:r%' AND is_anonymous = 0").fetchone()[0]
-    out.append(("every \"Unbekannte:r\" actor is flagged as SKKG's anonymisation", n == 0, f"{n} rows"))
-    # Compare each private address label with its own name parts, read here only for the check.
-    leaks = 0
-    for a, v in src.q("check", f"""SELECT ?a ?v WHERE {{ ?a a skkg:Address ; crm:P1_is_identified_by ?n .
-        ?n crm:P106_is_composed_of ?p . ?p crm:P2_has_type <{AAT_SURNAME}> ; crm:P190_has_symbolic_content ?v }}"""):
-        row = db.execute("SELECT label, organisation FROM addresses WHERE id = ?", (a,)).fetchone()
-        if row and row[0] and v and re.search(rf"\b{re.escape(v)}\b", row[0]) and not (row[1] and v in row[1]):
-            leaks += 1
-    for a, v in src.q("check", """SELECT ?a ?v WHERE { ?a a skkg:Address ; crm:P1_is_identified_by ?n .
-        FILTER(CONTAINS(STR(?n), '/altname/')) ?n rdfs:label ?v }"""):
-        row = db.execute("SELECT label FROM addresses WHERE id = ?", (a,)).fetchone()
-        if row and row[0] and v in row[0]:
-            leaks += 1
-    out.append(("no private address label contains the person's surname or alternative name", leaks == 0, f"{leaks} rows"))
-    for rid, table in ((ANON_ACTOR, "actors"), (ANON_ADDRESS, "addresses")):
-        n = db.execute(f"SELECT COUNT(*) FROM {table} WHERE id = ?", (rid,)).fetchone()[0]
-        out.append((f"anonymisation node {rid} present", n == 1, ""))
-    n = db.execute("SELECT COUNT(*) FROM addresses WHERE id = ? AND is_private_person = 1", (ANON_ADDRESS,)).fetchone()[0]
-    out.append((f"{ANON_ADDRESS} is flagged as a private person", n == 1, ""))
+    ref = sqlite3.connect(":memory:")
+    ref.executescript(DDL + FTS)
+    schema, want = _schema(db), _schema(ref)
+    diff = sorted(t for t in schema.keys() | want.keys() if schema.get(t) != want.get(t))
+    out.append(("the tables and their columns are exactly those of the schema", not diff, ", ".join(diff)))
+
+    ids = {a for (a,) in db.execute("SELECT id FROM addresses")}
+    flagged = {a for (a,) in db.execute("SELECT id FROM addresses WHERE is_private_person = 1")}
+    store, private = set(exp["pref"]), exp["private"]
+    out.append(("the private addresses are exactly those with personal name parts in the store",
+                flagged == private and ids == store,
+                f"{len(private)} private; {len(flagged - private)} flagged but not private, {len(private - flagged)} "
+                f"private but not flagged, {len(ids - store)} ids not in the store, {len(store - ids)} store ids missing"))
+    bad_private = bad_other = 0
+    for a, label, o, pl, rg, lat, lon, url in db.execute(
+            "SELECT id, label, organisation, place, region, latitude, longitude, website FROM addresses"):
+        same = all(v in exp[k][a] if exp[k].get(a) else v is None for k, v in (("org", o), ("place", pl), ("region", rg)))
+        if a in private:
+            bad_private += not (same and lat is None and lon is None and url is None
+                                and label == ", ".join(x for x in (o or "Privatperson", pl) if x))
+        else:
+            bad_other += not (same and label in exp["pref"].get(a, ()))
+    out.append(("every private address shows only {organisation or Privatperson}, {place}, without coordinates or website",
+                bad_private == 0, f"{bad_private} rows"))
+    out.append(("every other address keeps SKKG's label, organisation and place", bad_other == 0, f"{bad_other} rows"))
+
+    n = db.execute("""SELECT COUNT(*) FROM addresses WHERE id = ? AND label = 'Privatperson' AND is_private_person = 1
+        AND COALESCE(organisation, place, region, latitude, longitude, website) IS NULL""", (ANON_ADDRESS,)).fetchone()[0]
+    m = db.execute(f"""SELECT COUNT(*) FROM actors WHERE id = ? AND kind = 'anonymous' AND label = 'Privatperson'
+        AND is_anonymous = 1 AND COALESCE(name, first_name, last_name, corporate_name, gender_id, birth_label, birth_place,
+        death_label, death_place, biography) IS NULL""", (ANON_ACTOR,)).fetchone()[0]
+    out.append((f"{ANON_ACTOR} and {ANON_ADDRESS} hold only \"Privatperson\"", n == 1 and m == 1, ""))
+
+    actors = dict(db.execute("SELECT id, label FROM actors WHERE is_anonymous = 1"))
+    unflagged = sum(is_anonymisation(lab) for (lab,) in db.execute("SELECT label FROM actors WHERE is_anonymous = 0"))
+    relabelled = sum(a not in actors or (a != ANON_ACTOR and not is_anonymisation(actors[a])) for a in exp["anon"])
+    anon = sorted(exp["anon"] | actors.keys())
+    marks = ",".join("?" * len(anon))
+    children = sum(db.execute(f"SELECT COUNT(*) FROM {t} WHERE {c} IN ({marks})", anon).fetchone()[0] for t, c in (
+        ("actor_names", "actor_id"), ("actor_external", "actor_id"), ("actor_gnd", "actor_id"), ("actor_events", "actor_id"),
+        ("actor_links", "actor_id"), ("actor_relations", "subject_id"), ("actor_relations", "target_id")))
+    out.append(("every anonymised owner is flagged, keeps SKKG's placeholder label, and has no names, identifiers, events or relations",
+                unflagged == relabelled == children == 0,
+                f"{len(exp['anon'])} anonymised; {unflagged} unflagged, {relabelled} relabelled or missing, {children} child rows"))
+    owners = {(p, o) for p, o in db.execute("SELECT id, owner_id FROM provenance") if o in exp["anon"]}
+    sources = {(o, s) for o, s in db.execute("SELECT object_id, source_id FROM acquisitions") if s in exp["anon"]}
+    out.append(("the anonymised owners keep their provenance periods and acquisitions",
+                owners == exp["owners"] and sources == exp["sources"],
+                f"{len(owners ^ exp['owners'])} period links and {len(sources ^ exp['sources'])} acquisition links differ"))
+
+    names, hits = exp["names"], Counter()
+    fts = set(re.findall(r"CREATE VIRTUAL TABLE (\w+)", FTS))
+    for t, cols in schema.items():
+        if t in fts or any(t.startswith(f + "_") for f in fts):
+            continue
+        for c in cols:
+            if (t, c) in NAMES_SHOWN:
+                continue
+            q = f'SELECT "{c}", COUNT(*) FROM "{t}" WHERE typeof("{c}") = \'text\' GROUP BY 1'
+            hits[f"{t}.{c}"] = sum(n for v, n in db.execute(q) if names.found(v))
+    leaks = {k: n for k, n in hits.items() if n}
+    out.append(("no protected name outside the fields the website shows", not leaks,
+                f"{names.count} protected persons; " + (", ".join(f"{k} {n}" for k, n in sorted(leaks.items())) or "0 rows")))
+
+    bad = []
+    for table, rows in fts_rows(db).items():
+        try:
+            if Counter(rows) != Counter(db.execute(f"SELECT * FROM {table}").fetchall()):
+                bad.append(table)
+            db.execute(f"INSERT INTO {table}({table}) VALUES ('integrity-check')")
+        except sqlite3.DatabaseError:
+            bad.append(f"{table} unreadable or its index inconsistent")
+    out.append(("every full-text table holds exactly its projection from the base tables", not bad, ", ".join(bad)))
+
     n = db.execute("""SELECT COUNT(*) FROM addresses WHERE website IS NOT NULL
         AND (website NOT LIKE 'http%' OR website LIKE 'https://data.skkg.ch/%' OR website LIKE 'http://data.skkg.ch/%')""").fetchone()[0]
     out.append(("every address website is an outside URL", n == 0, f"{n} rows"))
-    n = db.execute("SELECT COUNT(*) FROM objects WHERE id NOT IN (SELECT id FROM objects WHERE inventory_number IS NOT NULL)").fetchone()[0]
+    n = db.execute("SELECT COUNT(*) FROM objects WHERE inventory_number IS NULL").fetchone()[0]
     out.append(("every object has an inventory number (no stubs)", n == 0, f"{n} rows"))
     return out
 
@@ -1504,6 +1723,7 @@ def main():
     step("provenance", load_provenance, src, db, used)
     step("acquisitions", load_acquisitions, src, db, used)
     step("terms", load_terms, src, db, used)
+    redacted = step("redaction", redact_names, src, db)
     codes = [(currency_code(lab), t) for t, lab in db.execute("SELECT id, label FROM terms WHERE facet = 'currency'")]
     for table in ("acquisitions", "provenance"):
         db.executemany(f"UPDATE {table} SET currency_code = ? WHERE currency_id = ?", codes)
@@ -1516,7 +1736,12 @@ def main():
     info.update(schema_version=str(SCHEMA_VERSION), built_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
     db.executemany("INSERT INTO meta VALUES (?,?)", sorted(info.items()))
 
-    checks = privacy_checks(src, db)
+    checks = privacy_checks(db, privacy_expectations(src))
+    # Acquisition dates after the dump are wrong, and a decade from 2100 on gets a filter that
+    # the search schema refuses (acquisition_year_to has a maximum of 2100).
+    future = [{"year": y, "acquisitions": n} for y, n in db.execute(
+        "SELECT substr(date, 1, 4), COUNT(*) FROM acquisitions WHERE date > ? GROUP BY 1 ORDER BY 1",
+        (info.get("data_as_of", "9999"),))]
     tables = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '%fts%' ORDER BY name")]
     counts = {t: db.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tables}
     drops = []
@@ -1542,7 +1767,8 @@ def main():
     report = {"ok": ok, "meta": info, "seconds": round(time.time() - start), "steps": steps, "counts": counts,
               "privacy_checks": [{"check": c, "ok": k, "detail": d} for c, k, d in checks],
               "count_drops": drops, "object_terms_without_term": unknown_terms,
-              "authors_not_in_label": lit["authors_not_in_label"],
+              "authors_not_in_label": lit["authors_not_in_label"], "redacted": redacted,
+              "acquisitions_after_dump": future,
               "size_bytes": tmp.stat().st_size, "unloaded_edges": edges, "query_timings": src.timings}
     Path(str(out) + ".report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1))
     Path(str(out) + ".report.md").write_text(render_report(report))
@@ -1569,6 +1795,10 @@ def render_report(r):
     lines += ["", f"Object terms without a term record: {r['object_terms_without_term']}.", "",
               f"Authors of publications with several authors whose name is not in the publication's label, "
               f"so their order is a guess: {r['authors_not_in_label']}.", "",
+              "Rows whose protected names were replaced by \"Privatperson\": "
+              + (", ".join(f"{k} {n}" for k, n in r["redacted"].items()) or "none") + ".", "",
+              "Acquisition dates after the dump date (a year from 2100 on gets a filter the search schema refuses): "
+              + (", ".join(f"{f['year']} ({f['acquisitions']})" for f in r["acquisitions_after_dump"]) or "none") + ".", "",
               "## Census edges not read by the build", "",
               "Edges of the shape census whose predicate no build query reads for that record type. "
               "New fields in a later dump appear here.", "", "| Root | Shape | Predicate | Subjects |", "|---|---|---|---:|"]

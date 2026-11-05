@@ -13,6 +13,8 @@
 // - terms of literature, exhibitions, or persons show 0 objects instead of their record count
 // - a country counts persons born, died, or active there under a kind that says nationality, or the reverse
 // - object references show 0 objects because the build does not count their link table
+// - a term of provenance periods (status, characteristic) counts 0 objects, because the build
+//   lists the object rows of each period column by hand and misses some
 // - a term of an unnamed scheme shows no count, so "unused" and "not counted" look alike
 // - `id` drops the broader terms, returns them in the wrong order, or misses narrower terms
 // - an id of another record type returns something instead of naming the right tool
@@ -149,6 +151,25 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
       const { n } = db.prepare("SELECT COUNT(DISTINCT actor_id) AS n FROM actor_nationalities WHERE country_id = 'type/20007/20047'").get();
       db.close();
       assert.equal(ch.record_count, n);
+    });
+
+    await t.test('every term of provenance periods counts the objects of its periods', async () => {
+      const db = new DatabaseSync(FIXTURE_DB.path, { readOnly: true });
+      const expected = db.prepare(`WITH uses(term_id, pid) AS (
+          SELECT certainty_id, id FROM provenance UNION ALL SELECT holding_kind_id, id FROM provenance
+          UNION ALL SELECT transaction_type_id, id FROM provenance UNION ALL SELECT owner_type_id, id FROM provenance
+          UNION ALL SELECT currency_id, id FROM provenance UNION ALL SELECT begin_qualifier_id, id FROM provenance
+          UNION ALL SELECT end_qualifier_id, id FROM provenance UNION ALL SELECT status_id, id FROM provenance
+          UNION ALL SELECT type_id, provenance_id FROM provenance_sources
+          UNION ALL SELECT j.value, c.provenance_id FROM provenance_characteristics c, json_each(c.type_ids) j)
+        SELECT u.term_id AS id, COUNT(DISTINCT po.object_id) AS n FROM uses u
+        LEFT JOIN provenance_objects po ON po.provenance_id = u.pid
+        WHERE u.term_id IN (SELECT id FROM terms) GROUP BY u.term_id`).all();
+      db.close();
+      assert.ok(expected.some((x) => x.id === 'type/54160/233013'), 'the provenance status "abgeschlossen"');
+      for (const { id, n } of expected) {
+        assert.equal((await find({ id })).term.object_count, n, id);
+      }
     });
 
     await t.test('terms of unnamed schemes count the objects or records that use them', async () => {
