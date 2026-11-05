@@ -36,6 +36,12 @@ MUTATIONS = [
     ("loader drops an anonymised owner's nationality", "[r for r in nat if r[0] not in anonymised]", "nat", "anonymised_owner_is_loaded"),
     ("anonymised owner's life data checked", "death_to, death_place, death_place_id, biography) IS NOT NULL)", "death_to, death_place, death_place_id, biography) IS NOT NULL AND 0)", "own_row"),
     # The data rules of test_build_rules.py.
+    ('citizenship node not loaded', '            t = t[: -len("/citizenship")]\n            nat.append((a, t))', '            nat.append((a, t[: -len("/citizenship")]))', 'citizenship_node'),
+    ('life date year from the label', '    if y0 is None and y1 is None and lab:\n', '    if False:\n', 'life_dates_without'),
+    ('label never overrides a time-span', '    if y0 is None and y1 is None and lab:\n', '    if lab:\n', 'life_dates_without'),
+    ('life date label must be a plain date', 'LIFE_DATE_LABEL = re.compile(r"(?:[\\d./ ]*\\.\\s*)?(\\d{3,4})")', 'LIFE_DATE_LABEL = re.compile(r"(?:.*\\s*)?(\\d{3,4})")', 'plain_date'),
+    ('life date labels without a year counted', '"years from the label" if y0 is not None else "labels without a year"', '"years from the label"', 'life_dates_without'),
+    ('country-only place dropped', '    if pl and UNSPECIFIED_PLACE.fullmatch(pl):\n', '    if False:\n', 'life_dates_without'),
     ("seit opens the end", '"from": {"seit", "mindestens seit"}', '"from": set()', "test_period_span"),
     ("bis opens the start", '"to": {"bis", "spätestens bis"}}', '"to": set()}', "test_period_span"),
     ("o. D. bound opens the end", 'UNKNOWN_BOUND = {"from": "9999",', 'UNKNOWN_BOUND = {"from": "x",', "test_period_span"),

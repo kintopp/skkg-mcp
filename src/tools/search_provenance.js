@@ -9,6 +9,7 @@ import { perDb, placeholders } from '../lib/sql.js';
 import { objectRow } from '../lib/objects.js';
 import { period, periodRef, acquisition, chainRows } from '../lib/provenance.js';
 import { prune } from '../lib/prune.js';
+import { words, startingWith } from '../lib/words.js';
 import { fitResult } from '../lib/fit.js';
 import { capList, paging, showing, pastEnd, tailLines } from '../lib/results.js';
 import { objectRowLines, periodLines, periodRefLine, acquisitionLines } from '../lib/text.js';
@@ -134,20 +135,12 @@ export const outputSchema = z.object({
   data_as_of: z.string().optional(),
 });
 
-// Folds case and accents, so "zurich" finds "Zürich" and "neuchatel" finds "Neuchâtel".
-const foldPlace = (s) => s.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('de');
-const words = (s) => foldPlace(s).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-
 // The distinct places of the periods whose words start with every word of `value`.
 function resolvePlaces(db, value) {
-  const wanted = words(value);
-  if (!wanted.length) throw new ToolError('`place` has no word.', 'Pass a place name, e.g. "Zürich".');
+  if (!words(value).length) throw new ToolError('`place` has no word.', 'Pass a place name, e.g. "Zürich".');
   const places = perDb(db, 'provenancePlaces', () => db.prepare(
     'SELECT place, COUNT(*) AS n FROM provenance WHERE place IS NOT NULL GROUP BY place ORDER BY n DESC, place').all());
-  const hits = places.filter((p) => {
-    const have = words(p.place);
-    return wanted.every((w) => have.some((h) => h.startsWith(w)));
-  }).map((p) => p.place);
+  const hits = startingWith(places.map((p) => p.place), value);
   if (!hits.length) {
     throw new ToolError(`\`place\`: no provenance period has a place matching "${value}".`,
       `Places are written as SKKG records them, mostly in German, e.g. ${places.slice(0, 5).map((p) => `"${p.place}"`).join(', ')}.`);

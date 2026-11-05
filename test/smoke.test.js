@@ -9,6 +9,7 @@ import { withClient } from './helpers.js';
 const REQUIRED_PROPS = {
   skkg_search_objects: [],
   skkg_search_provenance: [],
+  skkg_search_actors: [],
   skkg_get_object: ['id'],
   skkg_get_record: ['id'],
   skkg_find_terms: [],

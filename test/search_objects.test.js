@@ -200,9 +200,11 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
       assert.doesNotMatch(text, /\ba object_type\b/);
       await assertVocabulariesListed(text, ['object_type']);
       assert.doesNotMatch(text, /Pass it as/);
-      // "DM" is a currency term, which skkg_search_provenance takes as the code it is recorded under.
+      // "DM" is a currency term, which skkg_search_provenance takes as the code it is recorded under,
+      // and the country code of Dominica, which skkg_search_actors takes as either of its country filters.
       const dm = await callError(client, NAME, { acquisition_type: 'DM' });
-      assert.match(dm, /"DM" is a term of the currency vocabulary, not of `acquisition_type`/);
+      assert.match(dm, /"DM" is a term of the country and currency vocabularies, not of `acquisition_type`/);
+      assert.match(dm, /skkg_search_actors takes it as `nationality` or `place_country`, and skkg_search_provenance takes it as `currency`/);
       assert.match(dm, /skkg_search_provenance takes it as `currency`/);
     });
 

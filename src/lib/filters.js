@@ -103,8 +103,9 @@ function otherFilterHint(where, targets, wanted) {
   const own = targets.filter((t) => t.f.tool === tool);
   if (exclusion || !targets.length) return listedBy(where, wanted);
   if (own.length) return `Pass it as ${own.map((t) => ownTargetName(where, t)).join(' or ')}. ${listedBy(where, wanted)}`;
-  return `This tool has no filter for it; ${targets.map((t) => `${t.f.tool} takes it as ${targetName(t)}`).join(', and ')}. ` +
-    listedBy(where, wanted);
+  const tools = [...new Set(targets.map((t) => t.f.tool))];
+  const byTool = tools.map((x) => `${x} takes it as ${targets.filter((t) => t.f.tool === x).map(targetName).join(' or ')}`);
+  return `This tool has no filter for it; ${byTool.join(', and ')}. ${listedBy(where, wanted)}`;
 }
 
 const vocabularies = (facets) => `the ${facets.join(' and ')} ${facets.length > 1 ? 'vocabularies' : 'vocabulary'}`;

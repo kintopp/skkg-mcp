@@ -60,8 +60,9 @@ const description =
   'the start of a word in a label ("Radier" finds "Radierung"). Terms in use come first; among them, ' +
   'exact label matches, then the terms used most. Each term carries its id, its path in the hierarchy, its year range (epochs), ' +
   'its matches in GND, AAT, or Wikidata, how many objects use it (a photo licence: objects whose primary photo has it), ' +
-  'and, when a search filter takes it, `filter` and `filter_tool`: that parameter and its tool (skkg_search_objects, or ' +
-  'skkg_search_provenance for the vocabularies of provenance periods); many vocabularies have none. Currency terms carry none either: ' +
+  'and, when a search filter takes it, `filter` and `filter_tool`: that parameter and its tool (skkg_search_objects, ' +
+  'skkg_search_provenance for the vocabularies of provenance periods, or skkg_search_actors for gender and the country codes ' +
+  'of nationalities); many vocabularies have none. Currency terms carry none either: ' +
   '`currency` of skkg_search_provenance takes the ids and labels of the currency terms that have a price, but matches by code, ' +
   'so it also lists the prices recorded under the other terms of that currency. With `id`, returns one term with its broader and narrower terms. ' +
   'With only `vocabulary`, lists that vocabulary. To search objects, use skkg_search_objects; ' +
@@ -100,7 +101,7 @@ const termRowOut = () => z.object({
     'and for terms of SKKG\'s unnamed schemes, where record_kind is the kind of record that uses the term most'),
   record_kind: str(),
   filter: str().describe('The parameter of filter_tool that takes this term; absent when no search filter takes it'),
-  filter_tool: str().describe('The search tool whose `filter` parameter takes this term: skkg_search_objects or skkg_search_provenance'),
+  filter_tool: str().describe('The search tool whose `filter` parameter takes this term: skkg_search_objects, skkg_search_provenance, or skkg_search_actors'),
 });
 
 export const outputSchema = z.object({

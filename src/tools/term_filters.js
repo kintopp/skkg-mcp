@@ -6,7 +6,7 @@
 // value stored for their terms instead of term ids. This module imports no tool or helper, so
 // every module can read it without an import cycle.
 
-import { SEARCH_OBJECTS_TOOL_NAME, SEARCH_PROVENANCE_TOOL_NAME } from '../config.js';
+import { SEARCH_OBJECTS_TOOL_NAME, SEARCH_PROVENANCE_TOOL_NAME, SEARCH_ACTORS_TOOL_NAME } from '../config.js';
 
 // skkg_search_objects: `pairs` is a query of (oid, k) pairs, an object and one of its values. The
 // filter selects `oid IN (… WHERE k IN (?))`, and skkg_collection_stats counts the same pairs, so a
@@ -24,6 +24,10 @@ const creatorTerms = (field, facet) => ({ facet, pairs: creatorRowPairs(field), 
 // skkg_search_provenance: `layer` is the layer the filter restricts the search to; the values are
 // the column `sql` of `p` (provenance) or `a` (acquisitions), or an EXISTS over the period's rows.
 const chain = (sql) => ({ layer: 'chain', sql });
+
+// skkg_search_actors: the column `sql` of the actor `a`, or an EXISTS over its rows. A place
+// is one of the actor's birth, death, formation, or dissolution.
+export const LIFE_PLACES = `SELECT 1 FROM actor_events e WHERE e.actor_id = a.id AND e.kind IN ('birth', 'death', 'formation', 'dissolution')`;
 
 export const TERM_FILTERS = Object.freeze({
   [SEARCH_OBJECTS_TOOL_NAME]: Object.freeze({
@@ -45,6 +49,12 @@ export const TERM_FILTERS = Object.freeze({
     transaction_type: { facet: 'transaction_type', ...chain('p.transaction_type_id') },
     source_type: { facet: 'source_type', layer: 'chain', exists: 'SELECT 1 FROM provenance_sources s WHERE s.provenance_id = p.id AND s.type_id' },
     acquisition_type: { facet: 'acquisition_type', layer: 'acquisition', sql: 'a.type_id' },
+  }),
+  // nationality first: skkg_find_terms offers it for a country, with the persons of that nationality.
+  [SEARCH_ACTORS_TOOL_NAME]: Object.freeze({
+    gender: { facet: 'gender', sql: 'a.gender_id' },
+    nationality: { facet: 'country', exists: 'SELECT 1 FROM actor_nationalities n WHERE n.actor_id = a.id AND n.country_id' },
+    place_country: { facet: 'country', exists: `${LIFE_PLACES} AND e.place_id` },
   }),
 });
 

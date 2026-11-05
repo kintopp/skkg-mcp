@@ -230,3 +230,56 @@ def test_an_anonymised_owner_is_loaded_without_gender_or_nationality():
     assert dict(db.execute("SELECT id, gender_id FROM actors WHERE id IN ('person/anon', 'person/named')")) == {
         "person/anon": None, "person/named": "type/20088/148983"}
     assert db.execute("SELECT actor_id, country_id FROM actor_nationalities").fetchall() == [("person/named", "type/20007/20047")]
+
+
+@pytest.mark.parametrize("label, want", [
+    ("1818", 1818), ("14.12.1879", 1879), ("07.1809", 1809), ("28./29.06.1577", 1577), ("30. 11.1764", 1764),
+    ("vor 1450", None), ("nach 1504", None), ("um 1800", None), ("1800-1810", None), ("", None), (None, None),
+])
+def test_a_life_date_label_gives_its_year_only_when_it_is_a_plain_date(label, want):
+    assert b.life_date_year(label) == want
+
+
+def test_life_dates_without_a_time_span_take_the_label_year_and_country_only_places_are_dropped():
+    # SKKG gives 638 life dates of the full dump only as a label; a label never overrides a time-span.
+    from pyoxigraph import Store, RdfFormat
+    crm = "http://www.cidoc-crm.org/cidoc-crm/"
+    store = Store()
+    store.load(f"""@prefix crm: <{crm}> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+<https://data.skkg.ch/person/1> a <https://ontology.skkg.ch/Person>, <https://ontology.skkg.ch/Actor>, crm:E21_Person ; rdfs:label "A" ;
+    crm:P98i_was_born <https://data.skkg.ch/person/1/birth> ; crm:P100i_died_in <https://data.skkg.ch/person/1/death> .
+<https://data.skkg.ch/person/1/birth> crm:P4_has_time-span <https://data.skkg.ch/person/1/birth/ts> ; crm:P7_took_place_at <https://data.skkg.ch/person/1/birth/place> .
+<https://data.skkg.ch/person/1/birth/ts> rdfs:label "14.12.1879" .
+<https://data.skkg.ch/person/1/birth/place> rdfs:label "place of birth (not further specified)" ; crm:P89_falls_within <https://data.skkg.ch/type/20007/20046> .
+<https://data.skkg.ch/person/1/death> crm:P4_has_time-span <https://data.skkg.ch/person/1/death/ts> . <https://data.skkg.ch/person/1/death/ts> rdfs:label "vor 1450" .
+<https://data.skkg.ch/person/2> a <https://ontology.skkg.ch/Person>, <https://ontology.skkg.ch/Actor>, crm:E21_Person ; rdfs:label "B" ;
+    crm:P98i_was_born <https://data.skkg.ch/person/2/birth> .
+<https://data.skkg.ch/person/2/birth> crm:P4_has_time-span <https://data.skkg.ch/person/2/birth/ts> ; crm:P7_took_place_at <https://data.skkg.ch/person/2/birth/place> .
+<https://data.skkg.ch/person/2/birth/ts> rdfs:label "1799" ; crm:P82a_begin_of_the_begin "1798-01-31" ; crm:P82b_end_of_the_end "1798-01-31" .
+<https://data.skkg.ch/person/2/birth/place> rdfs:label "Genf" .
+""".encode(), format=RdfFormat.TURTLE)
+    db = empty_db()
+    r = b.load_actors(b.Source(store), db, set())
+    rows = {a: rest for a, *rest in db.execute(
+        "SELECT id, birth_from, birth_to, birth_place, birth_place_id, death_from, death_label FROM actors")}
+    assert rows["person/1"] == [1879, 1879, None, "type/20007/20046", None, "vor 1450"]
+    assert rows["person/2"] == [1798, 1798, "Genf", None, None, None]
+    events = set(db.execute("SELECT actor_id, kind, year_from, place FROM actor_events"))
+    assert events == {("person/1", "birth", 1879, None), ("person/1", "death", None, None), ("person/2", "birth", 1798, "Genf")}
+    assert r["life_dates"] == {"labels without a year": 1, "unspecified places dropped": 1, "years from the label": 1}
+
+
+def test_a_nationality_loads_its_country_term_not_the_citizenship_node():
+    # The node shares its label ("CH") with the country term, so loading it would make a label
+    # filter resolve to two terms.
+    from pyoxigraph import Store, RdfFormat
+    store = Store()
+    store.load("""<https://data.skkg.ch/person/1> a <https://ontology.skkg.ch/Person>, <https://ontology.skkg.ch/Actor>,
+            <http://www.cidoc-crm.org/cidoc-crm/E21_Person> ; <http://www.w3.org/2000/01/rdf-schema#label> "A" ;
+        <http://www.cidoc-crm.org/cidoc-crm/P2_has_type> <https://data.skkg.ch/type/20007/20047/citizenship> .
+""".encode(), format=RdfFormat.TURTLE)
+    used = set()
+    b.load_actors(b.Source(store), empty_db(), used)
+    assert "type/20007/20047" in used
+    assert not any(t and t.endswith("/citizenship") for t in used)

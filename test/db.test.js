@@ -16,9 +16,9 @@ test('no path and a missing file give ToolErrors that name SKKG_DB_PATH', () => 
 });
 
 test('a database with another schema version is refused', () => {
-  // Schema 6 changed the format of the stored sort keys, so a schema-5 copy would sort open
-  // periods by the old keys without an error.
-  for (const version of ['1', '5']) {
+  // Schema 7 reads life dates SKKG gives only as a label, so a schema-6 copy would leave them
+  // out of the year filters without an error.
+  for (const version of ['1', '6']) {
     const t = makeTestDb({ meta: { schema_version: version } });
     try {
       assert.throws(() => openDatabase(t.path), new RegExp(`schema version ${version}`));

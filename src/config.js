@@ -9,7 +9,7 @@ export const SERVER_VERSION = pkg.version;
 
 // The database is built by scripts/build_db.py.
 export const DB_PATH_ENV = 'SKKG_DB_PATH';
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 // Older than this, results warn that SKKG may have changed or withdrawn records.
 export const STALE_AFTER_DAYS = 30;
 
@@ -20,6 +20,7 @@ export const RESULT_CHAR_LIMIT = Math.floor(RESULT_CHAR_CEILING * 0.9);
 // The search tools whose filters other tools point to (src/lib/filters.js).
 export const SEARCH_OBJECTS_TOOL_NAME = 'skkg_search_objects';
 export const SEARCH_PROVENANCE_TOOL_NAME = 'skkg_search_provenance';
+export const SEARCH_ACTORS_TOOL_NAME = 'skkg_search_actors';
 // The years a year filter accepts. The build stores an open side of a provenance period as
 // -9999 or 9999 (scripts/build_db.py, OPEN_YEAR), which must stay outside this range.
 export const YEAR_MIN = -5000;

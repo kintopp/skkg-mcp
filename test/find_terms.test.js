@@ -41,6 +41,7 @@ import { withClient, callOk, callError, FIXTURE_DB } from './helpers.js';
 import { outputSchema } from '../src/tools/find_terms.js';
 import { outputSchema as searchSchema } from '../src/tools/search_objects.js';
 import { outputSchema as provenanceSchema } from '../src/tools/search_provenance.js';
+import { outputSchema as actorsSchema } from '../src/tools/search_actors.js';
 
 const NAME = 'skkg_find_terms';
 const MALEREI = 'type/21087/140347';
@@ -106,6 +107,12 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
             assert.equal(x.object_count ?? 0, r.total, `${vocabulary} ${x.label} objects`);
             assert.equal(x.record_count ?? 0, x.record_kind === 'provenance periods' ? r.total_periods : r.total_acquisitions,
               `${vocabulary} ${x.label} ${x.record_kind}`);
+            checked++;
+            continue;
+          }
+          if (x.filter_tool === 'skkg_search_actors') {
+            const r = await callOk(client, x.filter_tool, { [x.filter]: x.id, limit: 1 }, actorsSchema);
+            assert.equal(x.record_count ?? 0, r.total, `${vocabulary} ${x.label} ${x.record_kind}`);
             checked++;
             continue;
           }

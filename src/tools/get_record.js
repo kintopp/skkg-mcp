@@ -12,6 +12,7 @@ import { asStr, withArticle } from '../lib/format.js';
 import { termLabel, actorRef, recordLabel } from '../lib/labels.js';
 import { imageRights } from '../lib/rights.js';
 import { objectRow, RELATION } from '../lib/objects.js';
+import { ROLE_KINDS, roleCounts, lifeDates } from '../lib/actors.js';
 import { period, periodRef } from '../lib/provenance.js';
 import { capList, paging, pastEnd } from '../lib/results.js';
 import { fitLists } from '../lib/fit.js';
@@ -82,8 +83,6 @@ const refShape = () => ({
 });
 
 const LITERATURE_KINDS = ['author', 'editor', 'publisher'];
-const ROLE_KINDS = ['creator', 'influence', 'acquired_from', 'provenance_owner', 'photographer', 'photo_right_holder',
-  ...LITERATURE_KINDS, 'subject_of_literature'];
 
 export const outputSchema = z.object({
   id: z.string(),
@@ -224,9 +223,6 @@ const litRef = (db, id) => stmt(db, 'SELECT title, label, year_label FROM litera
 
 // ------------------------------------------------------------------- actors
 
-function actorPlace(db, label, from, to, place, regionId, lang) {
-  return { date: label, year_from: from ?? undefined, year_to: to ?? undefined, place, region: termLabel(db, regionId, lang) };
-}
 
 // Objects the actor made, or is an influence on, per relation and role. The `creator` filter of
 // skkg_search_objects matches both relations, so a filter is given only where it lists no more:
@@ -247,21 +243,11 @@ function actorRoles(db, id, lang) {
       });
     }
   }
-  const counted = [
-    ['acquired_from', 'objects', 'SELECT COUNT(*) AS n FROM acquisitions WHERE source_id = ?', { acquired_from: id }],
-    ['provenance_owner', 'provenance periods', 'SELECT COUNT(*) AS n FROM provenance WHERE owner_id = ?'],
-    ['photographer', 'published images', 'SELECT COUNT(*) AS n FROM multimedia WHERE photographer_id = ? AND iiif_service IS NOT NULL'],
-    ['photo_right_holder', 'published images', 'SELECT COUNT(*) AS n FROM multimedia WHERE right_holder_id = ? AND iiif_service IS NOT NULL'],
-  ];
-  for (const [as, of, sql, filter] of counted) {
-    const n = count(db, sql, id);
-    if (n) roles.push({ as, count: n, count_of: of, filter });
+  // The other roles, counted as skkg_search_actors counts them.
+  for (const r of roleCounts(db, id)) {
+    if (Object.values(RELATION).includes(r.as)) continue;
+    roles.push({ ...r, filter: r.as === 'acquired_from' ? { acquired_from: id } : undefined });
   }
-  for (const r of stmt(db, 'SELECT kind, COUNT(DISTINCT literature_id) AS n FROM literature_actors WHERE actor_id = ? GROUP BY kind ORDER BY kind').all(id)) {
-    roles.push({ as: r.kind, count: r.n, count_of: 'publications' });
-  }
-  const about = count(db, 'SELECT COUNT(DISTINCT literature_id) AS n FROM literature_links WHERE target_id = ?', id);
-  if (about) roles.push({ as: 'subject_of_literature', count: about, count_of: 'publications' });
   return roles;
 }
 
@@ -305,7 +291,6 @@ function getActor(db, id, want, args, ctx) {
   const a = stmt(db, 'SELECT * FROM actors WHERE id = ?').get(id);
   const lang = args.lang;
   const anonymised = isAnonymised(a);
-  const [start, end] = a.kind === 'group' ? ['formation', 'dissolution'] : ['birth', 'death'];
   const counts = {
     names: count(db, 'SELECT COUNT(*) AS n FROM actor_names WHERE actor_id = ?', id),
     events: count(db, 'SELECT COUNT(*) AS n FROM actor_events WHERE actor_id = ?', id),
@@ -333,8 +318,7 @@ function getActor(db, id, want, args, ctx) {
     summary: {
       kind,
       name: a.name ?? a.corporate_name,
-      [start]: actorPlace(db, a.birth_label, a.birth_from, a.birth_to, a.birth_place, a.birth_place_id, lang),
-      [end]: actorPlace(db, a.death_label, a.death_from, a.death_to, a.death_place, a.death_place_id, lang),
+      ...lifeDates(db, a, lang),
       gender: termLabel(db, a.gender_id, lang),
       nationalities: stmt(db, 'SELECT country_id FROM actor_nationalities WHERE actor_id = ?').all(id)
         .map((r) => termLabel(db, r.country_id, lang)).filter(Boolean),

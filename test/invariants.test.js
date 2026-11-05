@@ -23,6 +23,7 @@ import { outputSchema as objectSchema } from '../src/tools/get_object.js';
 import { outputSchema as recordSchema } from '../src/tools/get_record.js';
 import { outputSchema as searchSchema } from '../src/tools/search_objects.js';
 import { outputSchema as provenanceSchema } from '../src/tools/search_provenance.js';
+import { outputSchema as actorsSchema } from '../src/tools/search_actors.js';
 import { outputSchema as statsSchema } from '../src/tools/collection_stats.js';
 import { outputSchema as termsSchema } from '../src/tools/find_terms.js';
 
@@ -31,6 +32,7 @@ const SCHEMAS = {
   skkg_get_record: recordSchema,
   skkg_search_objects: searchSchema,
   skkg_search_provenance: provenanceSchema,
+  skkg_search_actors: actorsSchema,
   skkg_collection_stats: statsSchema,
   skkg_find_terms: termsSchema,
 };
@@ -52,6 +54,13 @@ const PROVENANCE_FILTERS = [
   { acquisition_type: 'Schenkung' }, { acquired_from: 'person/36' }, { currency: 'CHF', price_min: 10000, sort: 'price_desc' },
   { year_from: 1950, year_to: 1960 },
 ];
+const ACTOR_FILTERS = [
+  { query: 'Anker' }, { query: 'Meier' }, { kind: 'group', place: 'Zürich' }, { born_from: 1800, born_to: 1850, sort: 'born_asc' },
+  { died_from: 1900 }, { place_country: 'FR' }, { gender: 'weiblich' }, { nationality: 'CH' },
+  ...['creator', 'influence', 'acquired_from', 'provenance_owner', 'photographer', 'photo_right_holder', 'author', 'subject_of_literature']
+    .map((role_in_collection) => ({ role_in_collection })),
+  { has_authority: false, role_in_collection: 'acquired_from' },
+];
 const DIMENSIONS = ['creator', 'creator_role', 'attribution', 'material', 'object_type', 'acquisition_decade', 'image_license'];
 
 // About `n` ids of `table`, spread over its id order.
@@ -70,6 +79,7 @@ function sweepCalls(path, n) {
         .flatMap((t) => spread(db, t, n).map((id) => ['skkg_get_record', { id, include: ['all'], limit: 50 }])),
       ...FILTERS.map((f) => ['skkg_search_objects', { ...f, limit: 50 }]),
       ...PROVENANCE_FILTERS.map((f) => ['skkg_search_provenance', { ...f, limit: 25 }]),
+      ...ACTOR_FILTERS.map((f) => ['skkg_search_actors', { ...f, limit: 50 }]),
       ...[{}, ...FILTERS].flatMap((f) => DIMENSIONS.map((dimension) => ['skkg_collection_stats', { ...f, dimension, top: 10 }])),
       ...['creator', 'material'].map((dimension) => ['skkg_collection_stats', { dimension, breakdown: 'epoch', top: 10 }]),
       ...[{ query: 'Radierung' }, { vocabulary: 'material' }, { id: 'type/21087/140347' }]
@@ -77,6 +87,7 @@ function sweepCalls(path, n) {
       // Offsets past the end of every list tool.
       ['skkg_search_objects', { material: 'Holz', offset: PAST, limit: 5 }],
       ['skkg_search_provenance', { owner_type: 'Auktionshaus', offset: PAST }],
+      ['skkg_search_actors', { role_in_collection: 'creator', offset: PAST }],
       ['skkg_collection_stats', { dimension: 'material', offset: PAST }],
       ['skkg_find_terms', { vocabulary: 'material', offset: PAST }],
       ['skkg_get_record', { id: 'person/36', include: ['all'], offset: PAST }],
@@ -153,7 +164,7 @@ test('every tool keeps its invariants over a sweep of the fixture database', { s
         assert.ok((structured.warnings ?? []).some((w) => w.startsWith(`\`offset\` ${PAST} is past the end`)), `${name}: ${structured.warnings}`);
         past++;
       }
-      assert.equal(past, 5);
+      assert.equal(past, 6);
     });
 
     await t.test('every summary count equals its section, or the total its cap warning gives', () => {

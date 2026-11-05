@@ -296,11 +296,13 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
         assert.ok(p.sources.some((s) => s.type === 'Archivquelle (extern)'), p.id);
       }
       assert.match(await callError(client, NAME, { owner_type: 'Auktion' }), /Pass it as `acquisition_type`/);
-      for (const value of ['DM', 'type/20033/287982']) {
-        const dm = await callError(client, NAME, { owner_type: value });
-        assert.match(dm, /is a term of the currency vocabulary, not of `owner_type`/, value);
-        assert.match(dm, /Pass it as `currency`/, value);
-      }
+      // "DM" is also the country code of Dominica; its term id is the currency term alone.
+      const dmLabel = await callError(client, NAME, { owner_type: 'DM' });
+      assert.match(dmLabel, /"DM" is a term of the country and currency vocabularies, not of `owner_type`/);
+      assert.match(dmLabel, /Pass it as `currency`\./);
+      const dmId = await callError(client, NAME, { owner_type: 'type/20033/287982' });
+      assert.match(dmId, /is a term of the currency vocabulary, not of `owner_type`/);
+      assert.match(dmId, /Pass it as `currency`/);
       const holz = await callError(client, NAME, { owner_type: 'Holz' });
       assert.match(holz, /"Holz" is a term of the material vocabulary, not of `owner_type`/);
       assert.match(holz, /This tool has no filter for it; skkg_search_objects takes it as `material`/);

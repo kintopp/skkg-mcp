@@ -35,7 +35,7 @@ from pathlib import Path
 
 from pyoxigraph import BlankNode, Literal, NamedNode, Store
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 D = "https://data.skkg.ch/"
 AAT = "http://vocab.getty.edu/aat/"
 PREFIX = """PREFIX crm: <http://www.cidoc-crm.org/cidoc-crm/>
@@ -498,6 +498,31 @@ def load_addresses(src, db, used):
     return len(rows), len(private)
 
 
+# SKKG gives some life dates only as a label ("14.12.1879", "07.1809", "28./29.06.1577", "1818").
+# A label that holds only a day, month, and year gives its year; life_dates in the report counts
+# the labels it cannot read ("vor 1450").
+LIFE_DATE_LABEL = re.compile(r"(?:[\d./ ]*\.\s*)?(\d{3,4})")
+# SKKG's label of a place that it records only by its country.
+UNSPECIFIED_PLACE = re.compile(r"place of (?:birth|death|formation|dissolution) \(not further specified\)")
+
+
+def life_date_year(label):
+    m = LIFE_DATE_LABEL.fullmatch((label or "").strip())
+    return int(m.group(1)) if m else None
+
+
+def life_event(lab, d0, d1, pl, stats):
+    """The (label, year_from, year_to, place) of a birth, death, formation, or dissolution."""
+    y0, y1 = year(d0), year(d1)
+    if y0 is None and y1 is None and lab:
+        y0 = y1 = life_date_year(lab)
+        stats["years from the label" if y0 is not None else "labels without a year"] += 1
+    if pl and UNSPECIFIED_PLACE.fullmatch(pl):
+        pl = None
+        stats["unspecified places dropped"] += 1
+    return lab, y0, y1, pl
+
+
 def load_actors(src, db, used):
     q = src.q
     kinds = {}
@@ -531,13 +556,16 @@ def load_actors(src, db, used):
     nat = []
     for a, t in q("person", "SELECT ?a ?t WHERE { ?a a skkg:Actor ; crm:P2_has_type ?t }"):
         if t.endswith("/citizenship"):
-            nat.append((a, t[: -len("/citizenship")]))
+            # SKKG's citizenship node is the same as (L54) its country term, which the nationality
+            # takes, so only the country term is loaded: the node would be a second "CH".
+            t = t[: -len("/citizenship")]
+            nat.append((a, t))
         elif scheme_of(t) == "20088":
             gender[a] = t
         used.add(t)
     used.update(c for _, c in nat)
 
-    events = defaultdict(dict)
+    events, life = defaultdict(dict), Counter()
     for a, ev, lab, d0, d1, pl, plt, note in q("person", """SELECT ?a ?e ?dl ?d0 ?d1 ?pl ?plt ?note WHERE {
         ?a a skkg:Actor . VALUES ?p { crm:P98i_was_born crm:P100i_died_in crm:P95i_was_formed_by crm:P99i_was_dissolved_by }
         ?a ?p ?e .
@@ -546,7 +574,7 @@ def load_actors(src, db, used):
         OPTIONAL { ?e crm:P7_took_place_at ?place . OPTIONAL { ?place rdfs:label ?pl } OPTIONAL { ?place crm:P89_falls_within ?plt } }
         OPTIONAL { ?e crm:P3_has_note ?note } }"""):
         kind = ev.rsplit("/", 1)[-1]
-        events[a][kind] = (lab, year(d0), year(d1), pl, plt, note)
+        events[a][kind] = (*life_event(lab, d0, d1, pl, life), plt, note)
         used.add(plt)
     other_events = []
     for a, ev, typ, lab, dl, d0, d1, d2, d3 in q("person", """SELECT ?a ?e ?t ?l ?dl ?d0 ?d1 ?d2 ?d3 WHERE {
@@ -635,7 +663,7 @@ def load_actors(src, db, used):
     used.update(r[2] for r in rels)
     for e in other_events:
         used.add(e[8])
-    return len(rows)
+    return {"actors": len(rows), "life_dates": dict(sorted(life.items()))}
 
 
 # ---------------------------------------------------------------- objects
@@ -1870,7 +1898,7 @@ def main():
         return r
 
     step("addresses", load_addresses, src, db, used)
-    step("actors", load_actors, src, db, used)
+    actors = step("actors", load_actors, src, db, used)
     step("objects", load_objects, src, db, used)
     step("multimedia", load_multimedia, src, db, used)
     lit = step("literature", load_literature, src, db, used)
@@ -1920,7 +1948,7 @@ def main():
     report = {"ok": ok, "meta": info, "seconds": round(time.time() - start), "steps": steps, "counts": counts,
               "privacy_checks": [{"check": c, "ok": k, "detail": d} for c, k, d in checks],
               "count_drops": drops, "object_terms_without_term": unknown_terms,
-              "authors_not_in_label": lit["authors_not_in_label"], "redacted": redacted,
+              "authors_not_in_label": lit["authors_not_in_label"], "life_dates": actors["life_dates"], "redacted": redacted,
               "acquisitions_after_dump": future, "dates_not_iso": odd_dates, "currency_labels_not_mapped": odd_currencies,
               "object_links_to_missing": derived["object_links_to_missing"], "period_years": derived["period_years"],
               "size_bytes": tmp.stat().st_size, "unloaded_edges": edges, "query_timings": src.timings}
@@ -1949,6 +1977,8 @@ def render_report(r):
     lines += ["", f"Object terms without a term record: {r['object_terms_without_term']}.", "",
               f"Authors of publications with several authors whose name is not in the publication's label, "
               f"so their order is a guess: {r['authors_not_in_label']}.", "",
+              "Life dates of actors (births, deaths, formations, dissolutions) that SKKG gives only as a label, and place "
+              "labels that stand for a country only: " + (", ".join(f"{k} {n}" for k, n in r["life_dates"].items()) or "none") + ".", "",
               "Rows whose protected names were replaced by \"Privatperson\": "
               + (", ".join(f"{k} {n}" for k, n in r["redacted"].items()) or "none") + ".", "",
               "Acquisition dates after the dump date (a year from 2100 on gets a filter the search schema refuses): "
