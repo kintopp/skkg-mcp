@@ -209,7 +209,7 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
       for (const currency of [...codes, 'DM']) {
         assert.ok((await search({ currency, limit: 1 })).total > 0, `"${currency}" lists nothing`);
       }
-      assert.match(await callError(client, NAME, { currency: 'type/20033/287982' }), /no price is recorded in "type\/20033\/287982"\. — The prices use CHF/);
+      assert.match(await callError(client, NAME, { currency: 'type/20033/287982' }), /`currency` takes a code or SKKG's label, not a term id \("type\/20033\/287982"\)\. — The prices use CHF/);
     });
 
     await t.test('a batch price is flagged', async () => {

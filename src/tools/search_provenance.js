@@ -167,9 +167,11 @@ function currencies(db) {
 
 function resolveCurrency(db, value) {
   const { codes, aliases, byInput } = currencies(db);
-  const code = byInput.get(value.trim().toUpperCase());
+  const v = value.trim();
+  const code = byInput.get(v.toUpperCase());
   if (code) return code;
-  throw new ToolError(`\`currency\`: no price is recorded in "${value.trim()}".`,
+  throw new ToolError(v.startsWith('type/') ? `\`currency\` takes a code or SKKG's label, not a term id ("${v}").`
+    : `\`currency\`: no price is recorded in "${v}".`,
     `The prices use ${codes.join(', ')}${aliases.length ? `; SKKG's ${aliases.length > 1 ? 'labels' : 'label'} ` +
       `${aliases.map(([k, c]) => `"${k}" (${c})`).join(', ')} ${aliases.length > 1 ? 'are' : 'is'} taken too` : ''}.`);
 }
