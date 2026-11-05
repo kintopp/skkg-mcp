@@ -277,11 +277,14 @@ def sid(iri):
     return iri[len(D):] if iri and iri.startswith(D) else iri
 
 
+DATE_YEAR = re.compile(r"\s*(-?\d{1,4})(?!\d)")
+# The date form the sort keys compare as text after the year: every date of the 2026-10-28 dump.
+ISO_DATE = re.compile(r"-?\d{4}-\d{2}-\d{2}")
+
+
 def year(value):
     """Year of an xsd:date, gYear or free text such as '1978-01-01', '-0600', '1909/1911'."""
-    if not value:
-        return None
-    m = re.match(r"\s*(-?\d{1,4})(?!\d)", value)
+    m = DATE_YEAR.match(value or "")
     return int(m.group(1)) if m else None
 
 
@@ -290,14 +293,34 @@ def year(value):
 OPEN_YEAR = 9999
 
 
+def _shifted(y):
+    assert -OPEN_YEAR <= y <= OPEN_YEAR, y
+    return f"{y + OPEN_YEAR + 1:05d}"
+
+
 def sort_key(y, date):
-    """The text the date sorts compare: the year, shifted so every year from -9999 to 9999 sorts
-    as text, then the recorded date, which breaks ties within the year and among open sides.
-    None when there is no year, so the entry sorts with the undated ones."""
+    """The text the date sorts compare: the year `y`, shifted so every year from -9999 to 9999
+    sorts as text, then the recorded `date` with its own year shifted the same way, which breaks
+    ties within the year and among open sides ("-0600" before "-0005", "189" before "1000").
+    The rest of the date compares as text, which needs YYYY-MM-DD (dates_not_iso counts the
+    others). None when there is no year, so the entry sorts with the undated ones."""
     if y is None:
         return None
-    assert -OPEN_YEAR <= y <= OPEN_YEAR, y
-    return f"{y + OPEN_YEAR + 1:05d} {date}"
+    m = DATE_YEAR.match(date or "")
+    recorded = f"{_shifted(int(m.group(1)))}{date[m.end():]}" if m else (date or "")
+    return f"{_shifted(y)} {recorded}"
+
+
+def dates_not_iso(db):
+    """The dates of periods and acquisitions that are not YYYY-MM-DD, by column."""
+    return {f"{t}.{c}": sum(not ISO_DATE.fullmatch(v) for (v,) in db.execute(f"SELECT {c} FROM {t} WHERE {c} IS NOT NULL"))
+            for t, c in (("provenance", "date_from"), ("provenance", "date_to"), ("acquisitions", "date"))}
+
+
+def acquisitions_after(db, as_of):
+    """The acquisitions dated after `as_of` (the dump date), by year, compared by sort key."""
+    return [{"year": y, "acquisitions": n} for y, n in db.execute(
+        "SELECT year, COUNT(*) FROM acquisitions WHERE sort_key > ? GROUP BY year ORDER BY year", (sort_key(year(as_of), as_of),))]
 
 
 def num(value):
@@ -1302,14 +1325,19 @@ def period_span(date_from, date_to, begin_q, begin_from, end_q, end_to):
 def period_years(db):
     """Store each period's year span, which the year filter reads, and its sort keys, which the
     date sorts read: the earliest side with the date recorded for it, and the latest."""
-    label = dict(db.execute("SELECT id, label FROM terms WHERE facet = 'date_qualifier'"))
+    labels = dict(db.execute("SELECT id, label FROM terms WHERE facet = 'date_qualifier'"))
+
+    def label(q):
+        """A qualifier id without a label is a qualifier the rule cannot read, so it stays one, by id."""
+        return None if q is None else labels.get(q) or f"unresolved {q}"
+
     kinds, unclassified, rows = Counter(), Counter(), []
     for pid, df, dt, bq, bf, eq, et in db.execute(
             "SELECT id, date_from, date_to, begin_qualifier_id, begin_from, end_qualifier_id, end_to FROM provenance").fetchall():
-        first, last, kind, classified = period_span(df, dt, label.get(bq), bf, label.get(eq), et)
+        first, last, kind, classified = period_span(df, dt, label(bq), bf, label(eq), et)
         kinds[kind] += 1
         if not classified:
-            unclassified[f"{label.get(bq) or '-'} / {label.get(eq) or '-'} ({kind})"] += 1
+            unclassified[f"{label(bq) or '-'} / {label(eq) or '-'} ({kind})"] += 1
         rows.append((first, last, sort_key(first, df or dt), sort_key(last, dt or df), pid))
     db.executemany("UPDATE provenance SET year_first = ?, year_last = ?, sort_first = ?, sort_last = ? WHERE id = ?", rows)
     return {"kinds": dict(sorted(kinds.items())), "unclassified": dict(sorted(unclassified.items()))}
@@ -1702,6 +1730,13 @@ def privacy_checks(db, exp):
     out.append((f"{ANON_ACTOR} and {ANON_ADDRESS} hold only \"Privatperson\"", n == 1 and m == 1, ""))
 
     actors = dict(db.execute("SELECT id, label FROM actors WHERE is_anonymous = 1"))
+    # Its own row names no one: each name field is empty or the placeholder label, and it has no
+    # life data. These fields reach actors_fts, so the `owner` filter would find a name here.
+    named = sum(db.execute(f"""SELECT COUNT(*) FROM actors WHERE id IN ({",".join("?" * len(actors))})
+        AND (COALESCE(name, label) IS NOT label OR COALESCE(first_name, label) IS NOT label
+             OR COALESCE(last_name, label) IS NOT label OR COALESCE(corporate_name, label) IS NOT label
+             OR COALESCE(birth_label, birth_from, birth_to, birth_place, birth_place_id, death_label, death_from,
+                         death_to, death_place, death_place_id, biography) IS NOT NULL)""", list(actors)).fetchone()) if actors else 0
     unflagged = sum(is_anonymisation(lab) for (lab,) in db.execute("SELECT label FROM actors WHERE is_anonymous = 0"))
     relabelled = sum(a not in actors or (a != ANON_ACTOR and not is_anonymisation(actors[a])) for a in exp["anon"])
     anon = sorted(exp["anon"] | actors.keys())
@@ -1709,9 +1744,10 @@ def privacy_checks(db, exp):
     children = sum(db.execute(f"SELECT COUNT(*) FROM {t} WHERE {c} IN ({marks})", anon).fetchone()[0] for t, c in (
         ("actor_names", "actor_id"), ("actor_external", "actor_id"), ("actor_gnd", "actor_id"), ("actor_events", "actor_id"),
         ("actor_links", "actor_id"), ("actor_relations", "subject_id"), ("actor_relations", "target_id")))
-    out.append(("every anonymised owner is flagged, keeps SKKG's placeholder label, and has no names, identifiers, events or relations",
-                unflagged == relabelled == children == 0,
-                f"{len(exp['anon'])} anonymised; {unflagged} unflagged, {relabelled} relabelled or missing, {children} child rows"))
+    out.append(("every anonymised owner is flagged, keeps SKKG's placeholder label, and has no names, life data, identifiers, events or relations",
+                unflagged == relabelled == named == children == 0,
+                f"{len(exp['anon'])} anonymised; {unflagged} unflagged, {relabelled} relabelled or missing, {named} with a name "
+                f"or life data in their own row, {children} child rows"))
     owners = {(p, o) for p, o in db.execute("SELECT id, owner_id FROM provenance") if o in exp["anon"]}
     sources = {(o, s) for o, s in db.execute("SELECT object_id, source_id FROM acquisitions") if s in exp["anon"]}
     out.append(("the anonymised owners keep their provenance periods and acquisitions",
@@ -1850,9 +1886,8 @@ def main():
     checks = privacy_checks(db, privacy_expectations(src))
     # Acquisition dates after the dump are wrong, and a decade from 2100 on gets a filter that
     # the search schema refuses (acquisition_year_to has a maximum of 2100).
-    future = [{"year": y, "acquisitions": n} for y, n in db.execute(
-        "SELECT year, COUNT(*) FROM acquisitions WHERE date > ? GROUP BY year ORDER BY year",
-        (info.get("data_as_of", "9999"),))]
+    future = acquisitions_after(db, info.get("data_as_of", "9999"))
+    odd_dates = dates_not_iso(db)
     tables = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '%fts%' ORDER BY name")]
     counts = {t: db.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tables}
     drops = []
@@ -1879,7 +1914,7 @@ def main():
               "privacy_checks": [{"check": c, "ok": k, "detail": d} for c, k, d in checks],
               "count_drops": drops, "object_terms_without_term": unknown_terms,
               "authors_not_in_label": lit["authors_not_in_label"], "redacted": redacted,
-              "acquisitions_after_dump": future, "currency_labels_not_mapped": odd_currencies,
+              "acquisitions_after_dump": future, "dates_not_iso": odd_dates, "currency_labels_not_mapped": odd_currencies,
               "object_links_to_missing": derived["object_links_to_missing"], "period_years": derived["period_years"],
               "size_bytes": tmp.stat().st_size, "unloaded_edges": edges, "query_timings": src.timings}
     Path(str(out) + ".report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1))
@@ -1911,14 +1946,17 @@ def render_report(r):
               + (", ".join(f"{k} {n}" for k, n in r["redacted"].items()) or "none") + ".", "",
               "Acquisition dates after the dump date (a year from 2100 on gets a filter the search schema refuses): "
               + (", ".join(f"{f['year']} ({f['acquisitions']})" for f in r["acquisitions_after_dump"]) or "none") + ".", "",
+              "Dates of periods and acquisitions not in the form YYYY-MM-DD, which the sort keys compare as text "
+              "after the year: " + ", ".join(f"{k} {n}" for k, n in r["dates_not_iso"].items()) + ".", "",
               "Currency labels that are neither an alias nor an ISO-like code, so their prices get a code of their own "
               "(label: prices): " + (", ".join(f"{k} ({n})" for k, n in r["currency_labels_not_mapped"].items()) or "none") + ".", "",
               "Links to objects not in the database, for every column the schema declares a link to objects "
               "(provenance_objects rows are dropped, with those of no object; the others are kept): "
               + ", ".join(f"{k} {n}" for k, n in r["object_links_to_missing"].items()) + ".", "",
               "Year spans of provenance periods: " + ", ".join(f"{k} {n}" for k, n in r["period_years"]["kinds"].items())
-              + "; not classified by the rule, because it does not know a qualifier or a date has no year, so placed "
-              "by their bounds alone (begin / end (placed as): periods): "
+              + "; not classified by the rule (begin / end (placed as): periods), because it does not know a qualifier, "
+              "and placed by the bounds and qualifiers it knows, or because a date has no year, and not placed, so never "
+              "matching a year filter: "
               + (", ".join(f"{k} ({n})" for k, n in r["period_years"]["unclassified"].items()) or "none") + ".", "",
               "## Census edges not read by the build", "",
               "Edges of the shape census whose predicate no build query reads for that record type. "

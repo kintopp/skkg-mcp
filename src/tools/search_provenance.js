@@ -204,8 +204,12 @@ function compile(db, args) {
   const narrowed = chainOnly.length ? 'chain' : acqOnly.length ? 'acquisition' : undefined;
   if (narrowed) {
     if (!layers.includes(narrowed)) {
-      throw new ToolError(`${list(narrowed === 'chain' ? chainOnly : acqOnly)} ${narrowed === 'chain' ? 'apply to chain periods' : 'apply to SKKG\'s acquisitions'} only, ` +
-        `and \`layer\` is "${args.layer}".`, `Drop the filter, or pass layer "${narrowed}" or "both".`);
+      const own = narrowed === 'chain' ? chainOnly : acqOnly;
+      // Dropping them leaves a usable call only when another filter remains.
+      const rest = given.length > own.length;
+      throw new ToolError(`${list(own)} ${own.length > 1 ? 'apply' : 'applies'} to ${narrowed === 'chain' ? 'chain periods' : 'SKKG\'s acquisitions'} only, ` +
+        `and \`layer\` is "${args.layer}".`,
+      rest ? `Drop ${list(own)}, or pass layer "${narrowed}" or "both".` : `Pass layer "${narrowed}" or "both", or leave \`layer\` out.`);
     }
     layers = [narrowed];
   }

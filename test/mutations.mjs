@@ -235,6 +235,7 @@ const MUTATIONS = [
   ["src/tools/search_provenance.js", "    layers = [narrowed];\n", "\n", "provenance layer narrowed by a filter"],
   ["src/tools/search_provenance.js", "  if (chainOnly.length && acqOnly.length) {", "  if (false) {", "provenance filters of both layers"],
   ["src/tools/search_provenance.js", "    if (!layers.includes(narrowed)) {", "    if (false) {", "provenance layer against a filter"],
+  ["src/tools/search_provenance.js", "const rest = given.length > own.length;", "const rest = true;", "provenance layer refusal suggests a call that runs"],
   ["src/tools/search_provenance.js", "|| args.sort === 'price_desc') && args.currency === undefined) {", "|| args.sort === 'price_desc') && false) {", "provenance price needs currency"],
   // The open sides themselves are the build's rule (scripts/tests/test_build_rules.py); these read its columns.
   ["src/tools/search_provenance.js", "[['year_from', 'p.year_last', '>='],", "[['year_from', 'p.year_first', '>='],", "provenance year_from reaches an open end"],

@@ -9,10 +9,14 @@ Ways the rules could fail, which the tests below pin:
 - a period with two dates or none is changed by its qualifiers;
 - a qualifier the rule does not know is placed without being counted, also when a bound or a
   "seit" decides the placement, or one without data to decide it ("frühestens ab") is classed;
+  a qualifier id without a term label is read as no qualifier;
 - a date without a year becomes a NULL year without a count;
 - the sort key of a side disagrees with its year (an open side not beyond every date, a year
   before 1000 or below 0 out of order as text), or ties within a year or among open sides are not
-  broken by the date recorded for that side;
+  broken by the date recorded for that side, in its chronological order also for negative and
+  unpadded years ("-0600" before "-0005", "189" before "1000");
+- a date that is not YYYY-MM-DD, whose rest the keys compare as text, is not counted;
+- an acquisition is counted as after the dump by comparing date text ("996-07-12" > "2026-10-28");
 - an acquisition's year is derived otherwise than a period's, or a dated acquisition lacks it;
 - a link to an object the database does not hold is not counted because its column is missing
   from a hand list, or a period link that is NULL or not shaped "object/…" survives the drop;
@@ -81,6 +85,32 @@ def test_sort_keys_order_by_year_then_the_recorded_date():
     assert b.sort_key(None, "undatiert") is None
 
 
+def test_open_sides_break_ties_in_the_chronological_order_of_their_recorded_dates():
+    # The open side's year is the same for all, so the recorded date alone orders them (review of f15e0a0, A1).
+    start = [b.sort_key(-9999, d) for d in ("-0600-01-01", "-0005-01-01", "0189-05-14", "1934-12-31")]
+    assert start == sorted(start)
+    end = [b.sort_key(9999, d) for d in ("189-05-14", "1000-01-01", "1852-01-01")]
+    assert end == sorted(end)
+
+
+def test_dates_not_in_iso_form_are_counted():
+    db = empty_db()
+    db.executemany("INSERT INTO provenance (id, date_from, date_to) VALUES (?,?,?)",
+                   [("provenance/a", "1990-01-01", "189-05-14"), ("provenance/b", "1990-1-1", None), ("provenance/c", None, "-0600-01-01")])
+    db.executemany("INSERT INTO acquisitions (object_id, date) VALUES (?,?)", [("object/1", "1979-11-14"), ("object/2", "1979")])
+    assert b.dates_not_iso(db) == {"provenance.date_from": 1, "provenance.date_to": 1, "acquisitions.date": 1}
+
+
+def test_acquisitions_after_the_dump_compare_by_date_not_text():
+    db = empty_db()
+    rows = [("object/1", "996-07-12"), ("object/2", "2026-10-28"), ("object/3", "2026-10-29"), ("object/4", "2091-03-01"),
+            ("object/5", "2085-01-01"), ("object/6", "1979-11-14")]
+    db.executemany("INSERT INTO acquisitions (object_id, date, year, sort_key) VALUES (?,?,?,?)",
+                   [(o, d, b.year(d), b.sort_key(b.year(d), d)) for o, d in rows])
+    assert b.acquisitions_after(db, "2026-10-28") == [{"year": 2026, "acquisitions": 1}, {"year": 2085, "acquisitions": 1},
+                                                      {"year": 2091, "acquisitions": 1}]
+
+
 def empty_db():
     db = sqlite3.connect(":memory:")
     db.executescript(b.DDL + b.FTS)
@@ -123,17 +153,20 @@ def test_derive_stores_the_year_spans_and_sort_keys_and_counts_what_it_cannot_cl
                     ("provenance/d", "1985-01-01", "type/54165/3", "1985-01-01", "type/54165/4", "9999-12-31"),
                     ("provenance/e", "undatiert", None, None, None, None)])
     db.execute("INSERT INTO provenance (id, date_from, date_to) VALUES ('provenance/f', '1970-03-01', '1975-06-30')")
+    # A qualifier id without a term label (review of f15e0a0, A2).
+    db.execute("""INSERT INTO provenance (id, date_from, begin_qualifier_id, begin_from)
+        VALUES ('provenance/g', '1960-01-01', 'type/54165/9', '1960-01-01')""")
     out = b.derive(db)
     assert dict(db.execute("SELECT id, year_first || '/' || year_last FROM provenance WHERE year_first IS NOT NULL")) == {
         "provenance/a": "1990/9999", "provenance/b": "1997/1997", "provenance/c": "1980/1980", "provenance/d": "1985/9999",
-        "provenance/f": "1970/1975"}
+        "provenance/f": "1970/1975", "provenance/g": "1960/1960"}
     # Earliest side: by start date. Latest side: the events by date, then the open ends by the date they record.
     order = lambda col: [i for (i,) in db.execute(f"SELECT id FROM provenance WHERE {col} IS NOT NULL ORDER BY {col}")]
-    assert order("sort_first") == ["provenance/f", "provenance/c", "provenance/d", "provenance/a", "provenance/b"]
-    assert order("sort_last") == ["provenance/f", "provenance/c", "provenance/b", "provenance/d", "provenance/a"]
+    assert order("sort_first") == ["provenance/g", "provenance/f", "provenance/c", "provenance/d", "provenance/a", "provenance/b"]
+    assert order("sort_last") == ["provenance/g", "provenance/f", "provenance/c", "provenance/b", "provenance/d", "provenance/a"]
     assert db.execute("SELECT sort_first, sort_last FROM provenance WHERE id = 'provenance/e'").fetchone() == (None, None)
     assert out["period_years"]["unclassified"] == {"neu / - (event)": 1, "neu / o. D. (open end)": 1,
-                                                   "- / - (date without a year)": 1}
+                                                   "- / - (date without a year)": 1, "unresolved type/54165/9 / - (event)": 1}
 
 
 def test_currency_labels_that_are_no_alias_and_no_iso_code_are_counted():

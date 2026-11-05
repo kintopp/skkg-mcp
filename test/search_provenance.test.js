@@ -2,6 +2,8 @@
 // - a call with no filter lists every acquisition instead of being refused
 // - a filter of one layer (owner) is silently applied to the other, or the layer it belongs to is
 //   not searched alone, so acquisitions show up for an owner search
+// - the refusal of a filter against `layer` suggests dropping the filter when no other filter
+//   remains, so following it is refused for having no filter
 // - filters of both layers together (owner and acquired_from) return an empty result without
 //   saying why, or the refusal points to a call that drops the chain filters; `layer` contradicts
 //   a filter's layer without an error
@@ -121,8 +123,18 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
       assert.match(both, /`owner` applies to chain periods and `acquired_from`/);
       assert.match(both, /two calls, one with the chain filters and one with the acquisition filters/);
       assert.doesNotMatch(both, /skkg_search_objects/, 'that tool takes no chain filter');
-      assert.match(await callError(client, NAME, { owner: STUKER, layer: 'acquisition' }), /pass layer "chain" or "both"/);
-      assert.match(await callError(client, NAME, { acquisition_type: 'Auktion', layer: 'chain' }), /pass layer "acquisition" or "both"/);
+      // Alone, the filter cannot be dropped: the suggestion is to change `layer` (review of f15e0a0, B1).
+      const alone = await callError(client, NAME, { owner: STUKER, layer: 'acquisition' });
+      assert.match(alone, /`owner` applies to chain periods only/);
+      assert.match(alone, /Pass layer "chain" or "both", or leave `layer` out/);
+      assert.doesNotMatch(alone, /Drop/);
+      await search({ owner: STUKER, layer: 'chain' });
+      await search({ owner: STUKER });
+      assert.match(await callError(client, NAME, { acquisition_type: 'Auktion', layer: 'chain' }), /Pass layer "acquisition" or "both"/);
+      // With another filter, dropping it leaves a call that runs.
+      const withYear = await callError(client, NAME, { owner_type: 'Auktionshaus', year_from: 1990, layer: 'acquisition' });
+      assert.match(withYear, /Drop `owner_type`, or pass layer "chain" or "both"/);
+      await search({ year_from: 1990, layer: 'acquisition' });
     });
 
     await t.test('an object can match by its chain and its acquisition at once', async () => {

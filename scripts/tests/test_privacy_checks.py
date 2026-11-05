@@ -8,7 +8,8 @@ Ways the checks could fail, which the tests below pin:
 - a denylist misses a new spelling (a column `lastname`, a new table);
 - a name is matched only in one case, Unicode form or spacing, or only in its own record;
 - a name is found only where the loader writes it, not in another column, table, or FTS copy;
-- the anonymisation is checked for presence, not for content and links;
+- the anonymisation is checked for presence, not for content and links, or an anonymised owner's
+  own row (its name fields, life data) is not checked, though it feeds the actor search;
 - the allowed fields (acquisition notes) or a person's own organisation are refused.
 
 Values from the store are injected but never printed: assertions compare check names only.
@@ -190,6 +191,17 @@ def test_names_or_identifiers_attached_to_an_anonymised_owner_fail(env):
         assert fails(env, ANON_OWNERS, ("INSERT INTO actor_names VALUES (?, ?, NULL, 'skkg')", x, env["full"]))
         assert fails(env, ANON_OWNERS, ("INSERT INTO actor_gnd VALUES (?, '123', ?, NULL, NULL)", x, env["full"]))
         assert fails(env, ANON_OWNERS, ("INSERT INTO actor_external VALUES (?, 'gnd', '123', 'https://d-nb.info/gnd/123')", x))
+
+
+def test_a_name_or_life_data_in_an_anonymised_owners_own_row_fails(env):
+    # Its own row feeds actors_fts, so the `owner` filter would find the name (review of f15e0a0, B2).
+    for x in (b.ANON_ACTOR, env["anon"][0]):
+        for col, value in (("name", env["full"]), ("first_name", env["given"]), ("last_name", env["surname"]),
+                           ("corporate_name", env["surname"]), ("birth_label", "1901"), ("death_place", "Winterthur"),
+                           ("biography", env["surname"])):
+            assert fails(env, ANON_OWNERS, (f"UPDATE actors SET {col} = ? WHERE id = ?", value, x)), f"{x} {col}"
+    # The placeholder itself in a name field is how SKKG publishes the unknown owner.
+    assert ANON_OWNERS not in " ".join(failed(env, ("UPDATE actors SET name = label, last_name = label WHERE id = ?", env["anon"][0])))
 
 
 def test_an_anonymised_owner_replaced_in_a_period_or_acquisition_fails(env):
