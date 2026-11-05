@@ -1,15 +1,34 @@
 // Mutation check for the tool tests: each entry breaks one behaviour in src/ (or a test
-// helper), runs the suite, and expects it to fail. Run with `npm run mutate` after changing
-// tools or tests; every mutation must be killed. Needs the fixture database (test/CLAUDE.md).
-// A pattern that no longer matches is reported, not skipped: update the entry with the code.
+// helper), runs the tests, and expects them to fail. Every mutation must be killed. Needs the
+// fixture database (test/CLAUDE.md). A pattern that no longer matches is reported, not
+// skipped: update the entry with the code.
+//
+//   npm run mutate                      every entry
+//   npm run mutate -- --changed <ref>   only the entries a change since <ref> can affect
+//
+// Each entry first runs the test file that killed it last time (test/.mutation-cache.json,
+// gitignored), or else the test file named after the mutated file. Only when that file passes
+// does it run every test file, one process each, so a survivor is always confirmed against
+// the whole suite and the cache learns every file that kills it.
+//
+// --changed selects an entry when its file changed since <ref> (committed, staged, unstaged,
+// or untracked), when a test file that killed it changed, when it has no cache record (new or
+// edited entries included), or for every entry when a test script other than *.test.js and this
+// file changed (the helpers). A change elsewhere can still let a mutation survive, e.g. a config value a
+// killing test depends on, so run every entry before a review.
 
-import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
-import { dirname, join } from 'node:path';
+import { existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { spawn, execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { availableParallelism } from 'node:os';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const tests = readdirSync(join(root, 'test')).filter((n) => n.endsWith('.test.js')).map((n) => `test/${n}`);
+const tests = readdirSync(join(root, 'test')).filter((n) => n.endsWith('.test.js')).sort().map((n) => `test/${n}`);
+const CACHE_PATH = join(root, 'test', '.mutation-cache.json');
+// A test file that takes longer is stopped and counts as killing the mutation: a hang is caught, if crudely.
+const TIMEOUT_MS = 60_000;
 
 // [file, original text, mutated text, label]. The original must occur exactly once.
 const MUTATIONS = [
@@ -210,15 +229,104 @@ const MUTATIONS = [
   ['src/tools/find_terms.js', "'Objects that use this term itself; for a photo licence, objects whose primary photo has it, ' +\n    'as", "'Objects that use this term itself; ' +\n    'as", 'licence object_count described'],
 ];
 
-// Restore the mutated file if the run is interrupted.
-let pending;
-const restore = () => { if (pending) writeFileSync(pending.path, pending.text); pending = undefined; };
-for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { restore(); process.exit(130); });
+// The cache key changes with the entry, so an edited entry has no record and is selected.
+const keyOf = ([file, from, to]) => createHash('sha1').update(`${file}\0${from}\0${to}`).digest('hex').slice(0, 16);
+const labels = MUTATIONS.map((m) => m[3]);
+if (new Set(labels).size !== labels.length) throw new Error('mutation labels must be unique');
 
+function readCache() {
+  try {
+    return JSON.parse(readFileSync(CACHE_PATH, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+// The files changed since `ref`, in the working tree included, and the untracked ones.
+function changedSince(ref) {
+  const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
+  return new Set([...git('diff', '--name-only', ref), ...git('ls-files', '--others', '--exclude-standard')]);
+}
+
+function select(cache, ref) {
+  if (!ref) return MUTATIONS;
+  const changed = changedSince(ref);
+  const helper = (f) => f.startsWith('test/') && /\.m?js$/.test(f) && !f.endsWith('.test.js') && f !== 'test/mutations.mjs';
+  if ([...changed].some(helper)) return MUTATIONS;
+  return MUTATIONS.filter((m) => {
+    const record = cache[keyOf(m)];
+    return changed.has(m[0]) || !record || record.killers.some((k) => changed.has(k.file));
+  });
+}
+
+// Runs test files, each in its own process, at most `parallel` at a time: [{ file, killed, ms }].
+// `children` holds the running processes, so an interrupt can stop them.
+const children = new Set();
+const stop = (child) => {
+  try {
+    process.kill(-child.pid, 'SIGKILL');
+  } catch {
+    // The group has exited already.
+  }
+};
+function runFile(file) {
+  const start = Date.now();
+  return new Promise((resolve) => {
+    // Its own process group, so that stopping it also stops the test process `node --test` starts.
+    const child = spawn(process.execPath, ['--test', file], { cwd: root, stdio: 'ignore', detached: true });
+    children.add(child);
+    const timer = setTimeout(() => stop(child), TIMEOUT_MS);
+    child.on('exit', (code, signal) => {
+      clearTimeout(timer);
+      children.delete(child);
+      resolve({ file, killed: code !== 0 || signal !== null, ms: Date.now() - start });
+    });
+  });
+}
+async function runFiles(files, parallel = Math.max(1, availableParallelism() - 1)) {
+  const queue = [...files];
+  const results = [];
+  await Promise.all(Array.from({ length: Math.min(parallel, queue.length) }, async () => {
+    while (queue.length) results.push(await runFile(queue.shift()));
+  }));
+  return results;
+}
+
+// The test file to try first: the quickest that killed the entry before, or the one named after its file.
+function firstTry(m, record) {
+  if (record?.killers.length) return [...record.killers].sort((a, b) => a.ms - b.ms)[0].file;
+  const guess = `test/${basename(m[0]).replace(/\.m?js$/, '')}.test.js`;
+  return tests.includes(guess) ? guess : undefined;
+}
+
+// Restores the mutated file on an interrupt. The runner awaits its children, so the event
+// loop is free to run this handler.
+let pending;
+const restore = () => {
+  if (pending) writeFileSync(pending.path, pending.text);
+  pending = undefined;
+};
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => {
+    for (const child of children) stop(child);
+    restore();
+    process.exit(130);
+  });
+}
+
+const refArg = process.argv.indexOf('--changed');
+const ref = refArg >= 0 ? process.argv[refArg + 1] : undefined;
+if (refArg >= 0 && !ref) throw new Error('--changed needs a git ref, e.g. --changed HEAD');
+const cache = readCache();
+const chosen = select(cache, ref);
+console.log(`${chosen.length} of ${MUTATIONS.length} entries${ref ? ` (changed since ${ref})` : ''}`);
+
+const started = Date.now();
 let failures = 0;
-for (const [file, from, to, label] of MUTATIONS) {
+for (const m of chosen) {
+  const [file, from, to, label] = m;
   const path = join(root, file);
-  const text = readFileSync(path, 'utf8');
+  const text = existsSync(path) ? readFileSync(path, 'utf8') : '';
   const n = text.split(from).length - 1;
   if (n !== 1) {
     console.log(`STALE    ${label}: pattern found ${n} times in ${file}`);
@@ -227,15 +335,32 @@ for (const [file, from, to, label] of MUTATIONS) {
   }
   pending = { path, text };
   writeFileSync(path, text.replace(from, to));
+  let killed;
+  let how;
   try {
-    // A timeout counts as killed: a mutation that hangs a test is caught, if crudely.
-    const r = spawnSync(process.execPath, ['--test', ...tests], { cwd: root, encoding: 'utf8', timeout: 60_000 });
-    const killed = r.status !== 0;
-    if (!killed) failures++;
-    console.log(`${killed ? 'killed  ' : 'SURVIVED'} ${label}`);
+    const key = keyOf(m);
+    const first = firstTry(m, cache[key]);
+    const tried = first ? await runFile(first) : undefined;
+    if (tried?.killed) {
+      killed = true;
+      how = basename(tried.file);
+      const others = (cache[key]?.killers ?? []).filter((k) => k.file !== tried.file);
+      cache[key] = { label, killers: [{ file: tried.file, ms: tried.ms }, ...others] };
+    } else {
+      // The file tried first passed, so only the others can kill it.
+      const killers = (await runFiles(tests.filter((f) => f !== tried?.file))).filter((r) => r.killed).map(({ file: f, ms }) => ({ file: f, ms }));
+      killed = killers.length > 0;
+      how = killed ? `suite: ${killers.map((k) => basename(k.file)).join(', ')}` : 'suite';
+      if (killed) cache[key] = { label, killers };
+      else delete cache[key];
+    }
   } finally {
     restore();
   }
+  if (!killed) failures++;
+  console.log(`${killed ? 'killed  ' : 'SURVIVED'} ${label} (${how})`);
+  writeFileSync(CACHE_PATH, `${JSON.stringify(cache, null, 1)}\n`);
 }
-console.log(failures ? `${failures} of ${MUTATIONS.length} not killed` : `all ${MUTATIONS.length} killed`);
+const minutes = ((Date.now() - started) / 60_000).toFixed(1);
+console.log(failures ? `${failures} of ${chosen.length} not killed (${minutes} min)` : `all ${chosen.length} killed (${minutes} min)`);
 process.exitCode = failures ? 1 : 0;

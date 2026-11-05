@@ -17,7 +17,8 @@ The repository also holds the research behind the server:
 | Install | `npm install` |
 | Tests | `npm test` |
 | Lint | `npm run lint` |
-| Mutation check of the tests (needs the fixture database) | `npm run mutate` |
+| Mutation check of the tests (needs the fixture database; about 15 minutes, or a few with a warm cache) | `npm run mutate` |
+| Mutation check of only the entries a change can affect | `npm run mutate -- --changed HEAD` |
 | Injection tests of the build's privacy checks (about 2 minutes; need the partial store and fixture database) | `uv run --with pyoxigraph --with pytest python -I -m pytest -q scripts/tests` |
 | Mutation check of those tests (about 10 minutes) | `uv run --with pyoxigraph --with pytest python -I scripts/tests/mutate.py` |
 | Run against the full database | `SKKG_DB_PATH=data/db/skkg-20261028.sqlite npm start` |

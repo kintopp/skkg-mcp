@@ -31,6 +31,9 @@ __pycache__/
 # Logs
 *.log
 
+# Mutation check: which test file killed each entry (test/mutations.mjs)
+test/.mutation-cache.json
+
 # OS / temp
 Thumbs.db
 
