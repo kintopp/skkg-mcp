@@ -12,8 +12,8 @@ import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
 import { capList, paging, showing, pastEnd, tailLines } from '../lib/results.js';
 import { objectRowLines, periodLines, periodRefLine, acquisitionLines } from '../lib/text.js';
-import { resolveTerms, actorFilter, assertRange, filterValues, valuesHint, termName } from '../lib/filters.js';
-import { TERM_FILTERS as TERM_FILTERS_OF } from './term_filters.js';
+import { resolveTerms, actorFilter, assertRange, filterValues, valuesOfTerms, valuesHint, termName } from '../lib/filters.js';
+import { TERM_FILTERS as TERM_FILTERS_OF, VALUE_FILTERS } from './term_filters.js';
 import {
   objectRowShape, periodShape, periodRefShape, acquisitionOut, appliedOut, langIn, int, termField, idField, yearField,
 } from './schemas.js';
@@ -155,15 +155,15 @@ function resolvePlaces(db, value) {
   return hits;
 }
 
-// `currency` takes the codes of the priced entries, from its record in term_filters.js; the build
+// `currency` takes the codes of the priced entries, from its record in VALUE_FILTERS; the build
 // normalises SKKG's duplicate terms to one code each.
-const CURRENCY = { tool: SEARCH_PROVENANCE_TOOL_NAME, field: 'currency', facet: 'currency' };
+const CURRENCY = { tool: SEARCH_PROVENANCE_TOOL_NAME, field: 'currency', facet: VALUE_FILTERS[SEARCH_PROVENANCE_TOOL_NAME].currency.facet };
 function resolveCurrency(db, value) {
-  const { pairs, values: codes } = filterValues(db, CURRENCY.tool, CURRENCY.field);
+  const codes = filterValues(db, CURRENCY.tool, CURRENCY.field);
   const v = value.trim();
   if (codes.includes(v.toUpperCase())) return v.toUpperCase();
   const { ids } = resolveTerms(db, CURRENCY, v);
-  const viaTerm = [...new Set(pairs.filter((p) => ids.includes(p.k)).map((p) => p.v))].sort();
+  const viaTerm = valuesOfTerms(db, CURRENCY.tool, CURRENCY.field, ids);
   if (viaTerm.length === 1) return viaTerm[0];
   const named = v.startsWith('type/') ? termName(db, v) : `"${v}"`;
   if (viaTerm.length > 1) {
@@ -215,7 +215,7 @@ function compile(db, args) {
   const warnings = [];
 
   for (const [field, f] of Object.entries(TERM_FILTERS)) {
-    if (args[field] === undefined || f.values) continue;
+    if (args[field] === undefined) continue;
     const { ids, matched } = resolveTerms(db, { tool: SEARCH_PROVENANCE_TOOL_NAME, field, facet: f.facet }, args[field]);
     const inList = `IN (${placeholders(ids.length)})`;
     add(f.layer, f.exists ? `EXISTS (${f.exists} ${inList})` : `${f.sql} ${inList}`, ...ids);

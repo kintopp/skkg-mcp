@@ -176,6 +176,7 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
       await assertVocabulariesListed(text, ['technique']);
       // "Fotografie" is an object type and a material.
       const both = await callError(client, NAME, { epoch: 'Fotografie' });
+      assert.match(both, /is a term of the object_type and material vocabularies/);
       assert.match(both, /`object_type`/);
       assert.match(both, /`material`/);
       // The parameter is named as the caller wrote it, its vocabulary as skkg_find_terms takes it.

@@ -17,7 +17,8 @@
 //   without a price is refused as unknown instead of as having no price; an unknown term id is
 //   sent to German labels instead of the codes
 // - a currency label or id passed to another filter ("DM" as owner_type, or as acquisition_type of
-//   skkg_search_objects) is refused without naming `currency`
+//   skkg_search_objects) is refused without naming `currency`, or a currency term that no price
+//   uses ("RM") is sent to `currency`, which refuses it
 // - "zurich" misses "Zürich", or "Bern" matches "Bernhard" (matches inside a word)
 // - a period open at one end ("seit 2002", "o. D.–vmtl. 1979") misses the years on its open side,
 //   a single dated event (an auction day) matches later years, a lone date qualified otherwise
@@ -45,6 +46,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
 import { withClient, callOk, callError, allPages, FIXTURE_DB } from './helpers.js';
 import { outputSchema } from '../src/tools/search_provenance.js';
 
@@ -276,6 +278,24 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
         assert.match(dm, /is a term of the currency vocabulary, not of `owner_type`/, value);
         assert.match(dm, /Pass it as `currency`/, value);
       }
+    });
+
+    await t.test('every currency term sent to `currency` by another filter is taken there', async () => {
+      const db = new DatabaseSync(FIXTURE_DB.path, { readOnly: true });
+      const terms = db.prepare("SELECT id, label FROM terms WHERE facet = 'currency' ORDER BY id").all();
+      db.close();
+      const sent = new Set();
+      for (const { id, label } of terms) {
+        for (const value of [id, label]) {
+          if (!/Pass it as `currency`/.test(await callError(client, NAME, { owner_type: value }))) continue;
+          sent.add(id);
+          const r = await callOk(client, NAME, { currency: value, limit: 1 }, outputSchema);
+          assert.ok(r.total > 0, `${value} is sent to currency, which lists nothing`);
+        }
+      }
+      // "DM" has a price and "RM" none (type/20033/44198), so the check covers both cases.
+      assert.ok(sent.has('type/20033/287982'));
+      assert.ok(!sent.has('type/20033/44198'));
       const holz = await callError(client, NAME, { owner_type: 'Holz' });
       assert.match(holz, /"Holz" is a term of the material vocabulary, not of `owner_type`/);
       assert.match(holz, /This tool has no filter for it; skkg_search_objects takes it as `material`/);

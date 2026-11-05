@@ -61,7 +61,8 @@ const description =
   'exact label matches, then the terms used most. Each term carries its id, its path in the hierarchy, its year range (epochs), ' +
   'its matches in GND, AAT, or Wikidata, how many objects use it (a photo licence: objects whose primary photo has it), ' +
   'and `filter` and `filter_tool`: the search tool parameter that takes it (skkg_search_objects, or skkg_search_provenance ' +
-  'for the vocabularies of provenance periods). With `id`, returns one term with its broader and narrower terms. ' +
+  'for the vocabularies of provenance periods). Currency terms carry none: `currency` of skkg_search_provenance takes the code, ' +
+  'which stands for every term of that currency. With `id`, returns one term with its broader and narrower terms. ' +
   'With only `vocabulary`, lists that vocabulary. To search objects, use skkg_search_objects; ' +
   'its term filters take these labels or ids directly.';
 
