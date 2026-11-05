@@ -1,12 +1,11 @@
 // Text channel of skkg_get_record: the summary and every section the caller asked for, as
 // short lines, never JSON. Hosts differ in which channel they show the model.
 
-import { tailLines } from '../lib/results.js';
-import { present, join, span, point, nameOf, actor, list, photoRights, periodLines, objectRowLines } from '../lib/text.js';
+import { showing, tailLines } from '../lib/results.js';
+import { present, join, span, point, nameOf, actor, list, photoRights, periodLines, objectRowLines, searchArgs } from '../lib/text.js';
 
 // A line of parts, or nothing when every part is empty.
 const line = (parts, sep) => join(parts, sep) || undefined;
-const args = (f) => f && Object.entries(f).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ');
 const people = (label, xs) => (xs?.length ? `${label}: ${xs.map((a) => `${nameOf(a)} (${join([a.role, a.id])})`).join('; ')}` : undefined);
 
 function lifeLine(label, e) {
@@ -16,7 +15,7 @@ function lifeLine(label, e) {
 }
 
 function roleLine(r) {
-  return `- ${join([r.as, r.role])}: ${r.count} ${r.count_of}${r.filter ? ` · skkg_search_objects ${args(r.filter)}` : ''}`;
+  return `- ${join([r.as, r.role])}: ${r.count} ${r.count_of}${r.filter ? ` · skkg_search_objects ${searchArgs(r.filter)}` : ''}`;
 }
 
 function actorSummary(s, label) {
@@ -104,13 +103,12 @@ function external(x) {
 }
 
 function objectLines(o) {
-  const shown = o.returned ? `, showing ${o.offset + 1}–${o.offset + o.returned}` : '';
   return [
-    `Objects: ${o.total}${shown}`,
-    o.filter && `The same list: skkg_search_objects ${args(o.filter)}`,
+    `Objects: ${o.total}${showing(o, o.total)}`,
+    o.filter && `The same list: skkg_search_objects ${searchArgs(o.filter)}`,
     ...(o.items ?? []).map((r, i) => {
       const linked = (r.links ?? []).map((l) => join([l.as, join([l.role, l.attribution])], ' '));
-      const extras = [join([...linked, ...refRest(r)], ' · '), ...(r.references ?? []).map((x) => join(refRest(x), ' · '))];
+      const extras = [join([...linked, ...refRest(r)], ' · '), ...(r.references ?? []).map((x) => `reference ${x.n}: ${join(refRest(x), ' · ') || 'no details'}`)];
       return [objectRowLines(r, o.offset + i + 1), ...extras.filter(present).map((x) => `   ${x}`)].join('\n');
     }),
     o.has_more && `More objects: offset ${o.next_offset}.`,

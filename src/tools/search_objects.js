@@ -7,7 +7,7 @@ import { getDatabase, staleWarning } from '../db.js';
 import { objectRow } from '../lib/objects.js';
 import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
-import { paging, tailLines } from '../lib/results.js';
+import { paging, showing, pastEnd, tailLines } from '../lib/results.js';
 import { objectQueryShape, objectFilterShape, hasObjectFilter, compileObjectQuery } from './object_filters.js';
 import { objectRowShape, appliedOut, langIn } from './schemas.js';
 import { objectRowLines } from '../lib/text.js';
@@ -85,6 +85,8 @@ export function searchObjects(db, meta, args) {
   } else if (total === 0) {
     warnings.push('No object matches these filters together. Drop one filter at a time to see which one empties the result.');
   }
+  const past = pastEnd(args.offset, total, 'objects');
+  if (past) warnings.push(past);
   const stale = staleWarning(meta);
   if (stale) warnings.push(stale);
 
@@ -112,7 +114,7 @@ export function searchObjects(db, meta, args) {
 }
 
 function renderText(s) {
-  const head = `${s.total} objects` + (s.total > s.returned ? `, showing ${s.offset + 1}–${s.offset + s.returned}` : '') +
+  const head = `${s.total} objects${showing(s, s.total)}` +
     ` (sorted by ${s.sort}).`;
   const lines = (s.results ?? []).map((r, i) => objectRowLines(r, s.offset + i + 1));
   return [head, ...lines, ...tailLines(s)].join('\n');

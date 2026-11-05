@@ -10,10 +10,16 @@ export const point = (a, b) => (b === undefined || b === null || a === b ? a : s
 
 export const nameOf = (a) => a.name ?? a.id;
 export const actor = (a) => a && (a.name ? `${a.name} (${a.id})` : a.id);
-// A creator with the id, and the attribution and influence that qualify the authorship.
-export const creatorRef = (c) => `${join([nameOf(c), c.role, c.attribution, c.relation === 'influence' && 'influence'])} (${c.id})`;
+// A creator with the role, attribution, and influence that qualify the authorship, and the id, in
+// brackets: actor labels can hold commas ("J. C. Müller, Buch- und Papierhändler, St. Gallen").
+export const creatorRef = (c) => {
+  const qualifiers = join([c.role, c.attribution, c.relation === 'influence' && 'influence']);
+  return `${nameOf(c)} (${qualifiers ? `${qualifiers}; ` : ''}${c.id})`;
+};
 export const obj = (r) => r && join([r.inventory_number, r.title ?? '(untitled)', r.id], ' · ');
 export const list = (label, items) => (items?.length ? `${label}: ${items.join(', ')}` : undefined);
+// skkg_search_objects arguments, e.g. `creator: "person/36", include_narrower: false`.
+export const searchArgs = (f) => f && Object.entries(f).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ');
 
 export function priceText(p) {
   if (!p) return undefined;

@@ -11,7 +11,7 @@ import { termLabel } from '../lib/labels.js';
 import { termsByLabel } from '../lib/terms.js';
 import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
-import { paging, tailLines } from '../lib/results.js';
+import { paging, showing, pastEnd, tailLines } from '../lib/results.js';
 import { FIELD_OF_FACET } from './object_filters.js';
 import { langIn, str, int, termOut as termRefOut } from './schemas.js';
 import {
@@ -59,7 +59,8 @@ const description =
   'Labels are German; English and French labels match where SKKG has them. Each word matches ' +
   'the start of a word in a label ("Radier" finds "Radierung"). Terms in use come first; among them, ' +
   'exact label matches, then the terms used most. Each term carries its id, its path in the hierarchy, its year range (epochs), ' +
-  'its matches in GND, AAT, or Wikidata, how many objects use it, and `filter`: the skkg_search_objects ' +
+  'its matches in GND, AAT, or Wikidata, how many objects use it (a photo licence: objects whose primary photo has it), ' +
+  'and `filter`: the skkg_search_objects ' +
   'parameter that takes it. With `id`, returns one term with its broader and narrower terms. ' +
   'With only `vocabulary`, lists that vocabulary. To search objects, use skkg_search_objects; ' +
   'its term filters take these labels or ids directly.';
@@ -88,7 +89,8 @@ const termRowOut = () => z.object({
   year_from: int(),
   year_to: int(),
   matches: z.array(z.string()).optional().describe('The same concept in GND, AAT, Wikidata, or GeoNames'),
-  object_count: int().describe('Objects that use this term itself; absent for vocabularies of other records'),
+  object_count: int().describe('Objects that use this term itself; for a photo licence, objects whose primary photo has it, ' +
+    'as the image_license filter matches; absent for vocabularies of other records'),
   object_count_with_narrower: int().describe(
     'Objects that use this term or a narrower one: what a filter with include_narrower (the default) matches'),
   narrower_count: int().describe('Number of narrower terms'),
@@ -240,10 +242,8 @@ export function findTerms(db, meta, args) {
     rows = pageRows(db, found.ids, args);
   }
 
-  if (total > 0 && args.offset >= total) {
-    warnings.push(`\`offset\` ${args.offset} is past the end: there are ${total} ${args.id !== undefined ? 'narrower terms' : 'terms'}. ` +
-      'Start again at offset 0.');
-  }
+  const past = pastEnd(args.offset, total, args.id !== undefined ? 'narrower terms' : 'terms');
+  if (past) warnings.push(past);
   const stale = staleWarning(meta);
   if (stale) warnings.push(stale);
   const build = (list) => {
@@ -263,13 +263,12 @@ function termLine(t) {
     .filter(Boolean).join(' · ');
 }
 
-const showing = (s) => (s.returned && s.total > s.returned ? `, showing ${s.offset + 1}–${s.offset + s.returned}` : '');
 
 function renderText(s) {
   const lines = s.term
     ? [termLine(s.term), s.broader?.length && `Broader: ${s.broader.map((b) => `${b.label ?? b.id} (${b.id})`).join(' > ')}`,
-      s.total && `${s.total} narrower terms${showing(s)}:`]
-    : [`${s.total} terms${showing(s)}.`];
+      s.total && `${s.total} narrower terms${showing(s, s.total)}:`]
+    : [`${s.total} terms${showing(s, s.total)}.`];
   (s.term ? s.narrower : s.results)?.forEach((t, i) => lines.push(`${s.offset + i + 1}. ${termLine(t)}`));
   return [...lines.filter(Boolean), ...tailLines(s)].join('\n');
 }

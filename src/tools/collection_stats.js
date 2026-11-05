@@ -9,12 +9,13 @@ import { stmt } from '../lib/sql.js';
 import { termLabel, actorRef } from '../lib/labels.js';
 import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
-import { paging, tailLines } from '../lib/results.js';
+import { paging, showing, pastEnd, tailLines } from '../lib/results.js';
 import {
   objectQueryShape, objectFilterShape, compileObjectQuery, VALUE_PAIRS, TERM_FILTER_FIELDS, creatorRowPairs,
   ACQUISITION_YEAR, ACQUISITION_DATED,
 } from './object_filters.js';
 import { appliedOut, langIn, str } from './schemas.js';
+import { searchArgs } from '../lib/text.js';
 import {
   READ_ONLY_ANNOTATIONS, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT, STATS_DEFAULT_TOP, STATS_MAX_TOP,
   STATS_MAX_TOP_WITH_BREAKDOWN, BREAKDOWN_DEFAULT_TOP, BREAKDOWN_MAX_TOP, STATS_SQL_RESTRICT_MAX,
@@ -74,14 +75,16 @@ const description =
   '`breakdown` adds a second dimension per bucket (a cross table). Buckets carry `filter`, the ' +
   'skkg_search_objects arguments that list exactly their objects when added to this call\'s arguments ' +
   '(production decades have none). With a creator filter, the creator dimensions count only the creator rows it matches: ' +
-  'with `creator`, dimension creator_role gives that creator\'s roles. With no query and no filter, the whole collection is counted.';
+  'with `creator`, dimension creator_role gives that creator\'s roles. Two creator dimensions (creator, creator_role, attribution) ' +
+  'are crossed per creator row: creator by creator_role gives each creator\'s own roles. ' +
+  'With no query and no filter, the whole collection is counted.';
 
 const dimensionEnum = (what) => z.enum(Object.keys(DIMENSIONS)).describe(
   `${what}: ${Object.entries(DIMENSIONS).map(([k, d]) => `${k} (${d.about})`).join('; ')}`);
 
 const inputSchema = z.object({
   dimension: dimensionEnum('What to count by'),
-  breakdown: dimensionEnum('Optional second dimension, counted within each bucket of `dimension`').optional(),
+  breakdown: dimensionEnum('Optional second dimension, counted within each bucket of `dimension`; two creator dimensions are crossed per creator row').optional(),
   ...objectQueryShape(),
   ...objectFilterShape(),
   order: z.enum(['count', 'value']).optional().describe(
@@ -89,8 +92,8 @@ const inputSchema = z.object({
   top: z.number().int().min(1).max(STATS_MAX_TOP).default(STATS_DEFAULT_TOP).describe(
     `Buckets per page; at most ${STATS_MAX_TOP_WITH_BREAKDOWN} with a breakdown`),
   offset: z.number().int().min(0).max(100_000).default(0),
-  breakdown_top: z.number().int().min(1).max(BREAKDOWN_MAX_TOP).default(BREAKDOWN_DEFAULT_TOP).describe(
-    'Values of `breakdown` per bucket, largest first'),
+  breakdown_top: z.number().int().min(1).max(BREAKDOWN_MAX_TOP).optional().describe(
+    `Values of \`breakdown\` per bucket, largest first. Default ${BREAKDOWN_DEFAULT_TOP}`),
   lang: langIn(),
 }).strict();
 
@@ -107,7 +110,8 @@ const bucketOut = () => z.object({
   filter: filterOut().optional(),
   breakdown: z.array(subOut()).optional(),
   breakdown_other: z.number().int().optional().describe('Objects of this bucket with a value beyond breakdown_top, each counted once'),
-  breakdown_without_value: z.number().int().optional().describe('Objects of this bucket without a value for `breakdown`'),
+  breakdown_without_value: z.number().int().optional().describe(
+    'Objects of this bucket without a value for `breakdown`; for two creator dimensions, on the creator row that the bucket counts'),
 });
 
 export const outputSchema = z.object({
@@ -177,6 +181,10 @@ export function collectionStats(db, meta, args) {
     top = STATS_MAX_TOP_WITH_BREAKDOWN;
   }
   const order = args.order ?? (dim.kind === 'decade' ? 'value' : 'count');
+  const breakdownTop = args.breakdown_top ?? BREAKDOWN_DEFAULT_TOP;
+  if (!sub && args.breakdown_top !== undefined) {
+    warnings.push('`breakdown_top` limits the values of `breakdown`, which was not given; it was ignored.');
+  }
 
   // The matching objects, found once. Without a query or filter there is no restriction.
   const q = compileObjectQuery(db, args);
@@ -222,10 +230,6 @@ export function collectionStats(db, meta, args) {
   const own = dim.kind === 'term' && !dim.row && q.termIds[dim.field] ? new Set(q.termIds[dim.field]) : undefined;
   const offered = (k) => rowFilters && (!own || own.has(k));
   let buckets = rows.map((r) => bucket(db, dim, r.k, r.n, args, offered(r.k)));
-  if (rows.some((r) => !offered(r.k)) && own) {
-    warnings.push(`Buckets of values outside your own \`${dim.field}\` filter carry no \`filter\`: they count the objects that also have ` +
-      `such a value, and their filter would replace yours.`);
-  }
 
   if (sub && rows.length) {
     // Only the objects of the buckets shown are read for the breakdown.
@@ -248,10 +252,10 @@ export function collectionStats(db, meta, args) {
       }
       const list = [...cross].map(([k, set]) => ({ k, n: set.size })).sort((a, c) => c.n - a.n || byKey(a, c));
       // An object with several omitted values counts once.
-      const other = new Set(list.slice(args.breakdown_top).flatMap((r) => [...cross.get(r.k)])).size;
+      const other = new Set(list.slice(breakdownTop).flatMap((r) => [...cross.get(r.k)])).size;
       return {
         ...b,
-        breakdown: list.slice(0, args.breakdown_top).map((r) => {
+        breakdown: list.slice(0, breakdownTop).map((r) => {
           const x = bucket(db, sub, r.k, r.n, args);
           return { id: x.id, value: x.value, label: x.label, count: x.count };
         }),
@@ -262,14 +266,20 @@ export function collectionStats(db, meta, args) {
   }
 
   const shown = buckets.map(prune);
-  // include_narrower is one flag for every term filter, so a bucket's exact term also stops
-  // the caller's own term filters from matching narrower terms.
-  const ownTermFilters = TERM_FILTER_FIELDS.filter((f) => args[f] !== undefined && f !== args.dimension);
+  // These warnings name what the returned buckets carry, so they are computed after the cut.
+  const outside = (fitted) => (own && fitted.some((b) => !own.has(b.id))
+    ? [`Buckets of values outside your own \`${dim.field}\` filter carry no \`filter\`: they count the objects that also have ` +
+      'such a value, and their filter would replace yours.']
+    : []);
+  // include_narrower is one flag for every term filter, exclusions included, so a bucket's exact
+  // term also stops the caller's other term filters from matching the narrower terms they matched.
+  const ids = (xs) => new Set(xs.map((x) => x.id ?? x)).size;
+  const expanded = [...TERM_FILTER_FIELDS, 'exclude_attributions']
+    .filter((f) => f !== args.dimension && q.termIds[f] && ids(q.termIds[f]) > ids(q.applied[f]));
   const clash = (fitted) => {
-    if (!ownTermFilters.length || args.include_narrower === false) return [];
-    if (!fitted.some((b) => b.filter?.include_narrower === false)) return [];
+    if (!expanded.length || !fitted.some((b) => b.filter?.include_narrower === false)) return [];
     return ['Buckets of terms with narrower terms carry include_narrower: false in `filter`. Added to this call\'s ' +
-      `arguments, it also stops ${ownTermFilters.map((f) => `\`${f}\``).join(', ')} from matching narrower terms, ` +
+      `arguments, it also stops ${expanded.map((f) => `\`${f}\``).join(', ')} from matching narrower terms, ` +
       'so a search can list fewer objects than the bucket count.'];
   };
   if (DECADE_NOTE[args.dimension] || DECADE_NOTE[args.breakdown]) {
@@ -279,8 +289,9 @@ export function collectionStats(db, meta, args) {
     warnings.push(args.query
       ? `No object matches "${args.query}"${q.clauseCount > 1 ? ' with these filters' : ''}. The data is German: check that the keywords are German.`
       : 'No object matches these filters together. Drop one filter at a time to see which one empties the result.');
-  } else if (args.offset > 0 && args.offset >= sorted.length) {
-    warnings.push(`\`offset\` ${args.offset} is past the end: there are ${sorted.length} buckets. Start again at offset 0.`);
+  } else {
+    const past = pastEnd(args.offset, sorted.length, 'buckets');
+    if (past) warnings.push(past);
   }
   const stale = staleWarning(meta);
   if (stale) warnings.push(stale);
@@ -297,7 +308,7 @@ export function collectionStats(db, meta, args) {
       order,
       buckets: fitted,
       applied_filters: q.applied,
-      warnings: [...clash(fitted), ...warnings],
+      warnings: [...clash(fitted), ...outside(fitted), ...warnings],
       data_as_of: meta.data_as_of,
     });
     out.buckets ??= [];
@@ -306,8 +317,10 @@ export function collectionStats(db, meta, args) {
   return fitResult({ rows: shown, budget: RESULT_CHAR_LIMIT, build, render: renderText, noun: 'buckets' });
 }
 
-function bucketText(b) {
-  const lines = [`${b.count}\t${b.label ?? b.id ?? b.value}${b.id ? ` (${b.id})` : ''}`];
+// A bucket's filter, or "no filter" in a dimension whose buckets normally carry one.
+function bucketText(b, filtered) {
+  const filter = b.filter ? ` · filter: ${searchArgs(b.filter)}` : filtered ? ' · no filter' : '';
+  const lines = [`${b.count}\t${b.label ?? b.id ?? b.value}${b.id ? ` (${b.id})` : ''}${filter}`];
   for (const x of b.breakdown ?? []) lines.push(`\t${x.count}\t${x.label ?? x.id ?? x.value}${x.id ? ` (${x.id})` : ''}`);
   if (b.breakdown_other) lines.push(`\t${b.breakdown_other}\tother values`);
   if (b.breakdown_without_value) lines.push(`\t${b.breakdown_without_value}\twithout a value`);
@@ -317,9 +330,11 @@ function bucketText(b) {
 function renderText(s) {
   const head = `${s.total_objects} objects by ${s.dimension}${s.breakdown ? ` and ${s.breakdown}` : ''}: ` +
     `${s.with_value} with a value, ${s.without_value} without; ${s.total_buckets} values` +
-    (s.returned && s.total_buckets > s.returned ? `, showing ${s.offset + 1}–${s.offset + s.returned}` : '') + '.';
+    showing(s, s.total_buckets) + '.';
+  const filtered = Boolean(DIMENSIONS[s.dimension].filter);
   const lines = [head];
-  for (const b of s.buckets) lines.push(bucketText(b));
+  if (s.buckets.some((b) => b.filter)) lines.push('A bucket\'s filter, added to the arguments of this call, lists its objects in skkg_search_objects.');
+  for (const b of s.buckets) lines.push(bucketText(b, filtered));
   return [...lines, ...tailLines(s)].join('\n');
 }
 

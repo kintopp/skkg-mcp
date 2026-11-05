@@ -1,5 +1,6 @@
 // How skkg_search_objects could fail:
 // - a call with neither query nor filter lists the whole collection instead of being refused
+// - `scope` without `query` is ignored without a word
 // - an English keyword returns nothing without telling the model the data is German
 // - "Boecklin" and "Böcklin" find different objects
 // - FTS5 syntax in the query ("(x)", NEAR, a lone *) raises an SQL error instead of searching
@@ -215,6 +216,14 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
         .filter((x) => x.id === 'object/2037');
       assert.equal(row.has_image, true);
       assert.equal(row.image_license, 'not recorded');
+    });
+
+    await t.test('scope without a query says it was ignored', async () => {
+      const r = await search({ material: 'Holz', scope: 'inscription', limit: 1 });
+      assert.ok((r.warnings ?? []).some((w) => /^`scope` "inscription" says where `query` matches, and there is no query; it was ignored\.$/.test(w)),
+        (r.warnings ?? []).join(' | '));
+      const withQuery = await search({ query: 'Ofen', scope: 'title', limit: 1 });
+      assert.ok(!(withQuery.warnings ?? []).some((w) => w.startsWith('`scope`')));
     });
 
     await t.test('scope inventory_number finds an inventory number with punctuation', async () => {

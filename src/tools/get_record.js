@@ -13,7 +13,7 @@ import { termLabel, actorRef, recordLabel } from '../lib/labels.js';
 import { imageRights } from '../lib/rights.js';
 import { objectRow, RELATION } from '../lib/objects.js';
 import { period } from '../lib/provenance.js';
-import { capList, paging } from '../lib/results.js';
+import { capList, paging, pastEnd } from '../lib/results.js';
 import { fitLists } from '../lib/fit.js';
 import { renderRecordText } from './record_text.js';
 import { actorOut, imageRightsOut, objectRowShape, periodShape, langIn, str, int } from './schemas.js';
@@ -192,7 +192,7 @@ export const outputSchema = z.object({
       links: z.array(z.object({ as: str(), role: str(), attribution: str() })).optional()
         .describe('How the object is linked to this actor'),
       ...refShape(),
-      references: z.array(z.object(refShape())).optional()
+      references: z.array(z.object({ n: z.number().int().describe('Position among the references to this object'), ...refShape() })).optional()
         .describe('Each reference, when the publication cites the object more than once; the fields above are then left out'),
     })).optional(),
   }).optional(),
@@ -433,7 +433,8 @@ function getLiterature(db, id, want, args, ctx) {
       note: r.note, citation: own(r.citation),
     });
     out.objects = objectPage(db, [...refsOf].map(([oid, rs]) => ({ id: oid, rs })), args,
-      ({ rs }) => (rs.length === 1 ? ref(rs[0]) : { references: rs.map(ref) }), { literature: id });
+      // `n` keeps a reference without page, figure, or note from being pruned away.
+      ({ rs }) => (rs.length === 1 ? ref(rs[0]) : { references: rs.map((r, i) => ({ n: i + 1, ...ref(r) })) }), { literature: id });
   }
   if (want.has('provenance')) {
     out.provenance = capList(provRefs, 'provenance', ctx).map((r) => {
@@ -561,7 +562,7 @@ function getAddress(db, id, want, args, ctx) {
   }
   const listed = [...byRole.values()];
   const counts = { exhibitions: listed.length };
-  // The build keeps only "Privatperson, {place}" of a private address; nothing else is returned.
+  // The build keeps only "{organisation or Privatperson}, {place}" of a private address; nothing else is returned.
   const summary = a.is_private_person
     ? {
       is_private_person: true,
@@ -613,9 +614,8 @@ export function getRecord(db, meta, input) {
   }
   const ctx = { warnings, totals: {} };
   const body = GETTERS[type](db, resolved.id, want, args, ctx);
-  if (body.objects && args.offset > 0 && body.objects.offset >= body.objects.total && body.objects.total > 0) {
-    warnings.push(`offset ${args.offset} is past the last of ${body.objects.total} objects.`);
-  }
+  const past = body.objects && pastEnd(args.offset, body.objects.total, 'objects');
+  if (past) warnings.push(past);
   const stale = staleWarning(meta);
   if (stale) warnings.push(stale);
   // The website's "produced by" filter lists the objects of both relations (notes/08).

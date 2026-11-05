@@ -6,7 +6,8 @@
 // - unused terms (shelf labels "A", "14") push used terms off the first page
 // - object_count_with_narrower differs from what the skkg_search_objects filter matches,
 //   or object_count from what it matches with include_narrower: false
-//   in any vocabulary that offers a filter (photo licences counted over every image, not the primary one)
+//   in any vocabulary that offers a filter (photo licences counted over every image, not the primary one),
+//   or the descriptions do not say that a licence counts objects by their primary photo
 // - `filter` names the wrong skkg_search_objects parameter ("production_role" for creator_role)
 // - a term found in another vocabulary than the one asked for is answered with "translate it"
 // - terms of literature, exhibitions, or persons show 0 objects instead of their record count
@@ -239,6 +240,11 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
       const d = tools.find((x) => x.name === NAME).description;
       assert.match(d, /Terms in use come first; among them, exact label matches, then the terms used most/);
       assert.doesNotMatch(d, /exact label matches come first/);
+      // A photo licence counts objects by their primary photo, as the image_license filter matches.
+      assert.match(d, /how many objects use it \(a photo licence: objects whose primary photo has it\)/);
+      const props = tools.find((x) => x.name === NAME).outputSchema.properties;
+      const termProps = (props.terms ?? props.term).items?.properties ?? (props.terms ?? props.term).properties;
+      assert.match(termProps.object_count.description, /for a photo licence, objects whose primary photo has it/);
     });
 
     await t.test('words outside a quoted phrase still match as prefixes', async () => {

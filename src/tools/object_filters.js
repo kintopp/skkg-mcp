@@ -200,7 +200,7 @@ export function resolveActors(db, field, value) {
 /**
  * Compiles the filters in `args` to { clauses, params, applied, warnings, creatorRow, termIds }.
  * `applied` echoes each filter with the terms, actors, and records it resolved to; `termIds`
- * gives each term filter's ids, narrower terms included when expanded.
+ * gives the ids of each term filter and of exclude_attributions, narrower terms included when expanded.
  * `creatorRow` ({ sql, params } on `oc`) is the condition one creator row must meet, when a
  * creator filter is given.
  */
@@ -239,7 +239,10 @@ export function compileObjectFilters(db, args) {
 
   const exclusions = args.exclude_attributions?.map((v) => resolveTerms(db, 'exclude_attributions', 'attribution', v, narrower));
   const excluded = exclusions?.flatMap((r) => r.ids);
-  if (exclusions) applied.exclude_attributions = exclusions.flatMap((r) => r.matched);
+  if (exclusions) {
+    applied.exclude_attributions = exclusions.flatMap((r) => r.matched);
+    termIds.exclude_attributions = excluded;
+  }
   // With a creator filter, the exclusion applies to the creator row that matched it: another
   // person's "nach" row, or the same person's row in another role, must not drop the object.
   // Without one, any creator so attributed drops it; a condition on one row would let any
@@ -317,6 +320,9 @@ export function compileObjectQuery(db, args) {
     throw new ToolError(`\`query\` "${args.query}" has no searchable word.`, 'Pass German keywords, e.g. "Stillleben".');
   }
   const filters = compileObjectFilters(db, args);
+  if (!args.query && args.scope !== undefined && args.scope !== 'all') {
+    filters.warnings.push(`\`scope\` "${args.scope}" says where \`query\` matches, and there is no query; it was ignored.`);
+  }
   const clauses = [...(fts ? ['objects_fts MATCH ?'] : []), ...filters.clauses];
   return {
     from: fts ? 'objects_fts JOIN objects o ON o.id = objects_fts.object_id' : 'objects o',

@@ -57,13 +57,24 @@ test('list tools refuse what cannot fit and warn only about what they return', {
     });
 
     await t.test('the include_narrower warning appears exactly when a returned bucket carries the flag', async () => {
-      // The first buckets by count carry no flag; a later one does.
+      // The first buckets by count carry no flag; a later one does. Object types have narrower
+      // terms, so the caller's `object_type` is one the flag would narrow.
       const { structured: r, sent } = await callSent(client, 'skkg_collection_stats',
-        { dimension: 'object_type', epoch: '19. Jh.', top: 10 }, statsSchema);
+        { dimension: 'material', object_type: 'Malerei', top: 30 }, statsSchema);
       assert.ok(sent <= limit, `${sent} characters sent`);
       assert.ok(r.has_more);
       const flagged = r.buckets.some((b) => b.filter?.include_narrower === false);
       assert.equal((r.warnings ?? []).some((w) => /carry include_narrower: false/.test(w)), flagged);
+    });
+
+    await t.test('the warning about buckets outside the own filter appears exactly when a returned bucket is one', async () => {
+      // The Holz buckets come first by count and carry a filter; the cut can leave only them.
+      const { structured: r, sent } = await callSent(client, 'skkg_collection_stats',
+        { dimension: 'material', material: 'Holz', top: 20 }, statsSchema);
+      assert.ok(sent <= limit, `${sent} characters sent`);
+      assert.ok(r.has_more);
+      const outside = r.buckets.some((b) => !b.filter);
+      assert.equal((r.warnings ?? []).some((w) => /outside your own `material` filter/.test(w)), outside, JSON.stringify(r.buckets.map((b) => b.label)));
     });
   }, { env: { SKKG_DB_PATH: FIXTURE_DB.path, SKKG_RESULT_CHAR_CEILING: '1400' } });
 });

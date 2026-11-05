@@ -15,7 +15,12 @@
 // - breakdown_other adds up the omitted values' counts and counts an object once per value
 // - a bucket of the caller's own filter field offers a filter that replaces the caller's, so a
 //   value the objects also have lists more objects than its count, without a word
-// - a bucket's include_narrower: false silently stops the caller's own term filters from expanding
+// - a bucket's include_narrower: false silently stops the caller's own term filters from expanding,
+//   or the warning names a caller filter whose terms have no narrower terms
+// - the text leaves out a bucket's filter, so a host that shows only the text rebuilds it from the
+//   label and lists other objects, or the text does not say which buckets have no filter
+// - breakdown_top without breakdown is ignored without a word
+// - the description does not say that two creator dimensions are crossed per creator row
 // - a leaf term's filter carries include_narrower: false, needlessly changing the caller's filters
 // - an acquisition decade bucket has no filter, or one that lists other objects
 // - restricting to the matching objects in JavaScript (many objects) and in SQL (few) disagree
@@ -30,7 +35,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { withClient, callOk, callError, FIXTURE_DB, makeTestDb } from './helpers.js';
+import { withClient, callOk, callError, callSent, FIXTURE_DB, makeTestDb } from './helpers.js';
 import { outputSchema, collectionStats } from '../src/tools/collection_stats.js';
 import { outputSchema as searchSchema } from '../src/tools/search_objects.js';
 
@@ -135,6 +140,36 @@ test('skkg_collection_stats against the fixture database', { skip: FIXTURE_DB.sk
       assert.doesNotMatch((plain.warnings ?? []).join(' '), /also stops/);
     });
 
+    await t.test('a caller filter without narrower terms is not named in the include_narrower warning', async () => {
+      // Techniques have no narrower terms, so the buckets' include_narrower: false cannot narrow `technique`.
+      const args = { technique: 'bemalt' };
+      const r = await stats({ dimension: 'object_type', ...args, top: 50 });
+      assert.ok(r.buckets.some((b) => b.filter?.include_narrower === false), 'no bucket carries the flag');
+      assert.doesNotMatch((r.warnings ?? []).join(' '), /also stops/);
+      for (const b of r.buckets.filter((x) => x.filter)) assert.equal(b.count, await searchTotal({ ...args, ...b.filter }), b.label);
+    });
+
+    await t.test('the text gives each bucket its filter, and says which buckets have none', async () => {
+      const { structured: r, text } = await callSent(client, NAME, { dimension: 'material', material: 'Holz', top: 10 }, outputSchema);
+      const lines = text.split('\n');
+      const lineOf = (b) => lines.find((l) => l.startsWith(`${b.count}\t${b.label} (${b.id})`));
+      assert.ok(r.buckets.some((b) => b.filter) && r.buckets.some((b) => !b.filter), JSON.stringify(r.buckets.map((b) => b.filter)));
+      for (const b of r.buckets) {
+        const line = lineOf(b);
+        assert.ok(line, `no line for ${b.label}`);
+        if (b.filter) for (const [k, v] of Object.entries(b.filter)) assert.ok(line.includes(`${k}: ${JSON.stringify(v)}`), line);
+        else assert.match(line, / · no filter$/);
+      }
+      assert.match(text, /A bucket's filter, added to the arguments of this call, lists its objects in skkg_search_objects\./);
+    });
+
+    await t.test('breakdown_top without breakdown says it was ignored', async () => {
+      const r = await stats({ dimension: 'material', breakdown_top: 3, top: 1 });
+      assert.ok((r.warnings ?? []).some((w) => /^`breakdown_top` limits the values of `breakdown`, which was not given; it was ignored\.$/.test(w)));
+      const crossed = await stats({ dimension: 'material', breakdown: 'epoch', breakdown_top: 3, top: 1 });
+      assert.ok(!(crossed.warnings ?? []).some((w) => w.startsWith('`breakdown_top`')));
+    });
+
     await t.test('an object with several materials counts once in total and once in each bucket', async () => {
       const r = await stats({ dimension: 'material', top: 200 });
       const sum = r.buckets.reduce((s, b) => s + b.count, 0);
@@ -143,6 +178,7 @@ test('skkg_collection_stats against the fixture database', { skip: FIXTURE_DB.sk
       const d = tools.find((x) => x.name === NAME).description;
       assert.match(d, /counts in both.*add up to more than total_objects/);
       assert.match(d, /list exactly their objects when added to this call's arguments/);
+      assert.match(d, /Two creator dimensions \(creator, creator_role, attribution\) are crossed per creator row/);
     });
 
     await t.test('each breakdown count equals what both filters match', async () => {

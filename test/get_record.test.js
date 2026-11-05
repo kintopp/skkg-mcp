@@ -20,7 +20,7 @@
 // - an influence ("nach", "Umkreis") is reported as the creator, or loses the website's filter on works
 // - the object count of the summary counts an object twice when it is linked twice
 // - a publication citing one object twice lists it twice, so its total and pages disagree with
-//   the `literature` filter, or one of the two references is lost
+//   the `literature` filter, or one of the two references is lost, also one without any field
 // - an address's website is lost or is not a URL
 // - an actor's object is listed with the same link twice, or without the link at all
 // - a relation is reported in the wrong direction
@@ -248,7 +248,7 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
     await t.test('an offset past the last object says so', async () => {
       const r = await get({ id: 'exhibition/152', include: ['objects'], offset: 5000 });
       assert.equal(r.objects.items, undefined);
-      assert.ok(r.warnings.some((w) => /^offset 5000 is past the last of \d+ objects\.$/.test(w)), r.warnings?.join(' | '));
+      assert.ok(r.warnings.some((w) => /^`offset` 5000 is past the end: there are \d+ objects\. Start again at offset 0\.$/.test(w)), r.warnings?.join(' | '));
     });
 
     await t.test('the objects of a group and of a publication list the same objects as their filters', async () => {
@@ -352,6 +352,26 @@ test('with both relations, a role under one of them keeps its exact filter', { s
       // "Künstler:in" occurs under both relations, and the relations themselves have both: no filter.
       for (const x of roles.filter((y) => y.role !== 'Druckerei')) assert.equal(x.filter, undefined, `${x.as} ${x.role}`);
     }, { env: { SKKG_DB_PATH: path } });
+  } finally {
+    copy.cleanup();
+  }
+});
+
+test('a reference without page, figure, or note is still listed among the references', { skip: FIXTURE_DB.skip }, async () => {
+  // A second reference to object/7292 with no fields at all: before, prune dropped it.
+  const copy = makeTestDb({ from: FIXTURE_DB.path });
+  copy.db.prepare(`INSERT INTO literature_refs (literature_id, ref_id, object_id, sort)
+      VALUES ('literature/66', 'ref/empty', 'object/7292', 0)`).run();
+  copy.db.close();
+  try {
+    await withClient('get-record-empty-ref-test', async (client) => {
+      const args = { id: 'literature/66', include: ['objects'], limit: 50 };
+      const { structured, text } = await callSent(client, NAME, args, outputSchema);
+      const zelger = structured.objects.items.find((x) => x.id === 'object/7292');
+      assert.deepEqual(zelger.references.map((r) => r.n), [1, 2]);
+      assert.ok(zelger.references.some((r) => r.page === undefined && r.figure === undefined));
+      assert.match(text, /reference \d: no details/);
+    }, { env: { SKKG_DB_PATH: copy.path } });
   } finally {
     copy.cleanup();
   }

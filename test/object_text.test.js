@@ -28,8 +28,8 @@ const lineWith = (text, needle) => text.split('\n').find((l) => l.includes(needl
 
 test('the summary line keeps each creator\'s attribution, influence, and id', () => {
   const summary = render({}).split('\n')[1];
-  assert.match(summary, /Maler A, Künstler:in, zugeschrieben \(person\/1\)/);
-  assert.match(summary, /Maler B, Künstler:in, influence \(person\/2\)/);
+  assert.match(summary, /Maler A \(Künstler:in, zugeschrieben; person\/1\)/);
+  assert.match(summary, /Maler B \(Künstler:in, influence; person\/2\)/);
 });
 
 test('a period keeps the certainty, holding kind, and price its statement leaves out', () => {

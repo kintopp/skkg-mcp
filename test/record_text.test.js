@@ -1,6 +1,7 @@
 // How the text of skkg_get_record could mislead a host that shows the model only the text:
 // - a publication with years but no year label or place shows no year
 // - a year range reads as one year
+// - a creator's name with commas runs into its role, so the text cannot tell them apart
 // - an object row drops a creator's id, influence relation, or an attribution without a role,
 //   so the text claims firm authorship
 
@@ -34,5 +35,19 @@ test('an object row keeps each creator\'s id, attribution, and influence', () =>
       }],
     },
   });
-  assert.match(text, /Maler C, zugeschrieben, influence \(person\/3\); Verlag D, Verlag \(person\/4\)/);
+  assert.match(text, /Maler C \(zugeschrieben, influence; person\/3\); Verlag D \(Verlag; person\/4\)/);
+});
+
+test('a creator whose name holds commas keeps the name apart from its role', () => {
+  const text = renderRecordText({
+    id: 'exhibition/1', type: 'exhibition', label: 'Schau', summary: {},
+    objects: {
+      total: 1, returned: 1, offset: 0, has_more: false,
+      items: [{
+        id: 'object/1', title: 'Karte', has_image: false, object_copyright: 'gemeinfrei',
+        creators: [{ id: 'person/5', name: 'J. C. Müller, Buchhändler, St. Gallen', role: 'Verlag und Druck', attribution: 'nach' }],
+      }],
+    },
+  });
+  assert.match(text, /J\. C\. Müller, Buchhändler, St\. Gallen \(Verlag und Druck, nach; person\/5\)/);
 });

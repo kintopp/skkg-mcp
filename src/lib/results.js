@@ -19,6 +19,13 @@ export function paging(total, count, offset) {
   return { returned: count, offset, has_more: hasMore, next_offset: hasMore ? offset + count : undefined };
 }
 
+/** ", showing 51–75" for a page of `p` (paging fields) that holds some but not all of `total` rows. */
+export const showing = (p, total) => (p.returned && total > p.returned ? `, showing ${p.offset + 1}–${p.offset + p.returned}` : '');
+
+/** The warning for an `offset` at or past the end of `total` rows, or undefined. */
+export const pastEnd = (offset, total, noun) => (offset > 0 && total > 0 && offset >= total
+  ? `\`offset\` ${offset} is past the end: there are ${total} ${noun}. Start again at offset 0.` : undefined);
+
 // "creator = Albert Anker (person/41); has_image = true": what each filter resolved to.
 const appliedText = (applied) => Object.entries(applied).map(([k, v]) => `${k} = ${Array.isArray(v)
   ? v.map((x) => (x.label ?? x.name ? `${x.label ?? x.name} (${x.id})` : x.id)).join(', ') : v}`).join('; ');
