@@ -48,7 +48,7 @@ test('a currency label of prices in two currencies is refused as ambiguous, nami
   const t = currencyDb();
   try {
     const text = errorOf(() => searchProvenance(t.db, META, { ...ARGS, currency: 'Franken' }));
-    assert.match(text, /"Franken" is the label of prices in several currencies \(CHF, FRF\)/);
+    assert.match(text, /"Franken" names prices in several currencies \(CHF, FRF\)/);
     assert.match(text, /Pass one of the codes/);
     assert.doesNotMatch(text, /no price is recorded/);
   } finally {

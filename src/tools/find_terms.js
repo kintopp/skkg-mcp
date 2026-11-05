@@ -126,7 +126,8 @@ function termRow(db, t, lang) {
   const label = termLabel(db, t.id, lang);
   const languages = [t.label_de, t.label_en, t.label_fr].filter(Boolean);
   // The first tool that filters the facet: skkg_search_objects for the acquisition types, which both take.
-  const { tool, field } = filtersOfFacet(t.facet)[0] ?? {};
+  // A filter that takes values, not term ids, is never offered (term_filters.js).
+  const { tool, field } = filtersOfFacet(t.facet).find((f) => !f.values) ?? {};
   return prune({
     id: t.id,
     label,

@@ -15,7 +15,8 @@
 // - a lower-case umlaut ("öl") misses its label ("Öl"), because SQLite folds ASCII only
 // - a label of another vocabulary is answered with "translate it" instead of the right filter,
 //   or the hint names only one of several vocabularies; a term that only skkg_search_provenance
-//   filters ("Auktionshaus", an owner type) gets no hint, or one naming its filter as this tool's
+//   filters ("Auktionshaus", an owner type) gets no hint, or one naming its filter as this tool's;
+//   a currency term ("DM") is not sent to `currency` of skkg_search_provenance
 // - with a creator filter, exclude_attributions drops an object through a creator row other than
 //   the one the filter matched
 // - the hint for a wrong exclude_attributions value names an inclusion filter, inverting the exclusion
@@ -192,6 +193,10 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
       assert.doesNotMatch(text, /\ba object_type\b/);
       await assertVocabulariesListed(text, ['object_type']);
       assert.doesNotMatch(text, /Pass it as/);
+      // "DM" is a currency term, which skkg_search_provenance takes as the code it is recorded under.
+      const dm = await callError(client, NAME, { acquisition_type: 'DM' });
+      assert.match(dm, /"DM" is a term of the currency vocabulary, not of `acquisition_type`/);
+      assert.match(dm, /skkg_search_provenance takes it as `currency`/);
     });
 
     await t.test('a wrong exclude_attributions value is never sent to an inclusion filter', async () => {

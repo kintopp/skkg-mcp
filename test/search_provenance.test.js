@@ -14,7 +14,10 @@
 //   ("Auktion") is refused as unknown instead of pointed to the filter that takes it
 // - a currency refusal suggests terms or labels the vocabulary has but no price uses ("RM",
 //   skkg_find_terms' 164 currency terms), instead of the codes the prices use; a currency term
-//   without a price is refused as unknown instead of as having no price
+//   without a price is refused as unknown instead of as having no price; an unknown term id is
+//   sent to German labels instead of the codes
+// - a currency label or id passed to another filter ("DM" as owner_type, or as acquisition_type of
+//   skkg_search_objects) is refused without naming `currency`
 // - "zurich" misses "Zürich", or "Bern" matches "Bernhard" (matches inside a word)
 // - a period open at one end ("seit 2002", "o. D.–vmtl. 1979") misses the years on its open side,
 //   a single dated event (an auction day) matches later years, a lone date qualified otherwise
@@ -193,6 +196,10 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
       const rm = await callError(client, NAME, { currency: 'RM' });
       assert.match(rm, /no price is recorded in "RM"/);
       assert.match(rm, /The prices use CHF/);
+      const unknownId = await callError(client, NAME, { currency: 'type/99999/1' });
+      assert.match(unknownId, /no term "type\/99999\/1"/);
+      assert.match(unknownId, /The prices use CHF/);
+      assert.doesNotMatch(unknownId, /German label/);
       const r = await callError(client, NAME, { currency: 'R' });
       assert.match(r, /no term of `currency` is labelled "R"/);
       assert.match(r, /The prices use CHF/);
@@ -264,6 +271,11 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
         assert.ok(p.sources.some((s) => s.type === 'Archivquelle (extern)'), p.id);
       }
       assert.match(await callError(client, NAME, { owner_type: 'Auktion' }), /Pass it as `acquisition_type`/);
+      for (const value of ['DM', 'type/20033/287982']) {
+        const dm = await callError(client, NAME, { owner_type: value });
+        assert.match(dm, /is a term of the currency vocabulary, not of `owner_type`/, value);
+        assert.match(dm, /Pass it as `currency`/, value);
+      }
       const holz = await callError(client, NAME, { owner_type: 'Holz' });
       assert.match(holz, /"Holz" is a term of the material vocabulary, not of `owner_type`/);
       assert.match(holz, /This tool has no filter for it; skkg_search_objects takes it as `material`/);

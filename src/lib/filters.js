@@ -5,27 +5,48 @@
 import { ToolError } from './errors.js';
 import { resolveId } from './ids.js';
 import { ftsQuery } from './fts.js';
-import { stmt, placeholders } from './sql.js';
+import { stmt, perDb, placeholders } from './sql.js';
 import { termLabel, actorRef } from './labels.js';
 import { termsByLabel } from './terms.js';
 import { MAX_NAME_MATCHES, WITHHELD_FACETS } from '../config.js';
 import { TERM_FILTERS } from '../tools/term_filters.js';
 
 // Where the terms of each vocabulary (facet) go: the parameters of the search tools that take
-// them, as [{ tool, field }] in the order of TERM_FILTERS, built once from its records.
+// them, as [{ tool, field, values }] in the order of TERM_FILTERS, built once from its records;
+// `values` is true for a filter that takes a value stored for the terms rather than their ids.
 const FILTERS_OF_FACET = new Map();
 for (const [tool, fields] of Object.entries(TERM_FILTERS)) {
-  for (const [field, { facet }] of Object.entries(fields)) {
+  for (const [field, { facet, values }] of Object.entries(fields)) {
     if (!FILTERS_OF_FACET.has(facet)) FILTERS_OF_FACET.set(facet, []);
-    FILTERS_OF_FACET.get(facet).push(Object.freeze({ tool, field }));
+    FILTERS_OF_FACET.get(facet).push(Object.freeze({ tool, field, values: Boolean(values) }));
   }
 }
 
-/** The parameters that take a facet's terms, as [{ tool, field }], in the order of TERM_FILTERS. */
+/** The parameters that take a facet's terms, as [{ tool, field, values }], in the order of TERM_FILTERS. */
 export const filtersOfFacet = (facet) => FILTERS_OF_FACET.get(facet) ?? [];
 
+/**
+ * A filter with `values` (term_filters.js): { pairs, values }, its (k, v) pairs of a term id and
+ * its value, and the distinct values in order. Read once per database.
+ */
+export function filterValues(db, tool, field) {
+  return perDb(db, `values ${tool} ${field}`, () => {
+    const pairs = db.prepare(TERM_FILTERS[tool][field].values).all();
+    return { pairs, values: [...new Set(pairs.map((p) => p.v))].sort() };
+  });
+}
+
+/** The values a filter with `values` takes, as its refusals give them; undefined for a term filter. */
+export function valuesHint(db, tool, field) {
+  const f = TERM_FILTERS[tool]?.[field];
+  return f?.values ? `${f.hint} ${filterValues(db, tool, field).values.join(', ')}.` : undefined;
+}
+
+/** A term id with its label, as refusals name it. */
+export const termName = (db, id) => `"${id}" (${termLabel(db, id) ?? 'unlabelled'})`;
+
 // The facet names are the values of skkg_find_terms' `vocabulary`, so the hints name them as such.
-// A field that takes only some of its vocabulary's terms names its values in `takes` instead.
+// A filter with `values` names its values (`takes`) instead: skkg_find_terms gives its terms no filter.
 const listedBy = ({ field, takes }, wanted) =>
   takes ?? `skkg_find_terms with vocabulary "${wanted}" lists the terms \`${field}\` takes.`;
 
@@ -48,19 +69,20 @@ const vocabularies = (facets) => `the ${facets.join(' and ')} ${facets.length > 
  * Resolves a term filter value (a term id or a label) to term ids of `facet`, for `field` of
  * `tool`. Throws a ToolError with suggestions. With `narrower`, the ids include the narrower terms;
  * `exclusion` marks a filter that leaves out what it matches, so its hints name no other filter.
- * `takes`, for a field that takes only some of the vocabulary's terms, is a sentence naming its
- * values; it replaces the hints to skkg_find_terms and to similar labels, which would offer the rest.
+ * For a filter with `values`, the refusals name its values instead of skkg_find_terms or similar
+ * labels, which would offer terms without one.
  * Returns { ids, matched }, where `matched` lists the terms the value named, for applied_filters.
  */
-export function resolveTerms(db, { tool, field, facet, narrower = false, exclusion = false, takes }, value) {
+export function resolveTerms(db, { tool, field, facet, narrower = false, exclusion = false }, value) {
+  const takes = valuesHint(db, tool, field);
   const where = { tool, field, exclusion, takes };
   const v = value.trim();
   let ids;
   if (v.startsWith('type/')) {
     const t = stmt(db, 'SELECT id, facet FROM terms WHERE id = ?').get(v);
-    if (!t || WITHHELD_FACETS.includes(t.facet)) throw new ToolError(`\`${field}\`: no term "${v}".`, 'Pass a German label instead, or check the id.');
+    if (!t || WITHHELD_FACETS.includes(t.facet)) throw new ToolError(`\`${field}\`: no term "${v}".`, takes ?? 'Pass a German label instead, or check the id.');
     if (t.facet !== facet) {
-      throw new ToolError(`\`${field}\`: "${v}" (${termLabel(db, v) ?? 'unlabelled'}) is a term of ` +
+      throw new ToolError(`\`${field}\`: ${termName(db, v)} is a term of ` +
         `${t.facet ? vocabularies([t.facet]) : 'another vocabulary'}, not of \`${field}\`.`,
       otherFilterHint(where, [t.facet], facet));
     }

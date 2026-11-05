@@ -2,7 +2,8 @@
 // terms it takes, and where its values are stored. The tools compile these records,
 // skkg_find_terms names them as a term's `filter`, and the wrong-vocabulary hints point to them
 // (src/lib/filters.js). A facet that two tools filter goes, in skkg_find_terms, to the tool listed
-// first: the acquisition types to skkg_search_objects. This module imports no tool or helper, so
+// first: the acquisition types to skkg_search_objects. A filter with `values` takes other values
+// than term ids and is described below. This module imports no tool or helper, so
 // every module can read it without an import cycle.
 
 import { SEARCH_OBJECTS_TOOL_NAME, SEARCH_PROVENANCE_TOOL_NAME } from '../config.js';
@@ -23,6 +24,11 @@ const creatorTerms = (field, facet) => ({ facet, pairs: creatorRowPairs(field), 
 // skkg_search_provenance: `layer` is the layer the filter restricts the search to; the values are
 // the column `sql` of `p` (provenance) or `a` (acquisitions), or an EXISTS over the period's rows.
 const chain = (sql) => ({ layer: 'chain', sql });
+// A filter with `values` takes a value stored for its terms, not term ids: `values` lists the
+// (k, v) pairs of a term and its value, `hint` leads the list of values in a refusal. One value
+// can stand for several terms (DEM for "DM" and "DEM"), so skkg_find_terms gives the terms no
+// `filter`: it would not reproduce a term's count.
+const priced = (t) => `${t}.currency_code IS NOT NULL AND ${t}.price_value IS NOT NULL`;
 
 export const TERM_FILTERS = Object.freeze({
   [SEARCH_OBJECTS_TOOL_NAME]: Object.freeze({
@@ -44,5 +50,11 @@ export const TERM_FILTERS = Object.freeze({
     transaction_type: { facet: 'transaction_type', ...chain('p.transaction_type_id') },
     source_type: { facet: 'source_type', layer: 'chain', exists: 'SELECT 1 FROM provenance_sources s WHERE s.provenance_id = p.id AND s.type_id' },
     acquisition_type: { facet: 'acquisition_type', layer: 'acquisition', sql: 'a.type_id' },
+    currency: {
+      facet: 'currency',
+      hint: 'The prices use',
+      values: `SELECT a.currency_id AS k, a.currency_code AS v FROM acquisitions a WHERE ${priced('a')}
+        UNION SELECT p.currency_id, p.currency_code FROM provenance p WHERE ${priced('p')}`,
+    },
   }),
 });

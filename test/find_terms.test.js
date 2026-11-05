@@ -9,6 +9,8 @@
 //   in any vocabulary that offers a filter (photo licences counted over every image, not the primary one),
 //   or the descriptions do not say that a licence counts objects by their primary photo
 // - `filter` names the wrong skkg_search_objects parameter ("production_role" for creator_role)
+// - a currency term gets a `filter`: `currency` takes the code, which also lists the prices of
+//   the currency's other terms ("DM" and "DEM"), so the filter would not reproduce the term's count
 // - a term found in another vocabulary than the one asked for is answered with "translate it"
 // - terms of literature, exhibitions, or persons show 0 objects instead of their record count
 // - a country counts persons born, died, or active there under a kind that says nationality, or the reverse
@@ -115,6 +117,14 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
         }
       }
       assert.ok(checked > 50, `${checked} terms checked`);
+    });
+
+    await t.test('a currency term gets no filter, since `currency` takes the code of several terms', async () => {
+      const r = await find({ query: 'DM', vocabulary: 'currency' });
+      const dm = r.results.find((x) => x.id === 'type/20033/287982');
+      assert.ok(dm, r.results.map((x) => x.id).join(', '));
+      assert.equal(dm.filter, undefined);
+      assert.equal(dm.filter_tool, undefined);
     });
 
     await t.test('filter names the skkg_search_objects parameter, not the vocabulary', async () => {
