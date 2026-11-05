@@ -187,6 +187,12 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
       await assertVocabulariesListed(role, ['production_role']);
     });
 
+    await t.test('a hint to pass a value as a filter the call already sets names the value it replaces', async () => {
+      const text = await callError(client, NAME, { technique: 'Holz', material: 'Papier' });
+      assert.match(text, /Pass it as `material` \(in place of its value "Papier"\)\./);
+      assert.match(await callError(client, NAME, { technique: 'Holz' }), /Pass it as `material`\./);
+    });
+
     await t.test('a term that only skkg_search_provenance filters is sent there, named as its filter', async () => {
       const text = await callError(client, NAME, { object_type: 'Auktionshaus' });
       assert.match(text, /"Auktionshaus" is a term of the owner_type vocabulary, not of `object_type`/);

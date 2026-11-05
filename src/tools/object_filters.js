@@ -116,7 +116,7 @@ export function compileObjectFilters(db, args) {
 
   for (const [field, { facet, creatorColumn }] of Object.entries(TERM_FILTERS)) {
     if (args[field] === undefined) continue;
-    const { ids, matched } = resolveTerms(db, { tool: SEARCH_OBJECTS_TOOL_NAME, field, facet, narrower }, args[field]);
+    const { ids, matched } = resolveTerms(db, { tool: SEARCH_OBJECTS_TOOL_NAME, field, facet, narrower, call: { args } }, args[field]);
     termIds[field] = ids;
     if (creatorColumn) {
       creatorParts.push(`oc.${creatorColumn} IN (${placeholders(ids.length)})`);

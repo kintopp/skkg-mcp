@@ -158,11 +158,11 @@ function resolvePlaces(db, value) {
 // `currency` takes the codes of the priced entries, from its record in VALUE_FILTERS; the build
 // normalises SKKG's duplicate terms to one code each.
 const CURRENCY = { tool: SEARCH_PROVENANCE_TOOL_NAME, field: 'currency', facet: VALUE_FILTERS[SEARCH_PROVENANCE_TOOL_NAME].currency.facet };
-function resolveCurrency(db, value) {
+function resolveCurrency(db, value, args) {
   const codes = filterValues(db, CURRENCY.tool, CURRENCY.field);
   const v = value.trim();
   if (codes.includes(v.toUpperCase())) return v.toUpperCase();
-  const { ids, matched } = resolveTerms(db, CURRENCY, v);
+  const { ids, matched } = resolveTerms(db, { ...CURRENCY, call: { args, needs: needs(args, 'currency') } }, v);
   const viaTerm = valuesOfTerms(db, CURRENCY.tool, CURRENCY.field, ids);
   if (viaTerm.length === 1) return viaTerm[0];
   const named = matched.some((m) => m.id === v) ? termName(db, v) : `"${v}"`;
@@ -172,6 +172,18 @@ function resolveCurrency(db, value) {
   }
   throw new ToolError(`\`currency\`: no price is recorded in ${named}.`, valuesHint(db, CURRENCY.tool, CURRENCY.field));
 }
+
+// What a call must change for `field` to take the value refused for `from`: drop the filters of
+// the other layer, and widen `layer` to the field's (the refusals of compile).
+const needs = (args, from) => (field) => {
+  const layer = LAYER_OF[field];
+  if (!layer) return [];
+  const others = FILTERS.filter((k) => k !== from && k !== field && args[k] !== undefined && LAYER_OF[k] && LAYER_OF[k] !== layer);
+  return [
+    others.length && `without ${list(others)}`,
+    !LAYERS[args.layer].includes(layer) && `with \`layer\` "${layer}" or "both"`,
+  ].filter(Boolean);
+};
 
 // Compiles the filters to one condition per layer: { chain: { where, params }, acquisition: …, layers, applied, warnings }.
 function compile(db, args) {
@@ -216,7 +228,8 @@ function compile(db, args) {
 
   for (const [field, f] of Object.entries(TERM_FILTERS)) {
     if (args[field] === undefined) continue;
-    const { ids, matched } = resolveTerms(db, { tool: SEARCH_PROVENANCE_TOOL_NAME, field, facet: f.facet }, args[field]);
+    const { ids, matched } = resolveTerms(db,
+      { tool: SEARCH_PROVENANCE_TOOL_NAME, field, facet: f.facet, call: { args, needs: needs(args, field) } }, args[field]);
     const inList = `IN (${placeholders(ids.length)})`;
     add(f.layer, f.exists ? `EXISTS (${f.exists} ${inList})` : `${f.sql} ${inList}`, ...ids);
     applied[field] = matched;
@@ -245,7 +258,7 @@ function compile(db, args) {
     applied[field] = args[field];
   }
   if (args.currency !== undefined) {
-    const code = resolveCurrency(db, args.currency);
+    const code = resolveCurrency(db, args.currency, args);
     for (const [layer, t] of [['chain', 'p'], ['acquisition', 'a']]) add(layer, `${t}.currency_code = ? AND ${priced(t)}`, code);
     applied.currency = code;
   }

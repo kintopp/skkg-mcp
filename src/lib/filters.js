@@ -80,6 +80,16 @@ function targetsOf(db, terms) {
 
 const targetName = ({ f, values }) => `\`${f.field}\`${values ? ` with the value ${values.map((x) => `"${x}"`).join(' or ')}` : ''}`;
 
+// What else the call must change for an own target to run in place of the refused field: the
+// value it replaces, and what `needs` (the tool's) names, e.g. a `layer` the target's layer is not in.
+function ownTargetName(where, t) {
+  const { args, needs } = where.call ?? {};
+  const parts = [];
+  if (args?.[t.f.field] !== undefined) parts.push(`in place of its value "${args[t.f.field]}"`);
+  parts.push(...(needs?.(t.f.field) ?? []));
+  return `${targetName(t)}${parts.length ? ` (${parts.join(', ')})` : ''}`;
+}
+
 // The facet names are the values of skkg_find_terms' `vocabulary`, so the hints name them as such.
 // A value filter names its values instead: skkg_find_terms gives its terms no filter.
 const listedBy = ({ db, tool, field }, wanted) =>
@@ -92,7 +102,7 @@ function otherFilterHint(where, targets, wanted) {
   const { tool, exclusion } = where;
   const own = targets.filter((t) => t.f.tool === tool);
   if (exclusion || !targets.length) return listedBy(where, wanted);
-  if (own.length) return `Pass it as ${own.map(targetName).join(' or ')}. ${listedBy(where, wanted)}`;
+  if (own.length) return `Pass it as ${own.map((t) => ownTargetName(where, t)).join(' or ')}. ${listedBy(where, wanted)}`;
   return `This tool has no filter for it; ${targets.map((t) => `${t.f.tool} takes it as ${targetName(t)}`).join(', and ')}. ` +
     listedBy(where, wanted);
 }
@@ -103,12 +113,15 @@ const vocabularies = (facets) => `the ${facets.join(' and ')} ${facets.length > 
  * Resolves a term filter value (a term id or a label) to term ids of `facet`, for `field` of
  * `tool`. Throws a ToolError with suggestions. With `narrower`, the ids include the narrower terms;
  * `exclusion` marks a filter that leaves out what it matches, so its hints name no other filter.
+ * `call` is { args, needs }: the call's arguments, and a function that names what else the call
+ * must change for another field of the tool to run (`needs(field)`, a list of phrases), so a hint
+ * to pass the value as that field says it.
  * For a value filter, the refusals name its values instead of skkg_find_terms or similar labels,
  * which would offer terms without one.
  * Returns { ids, matched }, where `matched` lists the terms the value named, for applied_filters.
  */
-export function resolveTerms(db, { tool, field, facet, narrower = false, exclusion = false }, value) {
-  const where = { db, tool, field, exclusion };
+export function resolveTerms(db, { tool, field, facet, narrower = false, exclusion = false, call }, value) {
+  const where = { db, tool, field, exclusion, call };
   const v = value.trim();
   let ids;
   if (v.startsWith('type/')) {

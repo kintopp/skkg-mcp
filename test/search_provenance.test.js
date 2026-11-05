@@ -308,6 +308,22 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
       assert.doesNotMatch(holz, /Pass it as `material`/);
     });
 
+    await t.test('a hint to pass a value as another filter names what else the call must change, and followed it runs', async () => {
+      const layer = await callError(client, NAME, { layer: 'chain', owner_type: 'Auktion' });
+      assert.match(layer, /Pass it as `acquisition_type` \(with `layer` "acquisition" or "both"\)\./);
+      await search({ layer: 'both', acquisition_type: 'Auktion' });
+      const viaCurrency = await callError(client, NAME, { layer: 'chain', currency: 'Auktion' });
+      assert.match(viaCurrency, /Pass it as `acquisition_type` \(with `layer` "acquisition" or "both"\)\./);
+      const other = await callError(client, NAME, { owner: STUKER, owner_type: 'Auktion' });
+      assert.match(other, /Pass it as `acquisition_type` \(without `owner`\)\./);
+      await search({ acquisition_type: 'Auktion' });
+      const taken = await callError(client, NAME, { certainty: 'gesichert', owner_type: 'vermutlich' });
+      assert.match(taken, /Pass it as `certainty` \(in place of its value "gesichert"\)\./);
+      await search({ certainty: 'vermutlich' });
+      // A filter of both layers needs nothing else.
+      assert.match(await callError(client, NAME, { layer: 'chain', owner_type: 'DM' }), /Pass it as `currency`\./);
+    });
+
     await t.test('every hint that sends a currency term to `currency` runs', async () => {
       const db = new DatabaseSync(FIXTURE_DB.path, { readOnly: true });
       const values = db.prepare(`SELECT id AS v FROM terms WHERE facet = 'currency'
