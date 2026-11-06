@@ -24,10 +24,11 @@ Ways the rules could fail, which the tests below pin:
 - a currency label that is neither an alias nor an ISO-like code passes without a count;
 - an anonymised owner keeps a gender or a nationality the store gives it, which the privacy
   check would have to tell from a real one;
-- SKKG's "not stated" ("Ohne Angaben", "keine Angabe") is loaded as an author, editor, or
-  publisher, or as a name-only actor, in another capitalisation or with spaces; a real name that
-  only contains "Angabe" is dropped, or not counted as one the rule does not catch; the parts
-  dropped are not counted.
+- SKKG's "not stated" ("Ohne Angaben", "keine Angabe", "Nicht Genannt", "Div.") is loaded as an
+  author, editor, or publisher, or as a name-only actor, in another capitalisation or with spaces;
+  a real name that only contains "Angabe" or "Anonymus" is dropped, or not counted as one the rule
+  does not catch, or the count lists persons with a record of their own; the parts dropped are not
+  counted.
 
 Run: uv run --with pyoxigraph --with pytest python -I -m pytest -q scripts/tests
 """
@@ -291,8 +292,8 @@ def test_a_nationality_loads_its_country_term_not_the_citizenship_node():
 
 @pytest.mark.parametrize("label, want", [
     ("Ohne Angaben", True), ("Ohne Angabe", True), ("keine Angaben", True), ("Keine Angaben", True),
-    (" keine Angabe ", True), ("OHNE ANGABEN", True),
-    ("Dr. Med. Anonymus", False), ("Angaben zur Person", False), ("Ohne Angaben, Hans", False), ("", False), (None, False),
+    (" keine Angabe ", True), ("OHNE ANGABEN", True), ("Nicht Genannt", True), ("Div.", True),
+    ("Dr. Med. Anonymus", False), ("Angaben zur Person", False), ("Div", False), ("Divisionsstab", False), ("Ohne Angaben, Hans", False), ("", False), (None, False),
 ])
 def test_not_stated_is_skkgs_placeholder_in_any_capitalisation_and_nothing_else(label, want):
     assert b.is_not_stated(label) == want
@@ -316,12 +317,15 @@ def test_not_stated_parts_and_their_label_only_actors_are_not_loaded_and_are_cou
 <{d}person/11> a crm:E21_Person ; rdfs:label "Autor, A." .
 <{d}actor/20> a crm:E39_Actor ; rdfs:label " Keine Angabe " .
 <{d}actor/21> a crm:E39_Actor ; rdfs:label "Angaben zur Person" .
+<{d}actor/22> a crm:E39_Actor ; rdfs:label "Dr. Med. Anonymus" .
+<{d}person/12> a <https://ontology.skkg.ch/Person>, <https://ontology.skkg.ch/Actor>, crm:E21_Person ; rdfs:label "Unbekannt" .
 """.encode(), format=RdfFormat.TURTLE)
     db = empty_db()
     src = b.Source(store)
     b.load_actors(src, db, set())
     r = b.load_literature(src, db, set())
     assert db.execute("SELECT actor_id, kind FROM literature_actors").fetchall() == [("person/11", "author")]
-    assert sorted(a for (a,) in db.execute("SELECT id FROM actors WHERE kind = 'stub'")) == ["actor/21", "person/11"]
+    assert sorted(a for (a,) in db.execute("SELECT id FROM actors WHERE kind = 'stub'")) == ["actor/21", "actor/22", "person/11"]
     assert r["not_stated"] == {"actors": 2, "parts": {" Keine Angabe ": 1, "Ohne Angaben": 1}}
-    assert r["not_stated_near"] == ["Angaben zur Person"]
+    # Only label-only actors: a person with a record of its own ("Unbekannt") is never a part of this rule.
+    assert r["not_stated_near"] == ["Angaben zur Person", "Dr. Med. Anonymus"]

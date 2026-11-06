@@ -77,7 +77,9 @@ MUTATIONS = [
     ('not stated in any capitalisation', 'return (label or "").strip().casefold() in NOT_STATED', 'return (label or "").strip() in NOT_STATED', 'not_stated_is or label_only_actors'),
     ('not stated parts dropped', '    actors = [r for r in actors if r[1] not in not_stated]\n', '', 'label_only_actors'),
     ('not stated actors dropped', 'db.executemany("DELETE FROM actors WHERE id = ?", [(a,) for a in not_stated])', 'None', 'label_only_actors'),
-    ('names near not stated counted', 'and lab and "angabe" in lab.casefold()}', 'and False}', 'label_only_actors'),
+    ('names near not stated counted', 'and re.search(r"\\b(angabe|genannt|unbekannt|anonym)", lab.casefold())})', 'and False})', 'label_only_actors'),
+    ('names near not stated only of stubs', 'near = sorted({lab for a, lab in stubs.items()', 'near = sorted({lab for a, lab in names.items()', 'label_only_actors'),
+    ('not stated stripped', 'return (label or "").strip().casefold() in NOT_STATED', 'return (label or "").casefold() in NOT_STATED', 'not_stated_is'),
 ]
 
 

@@ -111,7 +111,7 @@ test('skkg_search_literature against the fixture database', { skip: FIXTURE_DB.s
     await t.test('SKKG\'s "not stated" is no author, editor, or publisher', async () => {
       // The partial dump has about a hundred publications with "Ohne Angaben" in their label.
       assert.ok(column("SELECT id FROM literature WHERE label LIKE '%Ohne Angabe%'").length > 10);
-      for (const name of ['Ohne Angaben', 'Ohne Angabe', 'keine Angaben', 'Keine Angaben', 'keine Angabe']) {
+      for (const name of ['Ohne Angaben', 'Ohne Angabe', 'keine Angaben', 'Keine Angaben', 'keine Angabe', 'Nicht Genannt', 'Div.']) {
         for (const field of ['author', 'publisher']) {
           assert.match(await callError(client, NAME, { [field]: name }), /no (author or editor|publisher)/, `${field} ${name}`);
         }

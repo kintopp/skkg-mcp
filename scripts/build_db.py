@@ -367,12 +367,12 @@ def is_anonymisation(label):
     return (label or "").strip().casefold().startswith("unbekannte:r")
 
 
-NOT_STATED = frozenset({"ohne angaben", "ohne angabe", "keine angaben", "keine angabe"})
+NOT_STATED = frozenset({"ohne angaben", "ohne angabe", "keine angaben", "keine angabe", "nicht genannt", "div."})
 
 
 def is_not_stated(label):
     """SKKG's "not stated", written as an actor where a publication names no author, editor, or
-    publisher, in any capitalisation."""
+    publisher ("Div.", various authors, names none either), in any capitalisation."""
     return (label or "").strip().casefold() in NOT_STATED
 
 
@@ -1215,11 +1215,13 @@ def load_literature(src, db, used):
     names = dict(db.execute("SELECT id, label FROM actors"))
     # "Ohne Angaben" is no actor, so its parts and its label-only actors are not loaded; a privacy
     # check fails if any table still holds one of those actors.
-    not_stated = {a for a, lab in db.execute("SELECT id, label FROM actors WHERE kind = 'stub'") if is_not_stated(lab)}
+    stubs = dict(db.execute("SELECT id, label FROM actors WHERE kind = 'stub'"))
+    not_stated = {a for a, lab in stubs.items() if is_not_stated(lab)}
     dropped = Counter(names[r[1]] for r in actors if r[1] in not_stated)
     actors = [r for r in actors if r[1] not in not_stated]
     db.executemany("DELETE FROM actors WHERE id = ?", [(a,) for a in not_stated])
-    near = sorted({lab for a, lab in names.items() if a not in not_stated and lab and "angabe" in lab.casefold()})
+    near = sorted({lab for a, lab in stubs.items() if a not in not_stated and lab
+                   and re.search(r"\b(angabe|genannt|unbekannt|anonym)", lab.casefold())})
     by_part = defaultdict(list)
     for r in actors:
         by_part[r[0], r[2]].append(r)
@@ -2035,7 +2037,7 @@ def render_report(r):
               f"{len(r['isbn_unread'])}" + (f" ({', '.join(repr(v) for v in r['isbn_unread'][:20])})" if r["isbn_unread"] else "") + ".", "",
               f"Literature parts not loaded because their actor is SKKG's \"not stated\" ({r['not_stated']['actors']} label-only actors, not loaded either): "
               + (", ".join(f"{k} {n}" for k, n in r["not_stated"]["parts"].items()) or "none")
-              + ". Other actor names with \"Angabe\", which the rule does not catch: "
+              + ". Other actor names with \"Angabe\", \"genannt\", \"unbekannt\", or \"anonym\", which the rule does not catch: "
               + (", ".join(repr(v) for v in r["not_stated_near"][:20]) or "none") + ".", "",
               "Life dates of actors (births, deaths, formations, dissolutions) that SKKG gives only as a label, and place "
               "labels that stand for a country only: " + (", ".join(f"{k} {n}" for k, n in r["life_dates"].items()) or "none") + ".", "",
