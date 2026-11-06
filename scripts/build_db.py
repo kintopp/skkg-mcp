@@ -1373,7 +1373,8 @@ DATE_QUALIFIERS = {"um", "ca.", "vmtl.", "wohl", "evtl.", "angeblich", "Anfang",
 UNKNOWN_SIDE = {None, "o. D."}
 UNKNOWN_BOUND = {"from": "9999", "to": "0001"}
 
-# SKKG's media types (labels of the type vocabulary of multimedia), as the kinds the server reports.
+# SKKG's media types (labels of the multimedia type vocabulary, scheme 23089), as the kinds the server reports.
+MEDIA_TYPE_SCHEME = "23089"
 MEDIA_KINDS = {"Bild": "image", "Dokument": "document", "Ton": "sound"}
 
 
@@ -1434,9 +1435,8 @@ def derive(db):
     unlinked = drop_unlinked_multimedia(db)
     spans = period_years(db)
     credit = credit_lines(db)
-    # The kind of a multimedia record, from SKKG's media type ("Bild", "Dokument", "Ton").
-    db.executemany("UPDATE multimedia SET kind = ? WHERE type_id IN (SELECT id FROM terms WHERE label_de = ?)",
-                   [(kind, label) for label, kind in MEDIA_KINDS.items()])
+    db.executemany("UPDATE multimedia SET kind = ? WHERE type_id IN (SELECT id FROM terms WHERE scheme_id = ? AND label_de = ?)",
+                   [(kind, MEDIA_TYPE_SCHEME, label) for label, kind in MEDIA_KINDS.items()])
     db.executescript("""
     UPDATE objects SET image_count = (SELECT COUNT(*) FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id
         WHERE om.object_id = objects.id AND m.iiif_service IS NOT NULL);
@@ -1451,7 +1451,8 @@ def derive(db):
     UPDATE objects SET has_provenance_chain = EXISTS (SELECT 1 FROM provenance_objects po WHERE po.object_id = objects.id);
     """)
     count_terms(db)
-    return {"object_links_to_missing": missing, "period_years": spans, "credit_lines": credit, "primary_images": primary_images(db),
+    images = primary_images(db)
+    return {"object_links_to_missing": missing, "period_years": spans, "credit_lines": credit, "primary_images": images,
             "multimedia_unlinked": unlinked}
 
 
@@ -2061,9 +2062,7 @@ def main():
               "authors_not_in_label": lit["authors_not_in_label"], "isbn_unread": lit["isbn_unread"],
               "not_stated": lit["not_stated"], "not_stated_near": lit["not_stated_near"], "life_dates": actors["life_dates"], "redacted": redacted,
               "acquisitions_after_dump": future, "dates_not_iso": odd_dates, "currency_labels_not_mapped": odd_currencies,
-              "object_links_to_missing": derived["object_links_to_missing"], "period_years": derived["period_years"],
-              "credit_lines": derived["credit_lines"], "primary_images": derived["primary_images"],
-              "multimedia_unlinked": derived["multimedia_unlinked"],
+              **derived,
               "size_bytes": tmp.stat().st_size, "unloaded_edges": edges, "query_timings": src.timings}
     Path(str(out) + ".report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1))
     Path(str(out) + ".report.md").write_text(render_report(report))

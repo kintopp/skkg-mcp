@@ -117,11 +117,12 @@ separately, and so does every result.
 - `image_license` is the licence of SKKG's photograph: "CC0 1.0" (most photos),
   "CC BY 4.0", or "©" with a `right_holder`. The full image block also gives the
   photographer, the photo date, and the rights end date.
-- An image's `kind` (`image_kind` in a result row) says what it is: "image" is a
-  photograph of the object, "document" a scan of a paper about it, such as an auction
-  slip, a packing slip, or a label. About 2,000 objects have documents only, so their
-  primary image is one; never describe a document as a view of the object. Nearly
-  all documents have no licence recorded.
+- An image's `kind` (`image_kind` in a result row) is SKKG's media type: "image" is a
+  photograph, mostly of the object, some of a paper such as an auction slip;
+  "document" is a scan of a paper about the object, such as an auction slip, a packing
+  slip, or a label. About 2,000 objects have documents only, so their primary image is
+  one; never describe a document as a view of the object. Nearly all documents have no
+  licence recorded.
 - `object_copyright` is the status of the object itself: "gemeinfrei" (public domain)
   or "Copyright". Most objects have neither, shown as "not recorded". That means
   unknown, never free.

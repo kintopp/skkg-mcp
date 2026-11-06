@@ -203,10 +203,11 @@ export function compileObjectFilters(db, args) {
   }
 
   const creatorRow = creatorParts.length ? { sql: creatorParts.join(' AND '), params: creatorParams } : undefined;
-  // Whether include_narrower: false kept a term filter from narrower terms; an exclusion it narrows only widens the result.
+  // Whether include_narrower: false kept a term filter from objects of narrower terms; an exclusion it narrows
+  // only widens the result.
   const kept = narrower ? [] : TERM_FILTER_FIELDS.flatMap((f) => termIds[f] ?? []);
-  const narrowed = kept.length > 0 && stmt(db, `SELECT 1 FROM term_ancestors WHERE ancestor_id IN (${placeholders(kept.length)})
-      AND term_id <> ancestor_id LIMIT 1`).get(...kept) !== undefined;
+  const narrowed = kept.length > 0 && stmt(db, `SELECT 1 FROM terms WHERE id IN (${placeholders(kept.length)})
+      AND object_count_with_narrower > object_count LIMIT 1`).get(...kept) !== undefined;
   return { clauses, params, applied, warnings, creatorRow, termIds, narrowed };
 }
 

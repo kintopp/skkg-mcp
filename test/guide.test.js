@@ -9,6 +9,7 @@
 // - A topic outgrows the result size limit, or a lowered limit is ignored.
 // - The description stops saying when to read it, or names topics the guide does not have.
 // - The server instructions stop pointing to it inside the 512 characters some hosts pass on.
+// - The rights topic stops saying that a document is a scan of a paper, never a view of the object.
 // - A heading that slugs badly (non-ASCII letters, two headings to one name), an empty
 //   section, or a `##` inside a code fence is accepted and misnames or splits a topic.
 
@@ -40,6 +41,15 @@ test('every section of the guide is one topic, named after its heading, and the 
       texts.push(`## ${title}\n\n${r.structured.text}`);
     }
     assert.equal(`${texts.join('\n\n')}\n`, source.slice(source.indexOf('\n## ') + 1));
+  }, NO_DB);
+});
+
+test('the rights topic says what an image\'s kind means', async () => {
+  await withClient('guide-kind', async (client) => {
+    const { structured } = await callSent(client, NAME, { topic: 'rights_and_privacy' }, outputSchema);
+    assert.match(structured.text, /"document" is a scan of a paper about the object/);
+    assert.match(structured.text, /never describe a document as a view of the object/);
+    assert.match(structured.text, /"image" is a\s+photograph, mostly of the object, some of a paper/);
   }, NO_DB);
 });
 

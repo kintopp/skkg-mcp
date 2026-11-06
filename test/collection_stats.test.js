@@ -31,7 +31,8 @@
 // - paging repeats or skips a bucket, or has_more is true on the last page
 // - a query without a match gives no hint that the data is German
 // - results violate the output schema
-// - an empty result of one filter says "these filters together"
+// - an empty result of one filter says "these filters together", or one emptied by
+//   include_narrower: false names the term filter alone
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -249,6 +250,14 @@ test('skkg_collection_stats against the fixture database', { skip: FIXTURE_DB.sk
       const r = await stats({ dimension: 'material', part_of: 'object/821' });
       assert.equal(r.total_objects, 0);
       assert.match(r.warnings.join(' '), /No object matches `part_of`, the only filter given\./);
+    });
+
+    await t.test('an empty result counts include_narrower: false as a filter when it kept objects out', async () => {
+      // "Malerei" has objects only under its narrower terms in the fixture.
+      const r = await stats({ dimension: 'material', object_type: 'Malerei', include_narrower: false });
+      assert.equal(r.total_objects, 0);
+      assert.match(r.warnings.join(' '), /No object matches these filters together/);
+      assert.doesNotMatch(r.warnings.join(' '), /the only filter given/);
     });
 
     await t.test('a query without a match says the data is German', async () => {

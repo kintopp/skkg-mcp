@@ -50,7 +50,7 @@ const description =
   'actor: names, events, biography, relations, external (GND, Wikidata, other ids), literature (by and about them), objects; ' +
   'literature: objects (with page, figure, and catalogue number), provenance (periods it documents), about (persons and exhibitions it is about); ' +
   'exhibition: objects, literature, images; provenance: literature; objectgroup: objects; address: exhibitions. ' +
-  '`objects` is paged with limit and offset; each object carries image_license (photo) and object_copyright (the object itself): quote both. ' +
+  '`objects` is paged with limit and offset; each object carries image_license (its primary image) and object_copyright (the object itself): quote both. ' +
   'SKKG\'s anonymisation ("Privatperson", "Unbekannte:r Eigentümer:in") is returned as it is; never try to identify those persons. ' +
   'For objects, use skkg_get_object; for vocabulary terms, skkg_find_terms with `id`.';
 

@@ -54,7 +54,7 @@ const description =
   'An entry matches when it meets every filter; each object lists its matching periods (matched_periods) and acquisition ' +
   '(matched_acquisition). Prices are compared in the currency recorded, never converted, so a price filter needs `currency`. ' +
   'Owner names are as SKKG publishes them; its anonymisation ("Unbekannte:r Eigentümer:in", "Privatperson") stays as it is: ' +
-  'never try to identify those persons. Each object carries image_license (photo) and object_copyright: quote both. ' +
+  'never try to identify those persons. Each object carries image_license (its primary image) and object_copyright: quote both. ' +
   'For the whole chain of one object, use skkg_get_object with include ["provenance", "acquisition"]; ' +
   'for a period, skkg_get_record with its id; for labels of the term filters, skkg_find_terms.';
 

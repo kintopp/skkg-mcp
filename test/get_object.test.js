@@ -11,6 +11,8 @@
 //   empty, gets that warning
 // - the count of pieces ("Anzahl Teile") reads as child objects in the text
 // - images include multimedia without a published IIIF image, or the primary is not first
+// - the description of an image's kind stops saying that a document is a scan of a paper, or that
+//   some photos show papers too
 // - when SKKG's primary image is unpublished, a scanned document is chosen over a published photo,
 //   or a document comes without its kind, so the model describes an auction slip as the object
 // - a long image list is returned whole, or cut without a warning
@@ -169,6 +171,13 @@ test('skkg_get_object against the fixture database', { skip: FIXTURE_DB.skip }, 
       }
     });
 
+    await t.test('the kind of an image is described as SKKG\'s media type', async () => {
+      const { tools } = await client.listTools();
+      const kind = tools.find((x) => x.name === NAME).outputSchema.properties.rights.properties.primary_image.properties.kind;
+      assert.match(kind.description, /^SKKG's media type: "image", a photograph, mostly of the object, some of a paper/);
+      assert.match(kind.description, /"document", a scan of a paper such as an auction slip/);
+    });
+
     await t.test('without a published primary from SKKG, a photo is preferred over a document', async () => {
       // object/6190's first published item in SKKG's order is a document (multimedia/13049).
       const r = await get({ id: 'object/6190', include: ['images'] });
@@ -177,10 +186,10 @@ test('skkg_get_object against the fixture database', { skip: FIXTURE_DB.skip }, 
       assert.ok(r.images.some((i) => i.id === 'multimedia/13049' && i.rights.kind === 'document' && !i.is_primary));
     });
 
-    await t.test('the text names the kind of each image', async () => {
+    await t.test('the text names the kind of each image, as SKKG\'s label starts with it', async () => {
       const { text } = await callSent(client, NAME, { id: 'object/6190', include: ['images'] }, outputSchema);
-      assert.match(text, /^- multimedia\/13049 · document · /m);
-      assert.match(text, /^- multimedia\/7e39939d-a8aa-47e0-9c86-807d46ae61f0 · primary · image · /m);
+      assert.match(text, /^- multimedia\/13049 · document, /m);
+      assert.match(text, /^- multimedia\/7e39939d-a8aa-47e0-9c86-807d46ae61f0 · primary · image, /m);
     });
 
     await t.test('a document as the primary image is named a document, in both channels', async () => {

@@ -11,7 +11,7 @@ import { prune } from '../lib/prune.js';
 import { objectRef } from '../lib/labels.js';
 import { objectRights, imageRights } from '../lib/rights.js';
 import { capList } from '../lib/results.js';
-import { join, photoRights } from '../lib/text.js';
+import { join, photoRights, imageNoun } from '../lib/text.js';
 import {
   objectImages, imageObjectIds, pixelRegion, deliverySize, regionUrl, fetchImage, jpegSize, visualTokens,
 } from '../lib/images.js';
@@ -32,7 +32,7 @@ const description =
   'other images in the order of skkg_get_object, or an image id from skkg_get_object (include ["images"]). ' +
   `The image comes within max_long_edge and ${VISION_MAX_TOKENS} visual tokens, and never larger than the region's own pixels; ` +
   'the result\'s note says what adds detail, usually a smaller region_pct. ' +
-  'Quote both rights: image_rights.image_license is the photo\'s, each object\'s object_copyright its own.';
+  'Quote both rights: image_rights.image_license is the image\'s, each object\'s object_copyright its own.';
 
 const regionPct = () => z.array(z.number().min(0).max(100)).length(4)
   .refine((r) => r[0] < 100 && r[1] < 100, { message: 'region_pct x and y must be below 100' })
@@ -98,7 +98,7 @@ function pickImage(db, args, warnings) {
   const o = stmt(db, 'SELECT id, primary_multimedia_id FROM objects WHERE id = ?').get(id);
   const images = objectImages(db, o);
   if (!images.length) {
-    throw new ToolError(`${id} has no published image.`, 'SKKG has not published a photo of it; do not look for one elsewhere.');
+    throw new ToolError(`${id} has no published image.`, 'SKKG has not published an image of it; do not look for one elsewhere.');
   }
   const index = args.index ?? 1;
   if (index > images.length) {
@@ -198,7 +198,7 @@ function renderText(s) {
     `Image ${join([s.id, s.label], ' · ')}${where}: ${region} of ${s.full_width}×${s.full_height} px.`,
     `Received: ${s.width}×${s.height} px ${s.mime_type}, ${Math.round(s.byte_size / 1000)} KB, ${s.visual_tokens} visual tokens, ` +
       `scale ${s.scale} (set by ${s.bound_by}). ${s.note}`,
-    `${s.image_rights.kind === 'document' ? 'Document' : 'Photo'} rights: ${photoRights(s.image_rights)}.`,
+    `${imageNoun(s.image_rights.kind, true)} rights: ${photoRights(s.image_rights)}.`,
     s.objects.length ? `Objects (${s.object_count}):` : 'The image belongs to no object.',
     ...s.objects.map(objectLine),
     `Source: ${s.image_url}`,

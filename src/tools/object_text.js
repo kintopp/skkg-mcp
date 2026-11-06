@@ -3,7 +3,7 @@
 
 import { tailLines } from '../lib/results.js';
 import {
-  present, join, span, point, obj, list, photoRights, periodLines, creatorRef, acquisitionLines,
+  present, join, span, point, obj, list, photoRights, imageNoun, periodLines, creatorRef, acquisitionLines,
 } from '../lib/text.js';
 
 const creatorLine = (c) => `- ${creatorRef(c)}`;
@@ -55,7 +55,7 @@ function related(r) {
     ...(r.links ?? []).map((l) => `Link: ${join([l.url, l.type, l.note])}`)];
 }
 
-const imageLine = (m) => `- ${join([m.id, m.is_primary && 'primary', m.rights.kind, m.label, m.usage,
+const imageLine = (m) => `- ${join([m.id, m.is_primary && 'primary', m.label, m.usage,
   m.width && m.height && `${m.width}×${m.height}`, m.page && `page ${m.page}`], ' · ')}\n` +
   `   ${join([photoRights(m.rights), m.rights.iiif_service], ' · ')}`;
 
@@ -102,7 +102,7 @@ export function renderObjectText(s) {
       .map((t) => `Title: ${join([t.title, t.short_title && `short: ${t.short_title}`, t.type, t.language, t.note])}`),
     list('Identifiers', (sm.identifiers ?? []).map((i) => join([i.type, i.value], ' '))),
     `Object copyright: ${join([oc.object_copyright, oc.credit_line && `credit: ${oc.credit_line}`, oc.redaction_status], ' · ')}`,
-    img ? `${img.kind === 'document' ? 'Document' : 'Photo'}: ${photoRights(img)}` : 'No published image',
+    img ? `${imageNoun(img.kind, true)}: ${photoRights(img)}` : 'No published image',
     s.website_url,
     s.manifest_url && `IIIF manifest: ${s.manifest_url}`,
   ];

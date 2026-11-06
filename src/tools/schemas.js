@@ -39,8 +39,8 @@ export const objectRightsOut = () => z.object({
   redaction_status: str(),
 });
 
-const MEDIA_KIND = 'SKKG\'s media type: "image", a photograph, or "document", a scan of a paper such as an auction slip, ' +
-  'an invoice, or a label; absent when SKKG records none';
+const MEDIA_KIND = 'SKKG\'s media type: "image", a photograph, mostly of the object, some of a paper such as an auction slip; ' +
+  '"document", a scan of a paper such as an auction slip, an invoice, or a label; or "sound". Absent when SKKG records none';
 
 export const imageRightsOut = () => z.object({
   kind: str().describe(MEDIA_KIND),

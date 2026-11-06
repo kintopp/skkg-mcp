@@ -21,6 +21,7 @@ Ways the rules could fail, which the tests below pin:
 - a link to an object the database does not hold is not counted because its column is missing
   from a hand list, or a period link that is NULL or not shaped "object/…" survives the drop;
 - a column that holds object ids does not declare its link, so the count misses it;
+- a media type label of another vocabulary (the material "Ton") gives a kind;
 - an object whose primary image SKKG did not publish gets a scanned document though a photo or an
   untyped item is published, or SKKG's own published primary is replaced; a multimedia record's
   kind is not SKKG's media type; the report miscounts the primary images that are not SKKG's or
@@ -364,28 +365,32 @@ def test_the_credit_line_joins_the_foundation_the_credit_text_and_the_acquisitio
 
 def test_the_primary_image_is_skkgs_when_published_else_the_first_that_is_no_document():
     db = empty_db()
-    db.executemany("INSERT INTO terms (id, facet, label_de) VALUES (?, 'multimedia_type', ?)",
-                   [("type/23089/1", "Bild"), ("type/23089/2", "Dokument")])
+    db.executemany("INSERT INTO terms (id, scheme_id, label_de) VALUES (?, ?, ?)",
+                   [("type/23089/1", "23089", "Bild"), ("type/23089/2", "23089", "Dokument"), ("type/42156/9", "42156", "Ton")])
     iiif = "https://iiif.digital.skkg.ch/iiif/3/x"
     db.executemany("INSERT INTO multimedia (id, type_id, iiif_service) VALUES (?, ?, ?)",
                    [("multimedia/doc", "type/23089/2", iiif), ("multimedia/img", "type/23089/1", iiif),
                     ("multimedia/untyped", None, iiif), ("multimedia/doc2", "type/23089/2", iiif),
-                    ("multimedia/unpublished", "type/23089/1", None)])
-    db.executemany("INSERT INTO objects (id) VALUES (?)", [(f"object/{i}",) for i in range(1, 6)])
+                    ("multimedia/unpublished", "type/23089/1", None),
+                    # "Ton" is also a material; only the media type vocabulary gives a kind.
+                    ("multimedia/material-term", "type/42156/9", iiif)])
+    db.executemany("INSERT INTO objects (id) VALUES (?)", [(f"object/{i}",) for i in range(1, 7)])
     db.executemany("INSERT INTO object_multimedia VALUES (?, ?, ?, ?)", [
         ("object/1", "multimedia/unpublished", 1, 1), ("object/1", "multimedia/doc", 2, 0), ("object/1", "multimedia/img", 3, 0),
         ("object/2", "multimedia/doc", 1, 0), ("object/2", "multimedia/untyped", 2, 0),
         ("object/3", "multimedia/doc2", 1, 1), ("object/3", "multimedia/img", 2, 0),
         ("object/4", "multimedia/doc2", 2, 0), ("object/4", "multimedia/doc", 1, 0),
-        ("object/5", "multimedia/unpublished", 1, 1)])
+        ("object/5", "multimedia/unpublished", 1, 1),
+        # SKKG's own primary is a document; the other items are of no known kind, so no photo is published.
+        ("object/6", "multimedia/doc2", 1, 1), ("object/6", "multimedia/untyped", 2, 0), ("object/6", "multimedia/material-term", 3, 0)])
     out = b.derive(db)["primary_images"]
     assert dict(db.execute("SELECT id, kind FROM multimedia")) == {
         "multimedia/doc": "document", "multimedia/img": "image", "multimedia/untyped": None,
-        "multimedia/doc2": "document", "multimedia/unpublished": "image"}
+        "multimedia/doc2": "document", "multimedia/unpublished": "image", "multimedia/material-term": None}
     assert dict(db.execute("SELECT id, primary_multimedia_id FROM objects")) == {
         "object/1": "multimedia/img", "object/2": "multimedia/untyped", "object/3": "multimedia/doc2",
-        "object/4": "multimedia/doc", "object/5": None}
-    assert out == {"kinds": {"document": 2, "image": 2, "unknown": 1}, "not_skkg_primary": 3,
+        "object/4": "multimedia/doc", "object/5": None, "object/6": "multimedia/doc2"}
+    assert out == {"kinds": {"document": 2, "image": 2, "unknown": 2}, "not_skkg_primary": 3,
                    "document_without_published_image": 1, "skkg_primary_document_though_an_image_is_published": 1}
 
 

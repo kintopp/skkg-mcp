@@ -31,9 +31,9 @@ const description =
   'dating and its basis), physical (materials, parts with dimensions, inscriptions, condition), ' +
   'texts (SKKG\'s descriptions), acquisition (how, when, from whom and for how much SKKG acquired it), ' +
   'provenance (the ownership chain before SKKG, where one is recorded), exhibitions, literature, ' +
-  'related (parent, parts, references, groups), images (each photo with its rights and IIIF service; to look at one, ' +
+  'related (parent, parts, references, groups), images (each image with its rights and IIIF service; to look at one, ' +
   'pass its id to skkg_inspect_image), or all. ' +
-  'Quote both rights: object_copyright is the object\'s own status, image_license the photo\'s. ' +
+  'Quote both rights: object_copyright is the object\'s own status, image_license the primary image\'s. ' +
   'live: true checks the rights against SKKG\'s API (one request), and says what differs from the dump. ' +
   `Lists longer than ${SECTION_LIMIT} are cut and say so in warnings. To find objects, use skkg_search_objects.`;
 

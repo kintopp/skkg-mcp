@@ -36,6 +36,8 @@ MUTATIONS = [
     ("loader drops an anonymised owner's nationality", "[r for r in nat if r[0] not in anonymised]", "nat", "anonymised_owner_is_loaded"),
     ("anonymised owner's life data checked", "death_to, death_place, death_place_id, biography) IS NOT NULL)", "death_to, death_place, death_place_id, biography) IS NOT NULL AND 0)", "own_row"),
     # The data rules of test_build_rules.py.
+    ("kind only from the media type vocabulary", "(SELECT id FROM terms WHERE scheme_id = ? AND label_de = ?)", "(SELECT id FROM terms WHERE ? IS NOT NULL AND label_de = ?)", "primary_image"),
+    ("report counts photos only as photos", "AND y.iiif_service IS NOT NULL AND y.kind = 'image')", "AND y.iiif_service IS NOT NULL AND y.kind IS NOT 'document')", "primary_image"),
     ("unlinked multimedia dropped", "    unlinked = drop_unlinked_multimedia(db)\n", "    unlinked = {}\n", "no_object_or_exhibition"),
     ("exhibition images kept", "\"AND NOT EXISTS (SELECT 1 FROM exhibition_multimedia x WHERE x.multimedia_id = multimedia.id)\")", "\"\")", "no_object_or_exhibition"),
     ("unlinked published counted", "COUNT(iiif_service) FROM multimedia WHERE {UNLINKED_MULTIMEDIA}", "COUNT(*) FROM multimedia WHERE {UNLINKED_MULTIMEDIA}", "no_object_or_exhibition"),

@@ -301,11 +301,12 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
       }
     });
 
-    await t.test('the text names the kind of each exhibition image', async () => {
+    await t.test('the text names the kind of each exhibition image, as SKKG\'s label starts with it', async () => {
       const { structured: r, text } = await callSent(client, NAME, { id: 'exhibition/1d42c3a2-a3b5-439e-b43f-0bc76f203a70', include: ['images'] }, outputSchema);
+      assert.ok(r.images.length > 0);
       for (const m of r.images) {
         assert.equal(m.rights.kind, 'image', m.id);
-        assert.match(text, new RegExp(`^- ${m.id} · image( · |$)`, 'm'), m.id);
+        assert.match(text, new RegExp(`^- ${m.id} · image, `, 'm'), m.id);
       }
     });
 

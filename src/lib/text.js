@@ -27,6 +27,12 @@ export function priceText(p) {
   return join([amount, p.value_chf !== undefined && `≈ CHF ${p.value_chf}`, p.is_batch_price && 'paid for a batch', p.note]);
 }
 
+/** "Document" for a scan (SKKG's media type "Dokument"), else "Photo"; lower case unless `capital`. */
+export const imageNoun = (kind, capital = false) => {
+  const noun = kind === 'document' ? 'document' : 'photo';
+  return capital ? noun[0].toUpperCase() + noun.slice(1) : noun;
+};
+
 export function photoRights(r) {
   return join([r.image_license, r.right_holder && `holder ${actor(r.right_holder)}`,
     r.original_right_holder && `original holder ${actor(r.original_right_holder)}`,
@@ -69,7 +75,7 @@ export function acquisitionLines(a, { lead = 'Acquisition: ', inlineNote = false
 /** An object row of a search result or a record's object list, numbered `n`. */
 export function objectRowLines(r, n) {
   const what = [r.object_type, (r.creators ?? []).map(creatorRef).join('; '), r.date].filter(Boolean).join(' · ');
-  const rights = [r.has_image ? `${r.image_kind === 'document' ? 'document' : 'photo'}: ${r.image_license}` : 'no image', `object: ${r.object_copyright}`].join(', ');
+  const rights = [r.has_image ? `${imageNoun(r.image_kind)}: ${r.image_license}` : 'no image', `object: ${r.object_copyright}`].join(', ');
   return `${n}. ${r.inventory_number ?? ''} ${r.title ?? '(untitled)'}${what ? ` — ${what}` : ''}\n` +
     `   ${r.id} · ${rights} · ${r.website_url ?? ''}`;
 }

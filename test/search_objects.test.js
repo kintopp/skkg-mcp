@@ -7,6 +7,8 @@
 // - an unknown term label is silently dropped, so the search runs unfiltered
 // - a term of another vocabulary is accepted as a filter value
 // - a broader term ("Malerei") misses objects typed with a narrower term, or include_narrower: false still expands
+// - an empty result blames include_narrower: false though it kept no object out, because the term's
+//   narrower terms have no objects
 // - a creator name that matches several persons silently picks one, or merges them without saying so
 // - exclude_attributions keeps works "nach" the creator, or, without `creator`, lets an object
 //   through because another of its creators has no attribution
@@ -98,6 +100,13 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
       const leaf = await search({ object_type: 'type/21087/146997', include_narrower: false });
       assert.equal(leaf.total, 0);
       assert.match(leaf.warnings.join(' '), /No object matches `object_type`, the only filter given\./);
+    });
+
+    await t.test('include_narrower: false is no filter of its own when the narrower terms have no objects', async () => {
+      // "Faserzement" (type/42156/165969) has a narrower term, and neither has an object in the fixture.
+      const r = await search({ material: 'type/42156/165969', include_narrower: false });
+      assert.equal(r.total, 0);
+      assert.match(r.warnings.join(' '), /No object matches `material`, the only filter given\./);
     });
 
     await t.test('include_narrower: false counts as a filter when the result is empty', async () => {
