@@ -514,6 +514,14 @@ const MUTATIONS = [
   ['src/lib/guide.js', '    if (/[^A-Za-z0-9 ,\'()-]/.test(t.title)) throw', '    if (false) throw', 'guide: ASCII headings'],
   ['src/lib/guide.js', '  if (/^\\s*(```|~~~)/m.test(md)) throw', '  if (false) throw', 'guide: no code fence'],
   ['src/lib/guide.js', '.replace(/[^a-z0-9]+/g, \'_\')', '.replace(/[^a-z0-9]+/g, \'-\')', 'guide: topics named after headings'],
+  ['src/guide.md', 'vocabulary: "object_type"', 'vocabulary: "objecttype"', 'guide examples: enum values valid'],
+  ['src/guide.md', '`skkg_search_actors({query: "Hodler"})`', '`skkg_search_actor({query: "Hodler"})`', 'guide examples: called tools exist'],
+  ['src/guide.md', '`skkg_get_object({id: "object/1014", include: ["provenance", "acquisition"]})`', '`skkg_get_object({id: "object/1014", includes: ["provenance", "acquisition"]})`', 'guide examples: call parameters exist'],
+  ['src/guide.md', '`{material: "Radierung"}`', '`{materials: "Radierung"}`', 'guide examples: argument objects valid'],
+  ['src/guide.md', '`internal_external: "intern"`', '`internalexternal: "intern"`', 'guide examples: fragments valid'],
+  ['src/guide.md', '- `skkg_inspect_image` returns the image', '- `skkg_inspect_images` returns the image', 'guide examples: mentioned tools exist'],
+  ['src/guide.md', '`skkg_get_object({id: "object/1014", live: true})`', '`skkg_get_object({id, live: true})`', 'guide examples: calls parse'],
+  ['src/guide.md', '- `skkg_search_objects({query: "Stillleben"})`', '- skkg_search_objects({query: "Stillleben"})', 'guide examples: extractor finds every listed call'],
 ];
 
 // The cache key changes with the entry, so an edited entry has no record and is selected.

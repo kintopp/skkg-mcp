@@ -125,7 +125,7 @@ separately, and so does every result.
 - `redaction_status` ("Bearbeitungstiefe 1: Registrierung" and so on) says how fully
   SKKG has catalogued the record. A record at level 1 is a bare registration, so a
   missing field there says little.
-- The database is a snapshot. `skkg_get_object({id, live: true})` checks the credit
+- The database is a snapshot. `skkg_get_object({id: "object/1014", live: true})` checks the credit
   line, the images, and the photo rights against SKKG's API with one request, and lists
   what changed. The API has no object copyright, so that value always comes from the
   dump. Use `live` for the objects the user will actually reuse, not for every result.
