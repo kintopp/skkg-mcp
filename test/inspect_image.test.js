@@ -375,6 +375,21 @@ test('skkg_inspect_image refuses bad input before any fetch', { skip: FIXTURE_DB
       assert.match(await callError(client, 'skkg_get_record', { id: 'multimedia/13006' }),
         /To look at the image, use skkg_inspect_image with id "multimedia\/13006"/);
     });
+    await t.test('an unpublished or missing image id is not sent to this tool', async () => {
+      const unpublished = await callError(client, 'skkg_get_record', { id: UNPUBLISHED });
+      assert.match(unpublished, /SKKG has not published an image for it/);
+      assert.doesNotMatch(unpublished, /skkg_inspect_image/);
+      const missing = await callError(client, 'skkg_get_record', { id: 'multimedia/does-not-exist' });
+      assert.match(missing, /No such multimedia record/);
+      assert.doesNotMatch(missing, /skkg_inspect_image/);
+    });
+    await t.test('the description points to the note for detail, not to a larger max_long_edge alone', async () => {
+      const { tools } = await client.listTools();
+      const d = tools.find((x) => x.name === NAME).description;
+      assert.match(d, /within max_long_edge and 4784 visual tokens/);
+      assert.match(d, /note says what adds detail/);
+      assert.doesNotMatch(d, /not a larger max_long_edge/);
+    });
     await t.test('an id of another record type names the tool to use', async () => {
       assert.match(await callError(client, NAME, { id: 'person/107' }), /object, multimedia ids/);
     });

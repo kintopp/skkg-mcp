@@ -442,6 +442,9 @@ const MUTATIONS = [
   ['src/tools/inspect_image.js', "{ type: 'image', data: buffer.toString('base64'), mimeType },", "{ type: 'image', data: buffer.toString('hex'), mimeType },", 'inspect: image as base64'],
   ['src/lib/ids.js', "`To look at the image, use skkg_inspect_image with id \"${s}\"; images", "`Images", 'multimedia refusal names skkg_inspect_image'],
   ['src/tools/get_object.js', "to look at one, ' +\n  'pass its id to skkg_inspect_image), or all. ' +", "or all. ' +", 'get_object names skkg_inspect_image'],
+  ['src/lib/ids.js', "    if (!m.iiif_service) return 'SKKG has not published an image for it; do not look for one elsewhere.';\n", "", 'multimedia hint: unpublished image not sent to skkg_inspect_image'],
+  ['src/lib/ids.js', "    if (!m) return 'No such multimedia record; check the id.';\n", "    if (!m) return 'x';\n", 'multimedia hint: missing record named'],
+  ['src/tools/inspect_image.js', "'the result\\'s note says what adds detail, usually a smaller region_pct. ' +", "'for more detail, pass a smaller region_pct, not a larger max_long_edge. ' +", 'inspect: description points to the note'],
 ];
 
 // The cache key changes with the entry, so an edited entry has no record and is selected.

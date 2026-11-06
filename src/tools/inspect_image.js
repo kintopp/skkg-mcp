@@ -27,8 +27,8 @@ const description =
   'The image is returned to you only; the user does not see it, so link the object\'s website_url for them ' +
   'and never embed an image URL as Markdown. Pass an object id for its primary image, with `index` for its ' +
   'other images in the order of skkg_get_object, or an image id from skkg_get_object (include ["images"]). ' +
-  `The image comes at the largest size you take without shrinking it (at most ${VISION_MAX_TOKENS} visual tokens) ` +
-  'and never larger than the region\'s own pixels: for more detail, pass a smaller region_pct, not a larger max_long_edge. ' +
+  `The image comes within max_long_edge and ${VISION_MAX_TOKENS} visual tokens, and never larger than the region's own pixels; ` +
+  'the result\'s note says what adds detail, usually a smaller region_pct. ' +
   'Quote both rights: image_rights.image_license is the photo\'s, each object\'s object_copyright its own.';
 
 const regionPct = () => z.array(z.number().min(0).max(100)).length(4)

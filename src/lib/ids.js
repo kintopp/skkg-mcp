@@ -5,6 +5,7 @@
 import { DATA_BASE, WEBSITE_BASE } from '../config.js';
 import { ToolError } from './errors.js';
 import { withArticle } from './format.js';
+import { stmt } from './sql.js';
 
 // Id prefix → table. `actor/` ids are publishers and editors of literature.
 export const RECORD_TABLES = Object.freeze({
@@ -66,7 +67,7 @@ export function resolveId(db, input, { types = Object.keys(RECORD_TABLES) } = {}
   if (m) {
     const [, type] = m;
     if (!types.includes(type)) {
-      throw new ToolError(`"${s}" is ${withArticle(type)} id; this tool takes ${accepted} ids.`, toolHint(type, s));
+      throw new ToolError(`"${s}" is ${withArticle(type)} id; this tool takes ${accepted} ids.`, toolHint(type, s, db));
     }
     if (!exists(db, RECORD_TABLES[type], s)) {
       throw new ToolError(`No ${type} record "${s}" in the database.`,
@@ -100,9 +101,14 @@ export function resolveId(db, input, { types = Object.keys(RECORD_TABLES) } = {}
 const TOOL_HINTS = {
   object: (s) => `Use skkg_get_object with id "${s}".`,
   type: (s) => `For a vocabulary term, use skkg_find_terms with id "${s}".`,
-  multimedia: (s) => `To look at the image, use skkg_inspect_image with id "${s}"; images come with their object: skkg_get_object with include ["images"].`,
+  multimedia: (s, db) => {
+    const m = stmt(db, 'SELECT iiif_service FROM multimedia WHERE id = ?').get(s);
+    if (!m) return 'No such multimedia record; check the id.';
+    if (!m.iiif_service) return 'SKKG has not published an image for it; do not look for one elsewhere.';
+    return `To look at the image, use skkg_inspect_image with id "${s}"; images come with their object: skkg_get_object with include ["images"].`;
+  },
 };
-const toolHint = (type, s) => TOOL_HINTS[type]?.(s) ?? `Use skkg_get_record with id "${s}".`;
+const toolHint = (type, s, db) => TOOL_HINTS[type]?.(s, db) ?? `Use skkg_get_record with id "${s}".`;
 
 // Website page of a record, in the forms the site itself links (notes/08). A person's panel
 // lists the collection's objects under it, so `works` filters them to the objects the person made
