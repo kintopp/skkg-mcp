@@ -35,7 +35,7 @@ from pathlib import Path
 
 from pyoxigraph import BlankNode, Literal, NamedNode, Store
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 D = "https://data.skkg.ch/"
 AAT = "http://vocab.getty.edu/aat/"
 PREFIX = """PREFIX crm: <http://www.cidoc-crm.org/cidoc-crm/>
@@ -79,6 +79,9 @@ RECORD_ONLY = {f for f, kind in RECORD_KIND.items() if kind != "provenance perio
 AAT_CREDIT = AAT + "300026687"
 AAT_EDITION = AAT + "300435435"
 AAT_MATERIAL_STATEMENT = AAT + "300435429"
+# SKKG's published credit line (the API's skkgapi:credit_line) joins this, the object's credit
+# text, and the year of its acquisition; the dump holds only the last two (notes/08).
+CREDIT_LINE_HOLDER = "Stiftung für Kunst, Kultur und Geschichte, Winterthur"
 AAT_GIVEN, AAT_SURNAME, AAT_ORG = AAT + "300404651", AAT + "300404652", AAT + "300445020"
 ANON_ACTOR = "person/privateIndividual"
 ANON_ADDRESS = "address/privateIndividual"
@@ -1425,6 +1428,7 @@ def derive(db):
         if (table, col) in DROPPED_LINKS:
             db.execute(f"DELETE FROM {table} WHERE {where}")
     spans = period_years(db)
+    credit = credit_lines(db)
     db.executescript("""
     UPDATE objects SET image_count = (SELECT COUNT(*) FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id
         WHERE om.object_id = objects.id AND m.iiif_service IS NOT NULL);
@@ -1438,7 +1442,17 @@ def derive(db):
     UPDATE objects SET has_provenance_chain = EXISTS (SELECT 1 FROM provenance_objects po WHERE po.object_id = objects.id);
     """)
     count_terms(db)
-    return {"object_links_to_missing": missing, "period_years": spans}
+    return {"object_links_to_missing": missing, "period_years": spans, "credit_lines": credit}
+
+
+def credit_lines(db):
+    """Replaces each object's credit text with SKKG's credit line, and counts the parts used."""
+    counts = dict(zip(("with_credit_text", "with_year"), db.execute(
+        """SELECT COUNT(NULLIF(TRIM(o.credit_line), '')), COUNT(a.year) FROM objects o
+           LEFT JOIN acquisitions a ON a.object_id = o.id""").fetchone()))
+    db.execute("""UPDATE objects SET credit_line = ? || COALESCE(', ' || NULLIF(TRIM(credit_line), ''), '')
+        || COALESCE(', ' || (SELECT year FROM acquisitions a WHERE a.object_id = objects.id), '')""", (CREDIT_LINE_HOLDER,))
+    return counts
 
 
 # Every (term, record) link, by the kind of record, for the counts of skkg_find_terms. Object
@@ -2007,6 +2021,7 @@ def main():
               "not_stated": lit["not_stated"], "not_stated_near": lit["not_stated_near"], "life_dates": actors["life_dates"], "redacted": redacted,
               "acquisitions_after_dump": future, "dates_not_iso": odd_dates, "currency_labels_not_mapped": odd_currencies,
               "object_links_to_missing": derived["object_links_to_missing"], "period_years": derived["period_years"],
+              "credit_lines": derived["credit_lines"],
               "size_bytes": tmp.stat().st_size, "unloaded_edges": edges, "query_timings": src.timings}
     Path(str(out) + ".report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1))
     Path(str(out) + ".report.md").write_text(render_report(report))
@@ -2057,6 +2072,8 @@ def render_report(r):
               "and placed by the bounds and qualifiers it knows, or because a date has no year, and not placed, so never "
               "matching a year filter: "
               + (", ".join(f"{k} ({n})" for k, n in r["period_years"]["unclassified"].items()) or "none") + ".", "",
+              f"Credit lines composed as SKKG's API composes them, with a credit text: {r['credit_lines']['with_credit_text']}, "
+              f"with an acquisition year: {r['credit_lines']['with_year']}.", "",
               "## Census edges not read by the build", "",
               "Edges of the shape census whose predicate no build query reads for that record type. "
               "New fields in a later dump appear here.", "", "| Root | Shape | Predicate | Subjects |", "|---|---|---|---:|"]

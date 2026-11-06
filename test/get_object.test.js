@@ -9,6 +9,7 @@
 // - images include multimedia without a published IIIF image, or the primary is not first
 // - a long image list is returned whole, or cut without a warning
 // - a price without a currency comes back without saying the currency is missing
+// - the credit line is the dump's credit text, not the line SKKG publishes
 // - the physical section returns the current location, which SKKG's API and website do not publish
 // - results violate the output schema
 // - the text repeats structuredContent as JSON, or leaves out a requested section, its ids,
@@ -25,6 +26,11 @@ const SECTIONS = ['production', 'physical', 'texts', 'acquisition', 'provenance'
 test('skkg_get_object against the fixture database', { skip: FIXTURE_DB.skip }, async (t) => {
   await withClient('get-object-test', async (client) => {
     const get = (args) => callOk(client, NAME, args, outputSchema);
+
+    await t.test('the credit line is SKKG\'s, as its API gives it (notes/08)', async () => {
+      const r = await get({ id: 'object/1014' });
+      assert.equal(r.rights.object.credit_line, 'Stiftung für Kunst, Kultur und Geschichte, Winterthur, 2000');
+    });
 
     await t.test('the summary and both sets of rights come without any section', async () => {
       const r = await get({ id: 'object/1014' });

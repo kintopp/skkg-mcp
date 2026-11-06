@@ -78,6 +78,10 @@ MUTATIONS = [
     ('not stated parts dropped', '    actors = [r for r in actors if r[1] not in not_stated]\n', '', 'label_only_actors'),
     ('not stated actors dropped', 'db.executemany("DELETE FROM actors WHERE id = ?", [(a,) for a in not_stated])', 'None', 'label_only_actors'),
     ('names near not stated counted', 'and re.search(r"\\b(angabe|genannt|unbekannt|anonym)", lab.casefold())})', 'and False})', 'label_only_actors'),
+    ('credit lines composed', '    credit = credit_lines(db)\n', '    credit = {}\n', 'credit_line_joins'),
+    ('blank credit text dropped', "COALESCE(', ' || NULLIF(TRIM(credit_line), ''), '')", "COALESCE(', ' || credit_line, '')", 'credit_line_joins'),
+    ("credit year of the object's own acquisition", 'FROM acquisitions a WHERE a.object_id = objects.id), \'\')', "FROM acquisitions a), '')", 'credit_line_joins'),
+    ('credit texts counted when not blank', "COUNT(NULLIF(TRIM(o.credit_line), ''))", 'COUNT(o.credit_line)', 'credit_line_joins'),
     ('names near not stated only of stubs', 'near = sorted({lab for a, lab in stubs.items()', 'near = sorted({lab for a, lab in names.items()', 'label_only_actors'),
     ('not stated stripped', 'return (label or "").strip().casefold() in NOT_STATED', 'return (label or "").casefold() in NOT_STATED', 'not_stated_is'),
 ]

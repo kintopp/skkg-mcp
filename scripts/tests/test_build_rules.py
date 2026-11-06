@@ -28,7 +28,10 @@ Ways the rules could fail, which the tests below pin:
   author, editor, or publisher, or as a name-only actor, in another capitalisation or with spaces;
   a real name that only contains "Angabe" or "Anonymus" is dropped, or not counted as one the rule
   does not catch, or the count lists persons with a record of their own; the parts dropped are not
-  counted.
+  counted;
+- a credit line is not SKKG's (the foundation, then the object's credit text, then the year of its
+  acquisition, each after ", "), keeps a blank credit text as a part, takes another object's year,
+  or an object without an acquisition or credit text gets no credit line.
 
 Run: uv run --with pyoxigraph --with pytest python -I -m pytest -q scripts/tests
 """
@@ -329,3 +332,15 @@ def test_not_stated_parts_and_their_label_only_actors_are_not_loaded_and_are_cou
     assert r["not_stated"] == {"actors": 2, "parts": {" Keine Angabe ": 1, "Ohne Angaben": 1}}
     # Only label-only actors: a person with a record of its own ("Unbekannt") is never a part of this rule.
     assert r["not_stated_near"] == ["Angaben zur Person", "Dr. Med. Anonymus"]
+
+
+def test_the_credit_line_joins_the_foundation_the_credit_text_and_the_acquisition_year():
+    db = empty_db()
+    db.executemany("INSERT INTO objects (id, credit_line) VALUES (?, ?)",
+                   [("object/1", "Schenkung Fries-Righini"), ("object/2", None), ("object/3", "  "), ("object/4", None)])
+    db.executemany("INSERT INTO acquisitions (object_id, year) VALUES (?, ?)", [("object/1", 1989), ("object/2", 2000), ("object/4", None)])
+    out = b.derive(db)
+    f = b.CREDIT_LINE_HOLDER
+    assert dict(db.execute("SELECT id, credit_line FROM objects")) == {
+        "object/1": f"{f}, Schenkung Fries-Righini, 1989", "object/2": f"{f}, 2000", "object/3": f, "object/4": f}
+    assert out["credit_lines"] == {"with_credit_text": 1, "with_year": 2}
