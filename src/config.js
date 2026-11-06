@@ -1,6 +1,7 @@
 // Central configuration and constants for the SKKG MCP server.
 
 import pkg from '../package.json' with { type: 'json' };
+import guide from './guide.json' with { type: 'json' };
 
 export const SERVER_NAME = 'skkg-mcp';
 // Do NOT send a human-readable `serverInfo.title`: Claude Desktop derives each tool's
@@ -101,15 +102,18 @@ export const CACHE_HINTS = Object.freeze({
   'server/discover': { ttlMs: 60 * 60 * 1000, cacheScope: 'public' },
 });
 
-// One paragraph; the first 512 characters must stand alone (ChatGPT may pass only those).
+// One paragraph; the first 512 characters must stand alone (ChatGPT may pass only those), so
+// they hold the guide, German search, and the anonymisation. The version lets a model with an
+// installed skkg skill see that its copy is out of date (the skill says what to do then).
 export const SERVER_INSTRUCTIONS =
   'Search the collection of the Stiftung für Kunst, Kultur und Geschichte (SKKG, Winterthur): ' +
   'about 64,000 objects (paintings, works on paper, arms, coins, everyday objects) with images, ' +
-  'SKKG acquisitions, provenance chains, literature and exhibitions. The data is German: search ' +
-  'with German keywords and German vocabulary labels. Ids are numbers or UUIDs, both valid. ' +
+  'SKKG acquisitions, provenance chains, literature and exhibitions. ' +
+  `Before the first search, read skkg_guide, unless the skkg skill version ${guide.version} is loaded. ` +
+  'The data is German: search with German words and labels. ' +
+  'Keep SKKG\'s anonymisation ("Privatperson", "Unbekannte:r Eigentümer:in") and never try to identify those persons. ' +
   'Photo rights and object copyright are separate; quote both. Link each record\'s website_url. ' +
-  'Personal data is held back, and SKKG\'s anonymisation ("Privatperson", "Unbekannte:r Eigentümer:in") ' +
-  'stays as it is: never try to identify those persons. Only a few hundred objects have a ' +
+  'Ids are numbers or UUIDs, both valid. Only a few hundred objects have a ' +
   'provenance chain before SKKG; for provenance questions also search the SKKG acquisitions.';
 
 // Parse a positive-integer env var, falling back (with a stderr warning) when it is

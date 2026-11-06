@@ -17,6 +17,7 @@ const REQUIRED_PROPS = {
   skkg_find_terms: [],
   skkg_collection_stats: ['dimension'],
   skkg_inspect_image: ['id'],
+  skkg_guide: [],
 };
 
 test('starts without a database, with the machine name and no human-readable title', async () => {
@@ -25,6 +26,13 @@ test('starts without a database, with the machine name and no human-readable tit
     assert.equal(info.name, 'skkg-mcp');
     assert.equal(info.title, undefined);
     assert.match(client.getInstructions() ?? '', /^Search the collection of the Stiftung/);
+  }, { env: { SKKG_DB_PATH: '' } });
+});
+
+test('the first 512 characters of the instructions hold the anonymisation rule', async () => {
+  await withClient('skkg-smoke', async (client) => {
+    const head = (client.getInstructions() ?? '').slice(0, 512);
+    assert.ok(head.includes('never try to identify those persons.'), head.slice(-120));
   }, { env: { SKKG_DB_PATH: '' } });
 });
 

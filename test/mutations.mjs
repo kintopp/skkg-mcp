@@ -498,6 +498,23 @@ const MUTATIONS = [
   ['scripts/build-skill.mjs', "const m = frontmatter(md).match(/^ {2}last_updated:", "const m = md.match(/^ {2}last_updated:", 'skill bundle: date read from the frontmatter only'],
   ['scripts/build-skill.mjs', "const dosDate = ((year - 1980) << 9) | (month << 5) | day;", "const dosDate = ((year - 1980) << 9) | (month << 5) | 1;", 'skill bundle: entries dated from last_updated'],
   ['scripts/build-skill.mjs', "    central.writeUInt16LE(0, 10);\n", "    central.writeUInt16LE(8, 10);\n", 'skill bundle: readable by an independent reader'],
+  ["src/tools/guide.js","const DEFAULT_TOPIC = TOPICS[0];","const DEFAULT_TOPIC = TOPICS[1];","guide: overview by default"],
+  ["src/tools/guide.js","const t = guide.topics.find((x) => x.topic === topic);","const t = guide.topics[0];","guide: each topic reachable"],
+  ["src/tools/guide.js","    text: t.text,\n","    text: t.text.split('\\n\\n')[0],\n","guide: whole section returned"],
+  ["src/tools/guide.js","    version: guide.version,\n","    version: '0',\n","guide: version structured"],
+  ["src/tools/guide.js","    last_updated: guide.last_updated,\n","    last_updated: '2026-01-01',\n","guide: date structured"],
+  ["src/tools/guide.js","`SKKG guide version ${r.version} (${r.last_updated}), topic ${r.topic}`","`SKKG guide, topic ${r.topic}`","guide: version in the text"],
+  ["src/tools/guide.js","    r.text,\n","    r.text.slice(0, 200),\n","guide: section in the text"],
+  ["src/tools/guide.js",".filter((t) => t.topic !== r.topic).map((t) => t.topic);",".slice(1).map((t) => t.topic);","guide: text names the other topics"],
+  ["src/tools/guide.js","'How to search SKKG well; read it first unless the skkg skill is already loaded. '","'How to search SKKG well. '","guide: description says when to read it"],
+  ["src/config.js","`Before the first search, read skkg_guide, unless the skkg skill version ${guide.version} is loaded. `","'Read skkg_guide before searching. '","instructions: guide pointer with version"],
+  ["src/config.js","'SKKG acquisitions, provenance chains, literature and exhibitions. ' +","'SKKG acquisitions, provenance chains, literature and exhibitions, all of them with their records, rights, and sources. ' +","instructions: anonymisation inside 512 characters"],
+  ["scripts/build-skill.mjs","preamble.replace(VERSION_LINE, `This is version ${version} of the guide.`)","preamble","skill bundle: preamble version stamped"],
+  ["scripts/build-skill.mjs","if (!VERSION_LINE.test(preamble)) throw new Error(","if (false) throw new Error(","skill bundle: preamble version line required"],
+  ["scripts/build-skill.mjs","if (rest.length !== 1 || !VERSION_LINE.test(rest[0])) {","if (false) {","guide: no guidance in the preamble"],
+  ["scripts/build-skill.mjs","if (seen.has(t.topic)) throw","if (false) throw","guide: topic names unique"],
+  ["scripts/build-skill.mjs","if (!t.topic || !t.text) throw","if (false) throw","guide: no empty section"],
+  ["scripts/build-skill.mjs",".replace(/[^a-z0-9]+/g, '_')",".replace(/[^a-z0-9]+/g, '-')","guide: topics named after headings"],
 ];
 
 // The cache key changes with the entry, so an edited entry has no record and is selected.

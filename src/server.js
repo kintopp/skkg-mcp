@@ -14,6 +14,7 @@ import { registerGetRecordTool } from './tools/get_record.js';
 import { registerFindTermsTool } from './tools/find_terms.js';
 import { registerCollectionStatsTool } from './tools/collection_stats.js';
 import { registerInspectImageTool } from './tools/inspect_image.js';
+import { registerGuideTool } from './tools/guide.js';
 import { registerChannelProbeTool } from './tools/channel_probe.js';
 
 export function createServer() {
@@ -37,6 +38,7 @@ export function createServer() {
   registerFindTermsTool(server);
   registerCollectionStatsTool(server);
   registerInspectImageTool(server);
+  registerGuideTool(server);
   if (process.env[CHANNEL_PROBE_ENV] === '1') registerChannelProbeTool(server);
   return server;
 }

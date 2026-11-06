@@ -13,6 +13,10 @@
 //   the allowed ones, a metadata value that is not a quoted string, a name that is not the
 //   folder's, a missing license, or a compatibility over 500 characters.
 // - A line in the body that looks like a frontmatter field is stamped or read instead of it.
+// - src/guide.json, the copy skkg_guide serves, falls behind SKILL.md.
+// - The preamble's version line keeps an old version, so an installed copy cannot tell it is stale.
+// - Guidance written into the preamble, or a section without a heading, never reaches the guide.
+// - Two sections slug to one topic name, and one of them becomes unreachable.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,7 +24,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { inflateRawSync } from 'node:zlib';
 import { join } from 'node:path';
-import { buildSkillZip, readSkillFiles } from '../scripts/build-skill.mjs';
+import { buildGuide, buildSkillZip, guideJson, readSkillFiles } from '../scripts/build-skill.mjs';
 import { ROOT } from './helpers.js';
 
 const files = readSkillFiles();
@@ -49,6 +53,27 @@ test('SKILL.md carries the version of package.json, in the folder and in the bun
   assert.match(source, new RegExp(`^ {2}version: "${version.replaceAll('.', '\\.')}"$`, 'm'),
     'run `npm run build:skill` and commit the result');
   assert.equal(files[0].content, source);
+});
+
+test('src/guide.json is a fresh build of SKILL.md', () => {
+  assert.equal(readFileSync(join(ROOT, 'src', 'guide.json'), 'utf8'), guideJson(buildGuide(files[0].content)),
+    'src/guide.json is stale: run `npm run build:skill` and commit the result');
+});
+
+test('the preamble of SKILL.md names the version of package.json', () => {
+  const { version } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+  const preamble = source.slice(0, source.indexOf('\n## '));
+  assert.ok(preamble.includes(`This is version ${version} of the guide.`), 'run `npm run build:skill` and commit the result');
+});
+
+test('the guide refuses guidance in the preamble and two sections of one name', () => {
+  const front = '---\nname: x\nmetadata:\n  version: "1"\n  last_updated: "2026-01-01"\n---\n# X\n\n';
+  const version = 'This is version 1 of the guide.\n\n';
+  assert.equal(buildGuide(`${front}${version}## A b\n\ntext\n`).topics[0].topic, 'a_b');
+  assert.throws(() => buildGuide(`${front}${version}Search in German.\n\n## A\n\ntext\n`), /preamble/);
+  assert.throws(() => buildGuide(`${front}## A\n\ntext\n`), /preamble/);
+  assert.throws(() => buildGuide(`${front}${version}## A b\n\none\n\n## A, b\n\ntwo\n`), /two sections/);
+  assert.throws(() => buildGuide(`${front}${version}## A\n\n## B\n\ntext\n`), /no name or no text/);
 });
 
 test('the skill is named after its folder', () => {
@@ -101,16 +126,29 @@ test('a look-alike line in the body never stands in for a frontmatter field', (t
     writeFileSync(join(dir, 'SKILL.md'), md);
     return readSkillFiles(dir);
   };
-  const body = '\n  version: "9.9.9"\n  last_updated: "1999-01-01"\n';
+  // The preamble's version line is stamped too; look-alikes in a section, of it as well, are not.
+  const section = '## A\n\n  version: "9.9.9"\n  last_updated: "1999-01-01"\nThis is version 9.9.9 of the guide.\n';
+  const body = `\nThis is version 0 of the guide.\n\n${section}`;
 
   const stamped = read(`---\nname: x\nmetadata:\n  version: "0"\n  last_updated: "2026-01-01"\n---${body}`);
-  assert.ok(stamped[0].content.endsWith(`---${body}`), 'the body must survive a stamp unchanged');
+  assert.ok(stamped[0].content.endsWith(`\n${section}`), 'a section must survive a stamp unchanged');
   assert.ok(!stamped[0].content.includes('version: "0"'), 'the frontmatter version must be the one stamped');
   assert.equal(readZip(buildSkillZip(stamped))[0].content, stamped[0].content);
 
   assert.throws(() => read(`---\nname: x\n---${body}`), /metadata\.version/);
   const undated = read(`---\nname: x\nmetadata:\n  version: "0"\n---${body}`);
   assert.throws(() => buildSkillZip(undated), /metadata\.last_updated/);
+});
+
+test('the build stamps the preamble version line from package.json', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'skill-'));
+  t.after(() => rmSync(dir, { recursive: true }));
+  writeFileSync(join(dir, 'SKILL.md'), '---\nname: x\nmetadata:\n  version: "0"\n---\nThis is version 0 of the guide.\n\n## A\n\ntext\n');
+  const { version } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+  assert.ok(readSkillFiles(dir)[0].content.includes(`\nThis is version ${version} of the guide.\n`));
+  rmSync(join(dir, 'SKILL.md'));
+  writeFileSync(join(dir, 'SKILL.md'), '---\nname: x\nmetadata:\n  version: "0"\n---\n## A\n\ntext\n');
+  assert.throws(() => readSkillFiles(dir), /This is version/);
 });
 
 // A zip reader of its own, central directory first as unzip reads it, so the suite needs no

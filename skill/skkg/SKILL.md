@@ -10,15 +10,19 @@ metadata:
 
 # SKKG Sammlung digital
 
-The `skkg_*` tools read a local database built from SKKG's public RDF dump, and only
-`skkg_inspect_image` and `live: true` of `skkg_get_object` call SKKG's servers. The tool
-descriptions document the parameters. This skill covers what the data holds, which
-assumptions quietly fail, and the calls that work. Figures here are rough orders of
-magnitude; take exact counts from the tools, and the date of the data from
-`data_as_of` in every result.
+This is version 0.1.0 of the guide. The skkg server names the version it matches in its
+instructions and in every `skkg_guide` result. If it names another version, this copy is
+out of date: read the topics you need with `skkg_guide` instead, and tell the user to
+update the skill.
 
 ## Overview
 
+- **What the tools read.** The `skkg_*` tools read a local database built from SKKG's
+  public RDF dump, and only `skkg_inspect_image` and `live: true` of `skkg_get_object`
+  call SKKG's servers. The tool descriptions document the parameters. This guide covers
+  what the data holds, which assumptions quietly fail, and the calls that work. Figures
+  here are rough orders of magnitude; take exact counts from the tools, and the date of
+  the data from `data_as_of` in every result.
 - **What it is.** SKKG is the foundation Bruno Stefanini set up in 1980. The collection
   has about 64,000 objects: paintings, sculpture, and works on paper (much of it Swiss
   art of the 19th and 20th centuries), furniture, arms and other military objects
