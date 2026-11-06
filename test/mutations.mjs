@@ -503,7 +503,7 @@ const MUTATIONS = [
   ['src/tools/guide.js', '    r.text,\n', '    r.text.slice(0, 200),\n', 'guide: section in the text'],
   ['src/tools/guide.js', '.filter((t) => t.topic !== r.topic).map((t) => t.topic);', '.slice(1).map((t) => t.topic);', 'guide: text names the other topics'],
   ['src/tools/guide.js', '\'How to search SKKG well; read it before your first search, one topic at a time. \' +', '\'How to search SKKG well. \' +', 'guide: description says when to read it'],
-  ['src/tools/guide.js', '${TOPICS.map((t) => t.title).join(\', \')}', '${TOPICS.slice(1).map((t) => t.title).join(\', \')}', 'guide: description names every topic'],
+  ['src/tools/guide.js', '${TOPICS.map((t) => t.topic).join(\', \')}', '${TOPICS.slice(1).map((t) => t.topic).join(\', \')}', 'guide: description names every topic'],
   ['src/tools/guide.js', '  if (r.size > RESULT_CHAR_LIMIT) {', '  if (false) {', 'guide: result size limit'],
   ['src/config.js', '\'Read skkg_guide before the first search. \' +', '\'\' +', 'instructions: guide pointer'],
   ['src/config.js', '\'SKKG acquisitions, provenance chains, literature and exhibitions. \' +', '\'SKKG acquisitions, provenance chains, literature and exhibitions, all of them with their records, rights, and sources. \' +', 'instructions: anonymisation inside 512 characters'],

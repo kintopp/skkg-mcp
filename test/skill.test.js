@@ -15,6 +15,7 @@
 // - A line in the body that looks like a frontmatter field is stamped or read instead of it.
 // - The skill gains guidance of its own, a copy that goes stale when the server's guide
 //   changes, or stops sending the model to skkg_guide.
+// - The skill names a topic of the guide, which an installed copy keeps after the guide renames it.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -58,6 +59,14 @@ test('the skill holds no guidance and sends the model to skkg_guide', () => {
   const body = source.slice(source.indexOf('\n---\n', 4) + 5);
   assert.deepEqual([...body.matchAll(/^## (.+)$/gm)].map((m) => m[1]), ['Your own notes']);
   assert.match(body, /read the guide with `skkg_guide`/);
+});
+
+test('the skill names no topic of the guide', () => {
+  const guide = readFileSync(join(ROOT, 'src', 'guide.md'), 'utf8');
+  for (const [, heading] of guide.matchAll(/^## (.+)$/gm)) {
+    const topic = heading.toLowerCase().replaceAll(' ', '_');
+    assert.ok(!source.includes(`\`${topic}\``), `SKILL.md names the topic ${topic}`);
+  }
 });
 
 test('the skill is named after its folder', () => {

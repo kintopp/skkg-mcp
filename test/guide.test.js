@@ -85,12 +85,21 @@ test('a topic over a lowered result size limit is refused, not sent', async () =
   }, { env: { SKKG_DB_PATH: '', SKKG_RESULT_CHAR_CEILING: '1000' } });
 });
 
-test('the description says when to read it and names every topic', async () => {
+test('the description says when to read it', async () => {
   await withClient('guide-description', async (client) => {
     const { tools } = await client.listTools();
     const { description } = tools.find((t) => t.name === NAME);
     assert.equal(description.split('. ')[0], 'How to search SKKG well; read it before your first search, one topic at a time');
-    for (const title of headings) assert.ok(description.includes(title), `the description lacks "${title}"`);
+  }, NO_DB);
+});
+
+test('the description lists exactly the topic names that `topic` takes', async () => {
+  await withClient('guide-description-topics', async (client) => {
+    const { tools } = await client.listTools();
+    const tool = tools.find((t) => t.name === NAME);
+    const names = tool.inputSchema.properties.topic.enum;
+    assert.equal(names.length, headings.length);
+    assert.ok(tool.description.includes(` Topics: ${names.join(', ')}. `), tool.description);
   }, NO_DB);
 });
 

@@ -17,7 +17,7 @@ const DEFAULT_TOPIC = TOPICS[0].topic;
 
 const description =
   'How to search SKKG well; read it before your first search, one topic at a time. ' +
-  `Topics: ${TOPICS.map((t) => t.title).join(', ')}. ` +
+  `Topics: ${TOPICS.map((t) => t.topic).join(', ')}. ` +
   `Start with ${DEFAULT_TOPIC}, then read the topics the question needs; each result names the others.`;
 
 const inputSchema = z.object({
