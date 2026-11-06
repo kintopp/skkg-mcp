@@ -1,15 +1,16 @@
 // How skkg_guide could fail:
-// - A section of SKILL.md is missing from the guide, cut short, duplicated, or out of order,
-//   or the frontmatter or preamble leaks into a topic.
+// - A section of src/guide.md is missing from the topics, cut short, duplicated, or out of
+//   order, or text before the first section is silently dropped.
 // - A topic cannot be reached by its name, or returns another section.
 // - Without `topic`, it returns something other than the overview.
-// - The version is missing from a channel, or is not the one SKILL.md and package.json carry.
-// - The text channel lacks the section, the version, or the names of the other topics, or is JSON.
+// - The text channel lacks the section or the names of the other topics, or is JSON.
 // - It needs the database, so a host without SKKG_DB_PATH gets an error instead of the guide.
 // - An unknown topic is accepted and answered with something.
-// - A topic outgrows the result size limit.
-// - The description stops saying when to read it, or the server instructions stop pointing to
-//   it, with the version, inside the 512 characters some hosts pass on.
+// - A topic outgrows the result size limit, or a lowered limit is ignored.
+// - The description stops saying when to read it, or names topics the guide does not have.
+// - The server instructions stop pointing to it inside the 512 characters some hosts pass on.
+// - A heading that slugs badly (non-ASCII letters, two headings to one name), an empty
+//   section, or a `##` inside a code fence is accepted and misnames or splits a topic.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,15 +18,14 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { withClient, callSent, callError, ROOT } from './helpers.js';
 import { outputSchema } from '../src/tools/guide.js';
+import { parseGuide } from '../src/lib/guide.js';
 
 const NAME = 'skkg_guide';
 const NO_DB = { env: { SKKG_DB_PATH: '' } };
-const source = readFileSync(join(ROOT, 'skill', 'skkg', 'SKILL.md'), 'utf8');
-const { version } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
-// Each `##` heading of SKILL.md, in order.
+const source = readFileSync(join(ROOT, 'src', 'guide.md'), 'utf8');
 const headings = [...source.matchAll(/^## (.+)$/gm)].map((m) => m[1]);
 
-test('every section of SKILL.md is one topic, named after its heading, and the topics rebuild the sections', async () => {
+test('every section of the guide is one topic, named after its heading, and the topics rebuild the sections', async () => {
   await withClient('guide-topics', async (client) => {
     const { structured } = await callSent(client, NAME, {}, outputSchema);
     assert.deepEqual(structured.topics.map((t) => t.title), headings);
@@ -51,22 +51,13 @@ test('without a topic it returns the overview', async () => {
   }, NO_DB);
 });
 
-test('both channels carry the version of package.json and the date of SKILL.md', async () => {
-  await withClient('guide-version', async (client) => {
-    const { structured, text } = await callSent(client, NAME, { topic: 'ids' }, outputSchema);
-    assert.equal(structured.version, version);
-    assert.equal(structured.last_updated, source.match(/^ {2}last_updated: "(.+)"$/m)[1]);
-    assert.ok(text.startsWith(`SKKG guide version ${version} (${structured.last_updated}), topic ids\n`), text.slice(0, 80));
-  }, NO_DB);
-});
-
 test('the text channel holds the section and names every other topic, not JSON', async () => {
   await withClient('guide-text', async (client) => {
     const { structured, text } = await callSent(client, NAME, { topic: 'provenance' }, outputSchema);
+    assert.ok(text.startsWith('SKKG guide, topic provenance\n'), text.slice(0, 80));
     assert.ok(text.includes(`## Provenance\n\n${structured.text}\n`), 'the section is in the text');
     const others = structured.topics.map((t) => t.topic).filter((t) => t !== 'provenance');
     assert.ok(text.endsWith(`Other topics, to pass as \`topic\`: ${others.join(', ')}.`), text.slice(-200));
-    assert.ok(!text.trimStart().startsWith('{'));
   }, NO_DB);
 });
 
@@ -77,7 +68,7 @@ test('an unknown topic is refused', async () => {
   }, NO_DB);
 });
 
-test('every topic fits the result size limit with both channels', async () => {
+test('every topic fits the default result size limit with both channels', async () => {
   await withClient('guide-size', async (client) => {
     const { structured } = await callSent(client, NAME, {}, outputSchema);
     for (const { topic } of structured.topics) {
@@ -87,17 +78,49 @@ test('every topic fits the result size limit with both channels', async () => {
   }, NO_DB);
 });
 
-test('the description says when to read it, first, and names the skill', async () => {
+test('a topic over a lowered result size limit is refused, not sent', async () => {
+  await withClient('guide-ceiling', async (client) => {
+    const err = await callError(client, NAME, { topic: 'search_in_german' });
+    assert.match(err, /too large for the result size limit \(900 characters\).*SKKG_RESULT_CHAR_CEILING/);
+  }, { env: { SKKG_DB_PATH: '', SKKG_RESULT_CHAR_CEILING: '1000' } });
+});
+
+test('the description says when to read it and names every topic', async () => {
   await withClient('guide-description', async (client) => {
     const { tools } = await client.listTools();
-    const first = tools.find((t) => t.name === NAME).description.split('. ')[0];
-    assert.equal(first, 'How to search SKKG well; read it first unless the skkg skill is already loaded');
+    const { description } = tools.find((t) => t.name === NAME);
+    assert.equal(description.split('. ')[0], 'How to search SKKG well; read it before your first search, one topic at a time');
+    for (const title of headings) assert.ok(description.includes(title), `the description lacks "${title}"`);
   }, NO_DB);
 });
 
-test('the first 512 characters of the server instructions point to skkg_guide with the version', async () => {
+test('the first 512 characters of the server instructions point to skkg_guide', async () => {
   await withClient('guide-instructions', async (client) => {
     const head = (client.getInstructions() ?? '').slice(0, 512);
-    assert.ok(head.includes(`read skkg_guide, unless the skkg skill version ${version} is loaded.`), head);
+    assert.ok(head.includes('Read skkg_guide before the first search.'), head);
   }, NO_DB);
+});
+
+test('the parser', async (t) => {
+  await t.test('names a topic after its heading', () => {
+    assert.deepEqual(parseGuide('# T\n\n## A b\n\ntext\n'), [{ topic: 'a_b', title: 'A b', text: 'text' }]);
+  });
+  await t.test('refuses text before the first section', () => {
+    assert.throws(() => parseGuide('# T\n\nAlways search in German.\n\n## A\n\ntext\n'), /before the first `##` section/);
+  });
+  await t.test('refuses a guide without sections', () => {
+    assert.throws(() => parseGuide('# T\n\ntext\n'), /no `##` section/);
+  });
+  await t.test('refuses an empty section', () => {
+    assert.throws(() => parseGuide('# T\n\n## A\n\n## B\n\ntext\n'), /"A" has no name or no text/);
+  });
+  await t.test('refuses two headings with one topic name', () => {
+    assert.throws(() => parseGuide('# T\n\n## A b\n\none\n\n## A, b\n\ntwo\n'), /two sections are named a_b/);
+  });
+  await t.test('refuses a heading with letters the topic name would drop', () => {
+    assert.throws(() => parseGuide('# T\n\n## Überblick\n\ntext\n'), /ASCII/);
+  });
+  await t.test('refuses a code fence, which could hide a heading', () => {
+    assert.throws(() => parseGuide('# T\n\n## A\n\n```\n## B\n```\n'), /code fence/);
+  });
 });
