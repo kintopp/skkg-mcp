@@ -451,6 +451,8 @@ const MUTATIONS = [
   ['src/lib/live.js', "differences: capList(diffs, 'live.differences', ctx),", "differences: diffs,", 'live: differences cut with the total'],
   ['src/lib/live.js', "status: diffs.length ? 'differs' : 'matches',", "status: 'matches',", 'live: differs'],
   ['src/lib/live.js', "orDump(m.photo_date, readDate)", "readDate", 'live: a malformed photo date the dump holds matches'],
+  ['src/lib/live.js', "orDump(m.photo_date, readDate)", "orDump(m.photo_date, (v) => v)", 'live: the API\'s photo date read as a date'],
+  ['src/lib/live.js', "orDump(m.rights_end_date, readDate)", "orDump(m.rights_end_date, (v) => v)", 'live: the API\'s rights end read as a date'],
   ['src/lib/live.js', "orDump(m.rights_end_date, readDate)", "readDate", 'live: a malformed rights end the dump holds matches'],
   ['src/lib/live.js', "`and do not look for ${one ? 'it' : 'them'} elsewhere.`", "'and do not look for them elsewhere.'", 'live: one withdrawn image is "it"'],
   ['src/lib/live.js', "do not use ${one ? 'this image' : 'these images'}", "do not use this image", 'live: several withdrawn images'],

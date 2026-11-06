@@ -189,12 +189,14 @@ test('skkg_get_object with live: true against a stubbed API', { skip: FIXTURE_DB
       main['skkgapi:credit_line'] = SECRET;
       sc[PRIMARY]['skkgapi:right_type'] = SECRET;
       sc[PRIMARY]['skkgapi:right_holder_date'] = SECRET;
+      sc[PRIMARY]['skkgapi:right_photography_date'] = SECRET;
       sc[PRIMARY]['skkgapi:right_holder'] = SECRET;
     }));
     assert.ok(!JSON.stringify(s).includes('Mustermann'));
     assert.ok(!text.includes('Mustermann'));
     assert.equal(diff(s, PRIMARY, 'image_license').live, 'unreadable');
     assert.equal(diff(s, PRIMARY, 'rights_end_date').live, 'unreadable');
+    assert.equal(diff(s, PRIMARY, 'photo_date').live, 'unreadable');
     assert.equal(diff(s, PRIMARY, 'right_holder').live, 'unreadable');
   });
 
