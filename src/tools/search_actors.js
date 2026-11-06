@@ -13,7 +13,7 @@ import { ROLE_KINDS, ACTOR_ROLES, hasRole, roleCounts, lifeDates } from '../lib/
 import { words, startingWith } from '../lib/words.js';
 import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
-import { paging, showing, pastEnd, tailLines } from '../lib/results.js';
+import { paging, showing, pastEnd, tailLines, noMatchWarning } from '../lib/results.js';
 import { resolveTerms, assertRange } from '../lib/filters.js';
 import { TERM_FILTERS as TERM_FILTERS_OF, LIFE_PLACES } from './term_filters.js';
 import { appliedOut, langIn, termField, yearField, int, str } from './schemas.js';
@@ -205,7 +205,7 @@ function compile(db, args) {
     warnings.push('`sort` "relevance" needs `query`; sorted by name instead.');
     sort = 'name';
   }
-  return { where, params, fts, applied, warnings, sort };
+  return { where, params, fts, applied, warnings, sort, given };
 }
 
 // The FROM clause and params of the actors that meet the filters and `kinds` (LISTED or NAME_ONLY).
@@ -274,7 +274,7 @@ export function searchActors(db, meta, args) {
       ? 'No person or group with a record of its own matches; see name_only for the actors SKKG records only by name' +
         (nameOnly.examples.some((e) => e.literature_filter)
           ? `, and ${SEARCH_LITERATURE_TOOL_NAME} with an example's literature_filter for their publications.` : '.')
-      : 'No person or group matches these filters together. Drop one filter at a time to see which one empties the result.');
+      : noMatchWarning('person or group', c.given));
   }
   const past = pastEnd(args.offset, total, 'actors');
   if (past) warnings.push(past);

@@ -121,4 +121,5 @@ export const appliedOut = () => z.record(z.string(), z.union([
 ]));
 
 export const langIn = () => z.enum(LANGS).default('de').describe(
-  'Language of vocabulary labels; falls back to German where SKKG has no translation. Titles and texts stay as recorded');
+  'Language of vocabulary labels. Most vocabularies, materials and object types among them, have German labels only, ' +
+  'which are returned whatever the language; titles and texts stay as recorded');

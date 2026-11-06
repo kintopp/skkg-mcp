@@ -31,6 +31,7 @@
 // - paging repeats or skips a bucket, or has_more is true on the last page
 // - a query without a match gives no hint that the data is German
 // - results violate the output schema
+// - an empty result of one filter says "these filters together"
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -242,6 +243,12 @@ test('skkg_collection_stats against the fixture database', { skip: FIXTURE_DB.sk
       assert.equal(b.has_more, false);
       assert.equal(b.next_offset, undefined);
       assert.deepEqual([...a.buckets, ...b.buckets].map((x) => x.id), all.buckets.map((x) => x.id));
+    });
+
+    await t.test('an empty result of one filter names it instead of "these filters together"', async () => {
+      const r = await stats({ dimension: 'material', part_of: 'object/821' });
+      assert.equal(r.total_objects, 0);
+      assert.match(r.warnings.join(' '), /No object matches `part_of`, the only filter given\./);
     });
 
     await t.test('a query without a match says the data is German', async () => {

@@ -21,7 +21,7 @@ import { renderObjectText, SECTIONS } from './object_text.js';
 import {
   actorOut, creatorOut, objectRefOut, objectRightsOut, imageRightsOut, acquisitionOut, periodShape, langIn, str, int,
 } from './schemas.js';
-import { READ_ONLY_OPEN_WORLD_ANNOTATIONS, SECTION_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT } from '../config.js';
+import { READ_ONLY_OPEN_WORLD_ANNOTATIONS, SECTION_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT, YEAR_MAX } from '../config.js';
 
 export const GET_OBJECT_TOOL_NAME = 'skkg_get_object';
 
@@ -69,7 +69,8 @@ export const outputSchema = z.object({
     creators: z.array(creatorOut()).optional(),
     date: str(),
     epoch: z.array(z.string()).optional(),
-    number_of_parts: str(),
+    number_of_parts: str().describe('SKKG\'s count of the pieces the object consists of ("Anzahl Teile"), e.g. "2" or "mehrteilig"; ' +
+      'not its child objects, which are related.parts and the part_of filter of skkg_search_objects'),
     identifiers: z.array(z.object({ type: str(), value: str() })).optional(),
   }),
   rights: z.object({
@@ -202,6 +203,11 @@ function texts(db, o, lang) {
     .map((t) => ({ title: t.title, text: t.text, type: termLabel(db, t.type_id, lang), source: t.source }));
 }
 
+const EMPTY_SECTION = {
+  acquisition: 'SKKG records no acquisition for this object.',
+  images: 'SKKG publishes no image of this object.',
+};
+
 const dayAfter = (iso) => {
   const d = new Date(`${iso}T00:00:00Z`);
   if (Number.isNaN(d.getTime())) return undefined;
@@ -216,10 +222,14 @@ function provenance(db, o, lang) {
     seq: p.seq ?? undefined,
     computed_previous_owner: i > 0 ? actorRef(db, rows[i - 1].owner_id) : undefined,
   }));
+  // An open end (stored past YEAR_MAX) has SKKG's placeholder bound 9999-12-31, not a date: the day
+  // after it has a five-digit year, which every real date sorts after. An open start's 0001-01-01 never finds a gap.
   const gaps = [];
   for (let i = 1; i < rows.length; i++) {
-    const end = rows[i - 1].date_to ?? rows[i - 1].end_to ?? rows[i - 1].end_from;
-    const start = rows[i].date_from ?? rows[i].begin_from ?? rows[i].begin_to;
+    const prev = rows[i - 1];
+    const next = rows[i];
+    const end = prev.year_last > YEAR_MAX ? undefined : prev.date_to ?? prev.end_to ?? prev.end_from;
+    const start = next.date_from ?? next.begin_from ?? next.begin_to;
     if (end && start && dayAfter(end) && start > dayAfter(end)) gaps.push({ after: rows[i - 1].id, before: rows[i].id, from: end, to: start });
   }
   return {
@@ -309,7 +319,10 @@ export async function getObject(db, meta, args, signal) {
     related: want.has('related') ? related(db, o, lang, ctx) : undefined,
     images: want.has('images') ? images(db, o, lang, ctx) : undefined,
   };
-  if (want.has('acquisition') && !out.acquisition) warnings.push('SKKG records no acquisition for this object.');
+  // A requested section that is empty is pruned away, so say so, or the caller cannot tell it from one not sent.
+  for (const k of SECTIONS) {
+    if (want.has(k) && prune(out[k]) === undefined) warnings.push(EMPTY_SECTION[k] ?? `\`${k}\` is empty for this object.`);
+  }
   if (args.live) out.live = await liveCheck(db, o, ctx, signal);
   const stale = staleWarning(meta);
   if (stale) warnings.push(args.live ? stale : `${stale} To check this object's rights, call again with live: true.`);

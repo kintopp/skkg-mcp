@@ -14,7 +14,7 @@ import { words, startingWith } from '../lib/words.js';
 import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
 import { exhibitionFields } from '../lib/exhibitions.js';
-import { paging, showing, pastEnd, tailLines } from '../lib/results.js';
+import { paging, showing, pastEnd, tailLines, noMatchWarning } from '../lib/results.js';
 import { resolveTerms, assertRange } from '../lib/filters.js';
 import { join, span, actor, nameOf } from '../lib/text.js';
 import { TERM_FILTERS as TERM_FILTERS_OF } from './term_filters.js';
@@ -72,6 +72,7 @@ const filterShape = {
   internal_external: termField('SKKG\'s "intern" or "extern"'),
   includes_object: idField('Object id or inventory number: the exhibitions that showed it'),
 };
+const FILTERS = Object.keys(filterShape);
 const inputSchema = z.object({
   ...filterShape,
   sort: z.enum(Object.keys(ORDER)).optional().describe(
@@ -258,7 +259,7 @@ export function searchExhibitions(db, meta, args) {
     .all(...from.params, args.limit, args.offset);
 
   const { warnings } = c;
-  if (total === 0) warnings.push('No exhibition matches these filters together. Drop one filter at a time to see which one empties the result.');
+  if (total === 0) warnings.push(noMatchWarning('exhibition', FILTERS.filter((k) => args[k] !== undefined)));
   const past = pastEnd(args.offset, total, 'exhibitions');
   if (past) warnings.push(past);
   const stale = staleWarning(meta);

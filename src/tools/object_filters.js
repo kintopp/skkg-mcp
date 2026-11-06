@@ -86,7 +86,8 @@ export function objectFilterShape() {
 }
 
 const FILTER_KEYS = Object.keys(objectFilterShape()).filter((k) => k !== 'include_narrower');
-export const hasObjectFilter = (args) => FILTER_KEYS.some((k) => args[k] !== undefined);
+export const givenObjectFilters = (args) => FILTER_KEYS.filter((k) => args[k] !== undefined);
+export const hasObjectFilter = (args) => givenObjectFilters(args).length > 0;
 
 /**
  * Compiles the filters in `args` to { clauses, params, applied, warnings, creatorRow, termIds }.

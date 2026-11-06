@@ -6,6 +6,10 @@
 // - SKKG's anonymisation ("Privatperson", "unbekannte:r Eigentümer:in") is replaced or dropped
 // - the chain is not in SKKG's order, or computed_previous_owner names the wrong period's owner
 // - the computed fields are not marked as computed, so a model takes them as recorded
+// - a gap is computed from SKKG's placeholder of an open end (9999-12-31), or a real gap is missed
+// - a requested section that is empty vanishes without a warning, or one not requested, or not
+//   empty, gets that warning
+// - the count of pieces ("Anzahl Teile") reads as child objects in the text
 // - images include multimedia without a published IIIF image, or the primary is not first
 // - a long image list is returned whole, or cut without a warning
 // - a price without a currency comes back without saying the currency is missing
@@ -102,6 +106,44 @@ test('skkg_get_object against the fixture database', { skip: FIXTURE_DB.skip }, 
       assert.match(p.note, /computed_previous_owner and gaps are derived/);
       // The owner of 1907–2000 is anonymised by SKKG.
       assert.match(p.periods[1].owner.name, /^unbekannte:r Eigentümer:in$/i);
+    });
+
+    await t.test('an open end is no date to compute a gap from', async () => {
+      // Period 1 of object/821 ends "o. D.", which SKKG stores as 9999-12-31; the next has no date at all.
+      const { provenance: p } = await get({ id: 'object/821', include: ['provenance'] });
+      assert.ok(p.periods.length > 1);
+      assert.equal(p.gaps, undefined);
+    });
+
+    await t.test('a real gap between two dated periods is computed', async () => {
+      const { provenance: p } = await get({ id: 'object/1041', include: ['provenance'] });
+      assert.deepEqual(p.gaps.map((g) => [g.from, g.to]), [['1915-12-31', '1917-01-01'], ['1977-12-31', '1978-05-25']]);
+    });
+
+    await t.test('a requested section that is empty says so, in both channels', async () => {
+      // This object has no texts, exhibitions, literature, or published image.
+      const id = 'object/060d1324-e87b-45f8-b6c6-5ca65c7eddf1';
+      const { structured: r, text } = await callSent(client, NAME, { id, include: ['texts', 'exhibitions', 'literature', 'images'] }, outputSchema);
+      const expected = ['`texts` is empty for this object.', '`exhibitions` is empty for this object.',
+        '`literature` is empty for this object.', 'SKKG publishes no image of this object.'];
+      for (const w of expected) {
+        assert.ok(r.warnings.includes(w), w);
+        assert.ok(text.includes(w), w);
+      }
+    });
+
+    await t.test('a section not requested, or not empty, gets no empty warning', async () => {
+      const bare = await get({ id: 'object/060d1324-e87b-45f8-b6c6-5ca65c7eddf1', include: ['exhibitions'] });
+      assert.doesNotMatch((bare.warnings ?? []).join(' '), /`texts`|`literature`|no image/);
+      const full = await get({ id: 'object/1014', include: ['images', 'provenance'] });
+      assert.doesNotMatch((full.warnings ?? []).join(' '), /is empty|no image/);
+    });
+
+    await t.test('the count of pieces is not called parts in the text', async () => {
+      const { structured: r, text } = await callSent(client, NAME, { id: 'object/0d4a8b01-ffa7-494a-871e-ee8bfbe00444' }, outputSchema);
+      assert.equal(r.summary.number_of_parts, '5');
+      assert.match(text, / · pieces: 5\b/);
+      assert.doesNotMatch(text, /parts: 5/);
     });
 
     await t.test('an object without a chain says so and points to the acquisition', async () => {

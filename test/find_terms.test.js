@@ -35,12 +35,13 @@
 //   counts renders an empty segment
 // - a current location is returned by search, listing, or id, although SKKG publishes none
 // - a vocabulary named by the build is missing from `vocabulary`, or one is offered that the build no longer has
+// - the `lang` description promises English or French labels for materials and object types, which have none
 // - results violate the output schema
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { withClient, callOk, callSent, callError, FIXTURE_DB } from './helpers.js';
+import { withClient, callOk, callSent, callError, allPages, FIXTURE_DB } from './helpers.js';
 import { outputSchema } from '../src/tools/find_terms.js';
 import { outputSchema as searchSchema } from '../src/tools/search_objects.js';
 import { outputSchema as provenanceSchema } from '../src/tools/search_provenance.js';
@@ -68,6 +69,17 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
       const text = await callError(client, NAME, {});
       assert.match(text, /query.*id.*vocabulary/);
       assert.match(text, /"vocabulary": "certainty"/);
+    });
+
+    await t.test('materials and object types have German labels only, as the lang description says', async () => {
+      const { tools } = await client.listTools();
+      const lang = tools.find((x) => x.name === NAME).inputSchema.properties.lang.description;
+      assert.match(lang, /Most vocabularies, materials and object types among them, have German labels only/);
+      for (const vocabulary of ['material', 'object_type']) {
+        const { rows } = await allPages(find, { vocabulary, lang: 'en' }, { limit: 50 });
+        assert.ok(rows.length > 0, vocabulary);
+        assert.deepEqual(rows.filter((r) => r.labels).map((r) => r.id), [], `${vocabulary} terms with another language`);
+      }
     });
 
     await t.test('id and query together are refused', async () => {

@@ -9,8 +9,8 @@ import { stmt } from '../lib/sql.js';
 import { termLabel, actorRef } from '../lib/labels.js';
 import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
-import { paging, showing, pastEnd, tailLines } from '../lib/results.js';
-import { objectQueryShape, objectFilterShape, compileObjectQuery, VALUE_PAIRS, TERM_FILTER_FIELDS } from './object_filters.js';
+import { paging, showing, pastEnd, tailLines, noMatchWarning } from '../lib/results.js';
+import { objectQueryShape, objectFilterShape, compileObjectQuery, givenObjectFilters, VALUE_PAIRS, TERM_FILTER_FIELDS } from './object_filters.js';
 import { creatorRowPairs } from './term_filters.js';
 import { appliedOut, langIn, str } from './schemas.js';
 import { searchArgs } from '../lib/text.js';
@@ -286,7 +286,7 @@ export function collectionStats(db, meta, args) {
   if (total === 0) {
     warnings.push(args.query
       ? `No object matches "${args.query}"${q.clauseCount > 1 ? ' with these filters' : ''}. The data is German: check that the keywords are German.`
-      : 'No object matches these filters together. Drop one filter at a time to see which one empties the result.');
+      : noMatchWarning('object', givenObjectFilters(args)));
   } else {
     const past = pastEnd(args.offset, sorted.length, 'buckets');
     if (past) warnings.push(past);

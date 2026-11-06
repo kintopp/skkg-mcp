@@ -12,7 +12,7 @@ import { resolveId } from '../lib/ids.js';
 import { words, startingWith } from '../lib/words.js';
 import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
-import { paging, showing, pastEnd, tailLines } from '../lib/results.js';
+import { paging, showing, pastEnd, tailLines, noMatchWarning } from '../lib/results.js';
 import { resolveTerms, assertRange } from '../lib/filters.js';
 import { TERM_FILTERS as TERM_FILTERS_OF } from './term_filters.js';
 import { appliedOut, langIn, termField, idField, yearField, int, str } from './schemas.js';
@@ -66,7 +66,8 @@ const filterShape = {
     'and accents; applied_filters lists the series matched'),
   isbn: z.string().min(1).max(40).optional().describe(
     'ISBN-10 or ISBN-13, with or without hyphens; either form finds the other, unless SKKG recorded a wrong check digit, ' +
-    'so if an ISBN finds nothing, try the title in `query`. An ISSN (8 characters) finds a periodical'),
+    'so if an ISBN finds nothing, try the title in `query`; a warning names a wrong check digit in an ISBN-13 that finds nothing. ' +
+    'An ISSN (8 characters) finds a periodical'),
   refers_to_object: idField('Object id or inventory number: the publications that cite or show the object itself, ' +
     'not those that document only one of its provenance periods'),
 };
@@ -119,18 +120,27 @@ export const outputSchema = z.object({
  * isbn_key in scripts/build_db.py, which stores the key of every recorded ISBN.
  */
 function isbnKey(value) {
-  let s = value.toUpperCase().replace(/[^0-9X]/g, '');
+  const s = value.toUpperCase().replace(/[^0-9X]/g, '');
   if (/^977\d{10}$/.test(s)) {
     const c = (11 - ([...s.slice(3, 10)].reduce((n, d, i) => n + Number(d) * (8 - i), 0) % 11)) % 11;
     return `${s.slice(3, 10)}${c === 10 ? 'X' : c}`;
   }
-  if (s.length === 10 && /^\d{9}/.test(s)) {
-    s = `978${s.slice(0, 9)}`;
-    const sum = [...s].reduce((n, d, i) => n + Number(d) * (i % 2 ? 3 : 1), 0);
-    return `${s}${(10 - (sum % 10)) % 10}`;
-  }
+  if (s.length === 10 && /^\d{9}/.test(s)) return withCheckDigit(`978${s.slice(0, 9)}`);
   if (s.length === 13 && /^97[89]\d{10}$/.test(s)) return s;
   return s.length === 8 && /^\d{7}/.test(s) ? s : undefined;
+}
+
+const withCheckDigit = (first12) => {
+  const sum = [...first12].reduce((n, d, i) => n + Number(d) * (i % 2 ? 3 : 1), 0);
+  return `${first12}${(10 - (sum % 10)) % 10}`;
+};
+
+// An ISBN-13 that found nothing and whose check digit is wrong: the form with the right one.
+// It is a warning, not a refusal, because SKKG recorded a few ISBN-13s with a wrong check digit.
+function checkDigitHint(key) {
+  if (!/^97[89]\d{10}$/.test(key ?? '') || withCheckDigit(key.slice(0, 12)) === key) return undefined;
+  const fixed = withCheckDigit(key.slice(0, 12));
+  return `\`isbn\` ${key} has a wrong check digit: the ISBN-13 is ${fixed}. Search that instead.`;
 }
 
 const partsIn = (parts) => `la.kind IN (${parts.map((p) => `'${p}'`).join(', ')})`;
@@ -270,7 +280,7 @@ function compile(db, args) {
     warnings.push('`sort` "relevance" needs `query`; sorted by year instead.');
     sort = 'year_asc';
   }
-  return { where, params, fts, applied, warnings, sort };
+  return { where, params, fts, applied, warnings, sort, given };
 }
 
 function fromSql(c) {
@@ -312,7 +322,11 @@ export function searchLiterature(db, meta, args) {
     .all(...from.params, args.limit, args.offset);
 
   const { warnings } = c;
-  if (total === 0) warnings.push('No publication matches these filters together. Drop one filter at a time to see which one empties the result.');
+  if (total === 0) {
+    warnings.push(noMatchWarning('publication', c.given));
+    const hint = checkDigitHint(c.applied.isbn);
+    if (hint) warnings.push(hint);
+  }
   const past = pastEnd(args.offset, total, 'publications');
   if (past) warnings.push(past);
   const stale = staleWarning(meta);

@@ -97,7 +97,7 @@ export function renderObjectText(s) {
   const lines = [
     `${s.inventory_number ?? ''} ${s.title ?? '(untitled)'} — ${s.id}`,
     join([sm.object_type, (sm.creators ?? []).map(creatorRef).join('; '), sm.date,
-      sm.epoch?.join(', '), sm.number_of_parts && `parts: ${sm.number_of_parts}`], ' · '),
+      sm.epoch?.join(', '), sm.number_of_parts && `pieces: ${sm.number_of_parts}`], ' · '),
     ...(sm.titles ?? []).filter((t) => t.title !== s.title)
       .map((t) => `Title: ${join([t.title, t.short_title && `short: ${t.short_title}`, t.type, t.language, t.note])}`),
     list('Identifiers', (sm.identifiers ?? []).map((i) => join([i.type, i.value], ' '))),

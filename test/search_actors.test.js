@@ -27,6 +27,7 @@
 // - results violate the output schema
 // Ids in the text and description examples are checked in invariants.test.js, the term counts of
 // skkg_find_terms against these filters in find_terms.test.js.
+// - an empty result of one filter says "these filters together", or one of several filters does not
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -338,6 +339,15 @@ test('skkg_search_actors against the fixture database', { skip: FIXTURE_DB.skip 
       assert.ok(years.indexOf(null) === -1 || years.slice(years.indexOf(null)).every((y) => y === null), 'undated last');
       assert.equal(new Set(ids(rows)).size, rows.length, 'paging repeats no actor');
       assert.equal(rows.length, (await search({ role_in_collection: 'creator', limit: 1 })).total, 'paging skips no actor');
+    });
+
+    await t.test('an empty result of one filter names it instead of "these filters together"', async () => {
+      const one = await search({ query: 'Privatperson' });
+      assert.equal(one.total, 0);
+      assert.match(one.warnings.join(' '), /No person or group matches `query`, the only filter given\./);
+      const two = await search({ query: 'Privatperson', kind: 'person' });
+      assert.equal(two.total, 0);
+      assert.match(two.warnings.join(' '), /No person or group matches these filters together/);
     });
 
     await t.test('an offset past the end warns', async () => {

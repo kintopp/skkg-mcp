@@ -20,7 +20,10 @@
 // - isbn misses hyphens or an "ISBN" prefix, an ISBN-10 given for a recorded ISBN-13 or the
 //   reverse, an X check digit, or an ISSN; a value that is no ISBN runs instead of being refused;
 //   an ISSN barcode (977…) is refused or resolves to the wrong ISSN, also one whose check is X; the
-//   description promises that every form finds the other although SKKG recorded some wrong check digits
+//   description promises that every form finds the other although SKKG recorded some wrong check digits;
+//   an ISBN-13 with a wrong check digit that finds nothing gets no warning naming the right one, or a
+//   valid one that finds nothing, or one SKKG recorded with a wrong digit, gets that warning
+// - an empty result of one filter says "these filters together"
 // - refers_to_object misses the publications of an object given by inventory number, or lists one
 //   that does not refer to it; the description promises the publications of its provenance periods
 // - the description says an author is recorded once per publication, or an id finds only one
@@ -338,6 +341,21 @@ test('skkg_search_literature against the fixture database', { skip: FIXTURE_DB.s
       assert.match(none.warnings.join(' '), /No publication matches these filters together/);
     });
 
+    await t.test('an empty result of one filter names it instead of "these filters together"', async () => {
+      const none = await search({ isbn: '978-0-306-40615-7' });
+      assert.equal(none.total, 0);
+      assert.match(none.warnings.join(' '), /No publication matches `isbn`, the only filter given\./);
+      assert.doesNotMatch(none.warnings.join(' '), /together|check digit/);
+    });
+
+    await t.test('an ISBN-13 with a wrong check digit that finds nothing is named with the right one', async () => {
+      const { structured: r, text } = await callSent(client, NAME, { isbn: '978-3-909164-40-3' }, outputSchema);
+      assert.equal(r.total, 0);
+      const hint = /`isbn` 9783909164403 has a wrong check digit: the ISBN-13 is 9783909164400\. Search that instead\./;
+      assert.match(r.warnings.join(' '), hint);
+      assert.match(text, hint);
+    });
+
     await t.test('the text keeps the ids, the parts, the object count, the filters, and paging', async () => {
       const { structured: s, text } = await callSent(client, NAME, { author: 'Durant', limit: 2 }, outputSchema);
       assert.ok(s.has_more);
@@ -375,5 +393,16 @@ test('on the full database, an ISSN finds its periodical, also by its barcode, a
     const issue = await callOk(client, NAME, { isbn: '9771013694005', limit: 1 }, outputSchema);
     assert.equal(issue.total, (await callOk(client, NAME, { isbn: '1013-6940', limit: 1 }, outputSchema)).total);
     assert.ok(issue.applied_filters.isbn === '10136940');
+  }, { env: { SKKG_DB_PATH: FULL_DB } });
+});
+
+test('on the full database, an ISBN-13 SKKG recorded with a wrong check digit finds it without a warning', {
+  skip: FULL_DB ? false : 'set SKKG_FULL_DB to the path of the full database to run it',
+}, async () => {
+  await withClient('search-literature-check-digit', async (client) => {
+    // SKKG recorded this ISBN-13 with a wrong check digit (notes/11, tool 6).
+    const r = await callOk(client, NAME, { isbn: '978-3-905875-63-9' }, outputSchema);
+    assert.ok(r.total > 0);
+    assert.doesNotMatch((r.warnings ?? []).join(' '), /check digit/);
   }, { env: { SKKG_DB_PATH: FULL_DB } });
 });

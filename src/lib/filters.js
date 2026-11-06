@@ -97,7 +97,7 @@ export function resolveTerms(db, { tool, field, facet, narrower = false, exclusi
         throw new ToolError(`\`${field}\`: "${v}" is a term of ${vocabularies(named)}, not of \`${field}\`.`,
           otherFilterHint(where, targetsOf(entries), facet));
       }
-      throw new ToolError(`\`${field}\`: no term of \`${field}\` is labelled "${v}".`, suggestTerms(db, facet, v));
+      throw new ToolError(`\`${field}\`: no term of \`${field}\` is labelled "${v}".`, suggestTerms(db, field, facet, v));
     }
   }
   const matched = ids.map((id) => ({ id, label: termLabel(db, id) }));
@@ -108,13 +108,15 @@ export function resolveTerms(db, { tool, field, facet, narrower = false, exclusi
   return { ids, matched };
 }
 
-function suggestTerms(db, facet, value) {
+// Similar labels of `facet`, when there are any, and where to list all of them.
+function suggestTerms(db, field, facet, value) {
   const q = ftsQuery(value.split(/\s+/).map((w) => `${w}*`).join(' OR '));
   const rows = q ? stmt(db, `SELECT t.id, t.label_de, t.label FROM terms_fts f JOIN terms t ON t.id = f.term_id
       WHERE terms_fts MATCH ? AND t.facet = ? ORDER BY t.object_count DESC LIMIT 5`).all(q, facet) : [];
-  if (!rows.length) return 'The vocabulary is German; translate the term, or pass a term id.';
+  const list = listedBy({ field }, facet);
+  if (!rows.length) return `No label is similar; most labels are German, so translate the word. ${list}`;
   const labels = [...new Set(rows.map((r) => r.label_de ?? r.label))];
-  return `Did you mean ${labels.map((l) => `"${l}"`).join(', ')}?`;
+  return `Did you mean ${labels.map((l) => `"${l}"`).join(', ')}? ${list}`;
 }
 
 const ID_LIKE = /^(person|actor)\/|^https?:|^skkg:|^\d+$|^[0-9a-f]{8}-[0-9a-f]{4}-/i;

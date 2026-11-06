@@ -28,6 +28,8 @@
 // - a photo without a recorded licence comes back without image_license, read as unrestricted
 // - a current location is accepted as a filter, by name or as a term id of another filter,
 //   although SKKG's API and website publish none (notes/08)
+// - an empty result of one filter says "these filters together", or one of several filters does not
+// - an unknown label with no similar one is told the vocabulary is German, without the call that lists its terms
 // - results violate the output schema
 
 import { test } from 'node:test';
@@ -76,6 +78,23 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
     await t.test('FTS5 operators and punctuation in the query are searched as words, never an error', async () => {
       for (const query of ['(Ofen)', 'NEAR Ofen', 'Ofen AND', 'Ofen -blau', '"Ofen']) await search({ query });
       await callError(client, NAME, { query: '* ()' });
+    });
+
+    await t.test('an empty result of one filter names it instead of "these filters together"', async () => {
+      // object/821 has no child objects.
+      const one = await search({ part_of: 'object/821' });
+      assert.equal(one.total, 0);
+      assert.match(one.warnings.join(' '), /No object matches `part_of`, the only filter given\./);
+      const two = await search({ part_of: 'object/821', has_image: true });
+      assert.match(two.warnings.join(' '), /No object matches these filters together/);
+    });
+
+    await t.test('an unknown label is refused with the call that lists the vocabulary', async () => {
+      const none = await callError(client, NAME, { image_license: 'GPL' });
+      assert.match(none, /no term of `image_license` is labelled "GPL"/);
+      assert.match(none, /No label is similar.*skkg_find_terms with vocabulary "image_license" lists the terms `image_license` takes/);
+      assert.match(await callError(client, NAME, { material: 'Hol' }),
+        /Did you mean "Holz".*skkg_find_terms with vocabulary "material" lists the terms `material` takes/);
     });
 
     await t.test('an unknown label is refused with German suggestions', async () => {

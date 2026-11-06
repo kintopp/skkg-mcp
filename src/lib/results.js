@@ -26,6 +26,14 @@ export const showing = (p, total) => (p.returned && total > p.returned ? `, show
 export const pastEnd = (offset, total, noun) => (offset > 0 && total > 0 && offset >= total
   ? `\`offset\` ${offset} is past the end: there are ${total} ${noun}. Start again at offset 0.` : undefined);
 
+/** The warning of a search that matched nothing, given the names of the filters the call set. */
+export function noMatchWarning(noun, given) {
+  if (given.length !== 1) {
+    return `No ${noun} matches these filters together. Drop one filter at a time to see which one empties the result.`;
+  }
+  return `No ${noun} matches \`${given[0]}\`, the only filter given.`;
+}
+
 // "creator = Albert Anker (person/41); has_image = true": what each filter resolved to.
 const appliedText = (applied) => Object.entries(applied).map(([k, v]) => `${k} = ${Array.isArray(v)
   ? v.map((x) => (x.label ?? x.name ? `${x.label ?? x.name} (${x.id})` : x.id)).join(', ') : v}`).join('; ');

@@ -44,8 +44,9 @@ objects and a warning, while `{query: "Stillleben"}` returns about a hundred.
   Words are AND-ed, `"a phrase"` matches in order, and `OR` between two words matches
   either. Umlauts can be written `ä` or `ae`.
 - **Term filters take a German label or a term id, matched exactly except for case.** An
-  unknown label is refused with suggestions. When unsure, call `skkg_find_terms` first:
-  each term lists every filter that takes it, with the count that filter returns.
+  unknown label is refused, with similar labels if there are any. When unsure, call
+  `skkg_find_terms` first: each term lists every filter that takes it, with the count
+  that filter returns.
 - **The vocabulary is not the everyday word.** "Gemälde" is no object type; the type is
   "Malerei", with several thousand objects under its narrower terms.
   `{query: "Gemälde"}` searches titles and texts and finds only a few dozen.

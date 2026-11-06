@@ -28,6 +28,7 @@
 //   sorts the wrong way; paging repeats or skips an exhibition; an offset past the end is silent;
 //   an empty result is silent
 // - applied_filters does not name the object of includes_object
+// - an empty result of one filter says "these filters together"
 // - the text drops ids, venues, a station's status, the organisers, the counts, filters, warnings, or paging;
 //   results violate the output schema
 
@@ -296,6 +297,13 @@ test('skkg_search_exhibitions against the fixture database', { skip: FIXTURE_DB.
       const none = await search({ query: 'Hodler', year_from: 1093, year_to: 1093 });
       assert.equal(none.total, 0);
       assert.match(none.warnings.join(' '), /No exhibition matches these filters together/);
+    });
+
+    await t.test('an empty result of one filter names it instead of "these filters together"', async () => {
+      const none = await search({ query: 'Xyzzyq' });
+      assert.equal(none.total, 0);
+      assert.match(none.warnings.join(' '), /No exhibition matches `query`, the only filter given\./);
+      assert.doesNotMatch(none.warnings.join(' '), /together/);
     });
 
     await t.test('the text keeps the ids, the venues and their status, the counts, the filters, and paging', async () => {
