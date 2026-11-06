@@ -22,7 +22,8 @@
     "test": "node --test \"test/*.test.js\"",
     "lint": "eslint .",
     "inspector": "npx @modelcontextprotocol/inspector node src/index.js",
-    "mutate": "node test/mutations.mjs"
+    "mutate": "node test/mutations.mjs",
+    "build:skill": "node scripts/build-skill.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "~2.4.0",

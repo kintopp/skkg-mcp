@@ -493,6 +493,11 @@ const MUTATIONS = [
   ['src/lib/ids.js', "    if (!m.iiif_service) return 'SKKG has not published an image for it; do not look for one elsewhere.';\n", "", 'multimedia hint: unpublished image not sent to skkg_inspect_image'],
   ['src/lib/ids.js', "    if (!m) return 'No such multimedia record; check the id.';\n", "    if (!m) return 'x';\n", 'multimedia hint: missing record named'],
   ['src/tools/inspect_image.js', "'the result\\'s note says what adds detail, usually a smaller region_pct. ' +", "'for more detail, pass a smaller region_pct, not a larger max_long_edge. ' +", 'inspect: description points to the note'],
+  ['scripts/build-skill.mjs', "return { name: `${SKILL_NAME}/${rel}`, content:", "return { name: rel, content:", 'skill bundle: SKILL.md inside the skkg folder'],
+  ['scripts/build-skill.mjs', "content: rel === 'SKILL.md' ? stampVersion(content) : content };", "content };", 'skill bundle: version stamped'],
+  ['scripts/build-skill.mjs', "const m = frontmatter(md).match(/^ {2}last_updated:", "const m = md.match(/^ {2}last_updated:", 'skill bundle: date read from the frontmatter only'],
+  ['scripts/build-skill.mjs', "const dosDate = ((year - 1980) << 9) | (month << 5) | day;", "const dosDate = ((year - 1980) << 9) | (month << 5) | 1;", 'skill bundle: entries dated from last_updated'],
+  ['scripts/build-skill.mjs', "    central.writeUInt16LE(0, 10);\n", "    central.writeUInt16LE(8, 10);\n", 'skill bundle: readable by an independent reader'],
 ];
 
 // The cache key changes with the entry, so an edited entry has no record and is selected.
