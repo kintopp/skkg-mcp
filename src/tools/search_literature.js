@@ -135,12 +135,13 @@ const withCheckDigit = (first12) => {
   return `${first12}${(10 - (sum % 10)) % 10}`;
 };
 
-// An ISBN-13 that found nothing and whose check digit is wrong: the form with the right one.
-// It is a warning, not a refusal, because SKKG recorded a few ISBN-13s with a wrong check digit.
-function checkDigitHint(key) {
-  if (!/^97[89]\d{10}$/.test(key ?? '') || withCheckDigit(key.slice(0, 12)) === key) return undefined;
+// An ISBN-13 that fails its check digit, when SKKG records the one with the right check digit.
+// Not a refusal: SKKG recorded a few ISBN-13s with a wrong check digit.
+function checkDigitHint(db, key) {
+  if (!/^97[89]\d{10}$/.test(key ?? '')) return undefined;
   const fixed = withCheckDigit(key.slice(0, 12));
-  return `\`isbn\` ${key} has a wrong check digit: the ISBN-13 is ${fixed}. Search that instead.`;
+  if (fixed === key || !stmt(db, 'SELECT 1 FROM literature WHERE isbn_key = ? LIMIT 1').get(fixed)) return undefined;
+  return `\`isbn\` ${key} fails the ISBN-13 check digit; SKKG records ${fixed}, which differs only in its last digit.`;
 }
 
 const partsIn = (parts) => `la.kind IN (${parts.map((p) => `'${p}'`).join(', ')})`;
@@ -214,7 +215,7 @@ function resolveSeries(db, value) {
   return hits;
 }
 
-// Compiles the filters to { where, params, fts, applied, warnings, sort }.
+// Compiles the filters to { where, params, fts, applied, warnings, sort, given }.
 function compile(db, args) {
   const given = FILTERS.filter((k) => args[k] !== undefined);
   if (!given.length) {
@@ -324,7 +325,7 @@ export function searchLiterature(db, meta, args) {
   const { warnings } = c;
   if (total === 0) {
     warnings.push(noMatchWarning('publication', c.given));
-    const hint = checkDigitHint(c.applied.isbn);
+    const hint = checkDigitHint(db, c.applied.isbn);
     if (hint) warnings.push(hint);
   }
   const past = pastEnd(args.offset, total, 'publications');

@@ -36,6 +36,7 @@
 //   were this tool's, or a term that only skkg_search_objects filters ("Holz") gets no pointer there
 // - the anonymisation ("unbekannte:r Eigentümer:in") is dropped or replaced
 // - a result row lacks its rights (image_license, object_copyright)
+// - an empty result of one filter says "these filters together"
 // - results violate the output schema
 // Ids in the text, offsets past the end, and description examples are checked in invariants.test.js.
 
@@ -329,6 +330,14 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
       const prices = (await all({ currency: 'GBP', sort: 'price_desc' })).rows.map(top);
       assert.ok(prices.length > 1);
       assert.deepEqual(prices, [...prices].sort((a, b) => b - a));
+    });
+
+    await t.test('an empty result of one filter names it instead of "these filters together"', async () => {
+      // person/522 owns no chain period and sold nothing to SKKG in the fixture.
+      const r = await search({ owner: 'person/522' });
+      assert.equal(r.total, 0);
+      assert.match(r.warnings.join(' '), /No chain period matches `owner`, the only filter given\./);
+      assert.doesNotMatch(r.warnings.join(' '), /together/);
     });
 
     await t.test('paging neither repeats nor skips an object', async () => {

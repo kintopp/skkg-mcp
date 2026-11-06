@@ -230,7 +230,8 @@ function provenance(db, o, lang) {
     const next = rows[i];
     const end = prev.year_last > YEAR_MAX ? undefined : prev.date_to ?? prev.end_to ?? prev.end_from;
     const start = next.date_from ?? next.begin_from ?? next.begin_to;
-    if (end && start && dayAfter(end) && start > dayAfter(end)) gaps.push({ after: rows[i - 1].id, before: rows[i].id, from: end, to: start });
+    const after = end && dayAfter(end);
+    if (after && start && start > after) gaps.push({ after: prev.id, before: next.id, from: end, to: start });
   }
   return {
     status: termLabel(db, o.provenance_status_id, lang),

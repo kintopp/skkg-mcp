@@ -148,7 +148,7 @@ function resolvePlaces(db, value) {
   return hits;
 }
 
-// Compiles the filters to { where, params, fts, applied, warnings, sort }.
+// Compiles the filters to { where, params, fts, applied, warnings, sort, given }.
 function compile(db, args) {
   const given = FILTERS.filter((k) => args[k] !== undefined);
   if (!given.length) {

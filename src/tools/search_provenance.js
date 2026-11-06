@@ -11,7 +11,7 @@ import { period, periodRef, acquisition, chainRows } from '../lib/provenance.js'
 import { prune } from '../lib/prune.js';
 import { words, startingWith } from '../lib/words.js';
 import { fitResult } from '../lib/fit.js';
-import { capList, paging, showing, pastEnd, tailLines } from '../lib/results.js';
+import { capList, paging, showing, pastEnd, tailLines, noMatchWarning } from '../lib/results.js';
 import { objectRowLines, periodLines, periodRefLine, acquisitionLines } from '../lib/text.js';
 import { resolveTerms, actorFilter, assertRange } from '../lib/filters.js';
 import { TERM_FILTERS as TERM_FILTERS_OF } from './term_filters.js';
@@ -188,7 +188,7 @@ const needs = (args, from) => (field) => {
   ].filter(Boolean);
 };
 
-// Compiles the filters to one condition per layer: { chain: { where, params }, acquisition: …, layers, applied, warnings }.
+// Compiles the filters to one condition per layer: { chain: { where, params }, acquisition: …, layers, applied, warnings, given }.
 function compile(db, args) {
   const given = FILTERS.filter((k) => args[k] !== undefined);
   if (!given.length) {
@@ -271,7 +271,7 @@ function compile(db, args) {
     add('acquisition', `a.price_value ${op} ?`, args[field]);
     applied[field] = args[field];
   }
-  return { where, params, layers, applied, warnings };
+  return { where, params, layers, applied, warnings, given };
 }
 
 const list = (fields) => fields.map((f) => `\`${f}\``).join(', ');
@@ -312,8 +312,8 @@ export function searchProvenance(db, meta, args) {
 
   const { warnings } = c;
   if (counts.objects === 0 && !unlinked.length) {
-    warnings.push(`No ${c.layers.length > 1 ? 'chain period or acquisition' : c.layers[0] === 'chain' ? 'chain period' : 'acquisition'} ` +
-      'matches these filters together. Only a few hundred objects have a chain before SKKG; drop one filter at a time to see which one empties the result.');
+    const noun = c.layers.length > 1 ? 'chain period or acquisition' : c.layers[0] === 'chain' ? 'chain period' : 'acquisition';
+    warnings.push(`${noMatchWarning(noun, c.given)} Only a few hundred objects have a chain before SKKG.`);
   }
   const ctx = { warnings, totals: {} };
   const unlinkedRows = capList(unlinked, 'unlinked_periods', ctx).map((p) => periodRef(db, p));

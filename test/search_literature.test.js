@@ -21,8 +21,9 @@
 //   reverse, an X check digit, or an ISSN; a value that is no ISBN runs instead of being refused;
 //   an ISSN barcode (977…) is refused or resolves to the wrong ISSN, also one whose check is X; the
 //   description promises that every form finds the other although SKKG recorded some wrong check digits;
-//   an ISBN-13 with a wrong check digit that finds nothing gets no warning naming the right one, or a
-//   valid one that finds nothing, or one SKKG recorded with a wrong digit, gets that warning
+//   an ISBN-13 that fails its check digit gets no warning naming the recorded one with the right digit;
+//   the warning names a form SKKG does not record, or comes for a valid ISBN, or for one SKKG recorded
+//   with a wrong digit, also when another filter emptied the result
 // - an empty result of one filter says "these filters together"
 // - refers_to_object misses the publications of an object given by inventory number, or lists one
 //   that does not refer to it; the description promises the publications of its provenance periods
@@ -348,12 +349,26 @@ test('skkg_search_literature against the fixture database', { skip: FIXTURE_DB.s
       assert.doesNotMatch(none.warnings.join(' '), /together|check digit/);
     });
 
-    await t.test('an ISBN-13 with a wrong check digit that finds nothing is named with the right one', async () => {
-      const { structured: r, text } = await callSent(client, NAME, { isbn: '978-3-909164-40-3' }, outputSchema);
+    await t.test('an ISBN-13 that fails its check digit names the recorded one with the right digit', async () => {
+      // SKKG records 978-3-945852-52-1 in the fixture.
+      const { structured: r, text } = await callSent(client, NAME, { isbn: '978-3-945852-52-0' }, outputSchema);
       assert.equal(r.total, 0);
-      const hint = /`isbn` 9783909164403 has a wrong check digit: the ISBN-13 is 9783909164400\. Search that instead\./;
+      const hint = /`isbn` 9783945852520 fails the ISBN-13 check digit; SKKG records 9783945852521, which differs only in its last digit\./;
       assert.match(r.warnings.join(' '), hint);
       assert.match(text, hint);
+    });
+
+    await t.test('a valid ISBN-13 that another filter emptied gets no check-digit hint', async () => {
+      const r = await search({ isbn: '978-3-945852-52-1', year_from: 2099 });
+      assert.equal(r.total, 0);
+      assert.doesNotMatch(r.warnings.join(' '), /check digit/);
+    });
+
+    await t.test('an ISBN-13 that fails its check digit gets no hint when SKKG records no corrected form', async () => {
+      // 9783909164400 is not in the fixture.
+      const r = await search({ isbn: '978-3-909164-40-3' });
+      assert.equal(r.total, 0);
+      assert.doesNotMatch(r.warnings.join(' '), /check digit/);
     });
 
     await t.test('the text keeps the ids, the parts, the object count, the filters, and paging', async () => {
@@ -404,5 +419,8 @@ test('on the full database, an ISBN-13 SKKG recorded with a wrong check digit fi
     const r = await callOk(client, NAME, { isbn: '978-3-905875-63-9' }, outputSchema);
     assert.ok(r.total > 0);
     assert.doesNotMatch((r.warnings ?? []).join(' '), /check digit/);
+    const emptied = await callOk(client, NAME, { isbn: '978-3-905875-63-9', year_from: 2099 }, outputSchema);
+    assert.equal(emptied.total, 0);
+    assert.doesNotMatch(emptied.warnings.join(' '), /check digit/);
   }, { env: { SKKG_DB_PATH: FULL_DB } });
 });

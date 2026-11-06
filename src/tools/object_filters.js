@@ -86,8 +86,10 @@ export function objectFilterShape() {
 }
 
 const FILTER_KEYS = Object.keys(objectFilterShape()).filter((k) => k !== 'include_narrower');
-export const givenObjectFilters = (args) => FILTER_KEYS.filter((k) => args[k] !== undefined);
-export const hasObjectFilter = (args) => givenObjectFilters(args).length > 0;
+export const hasObjectFilter = (args) => FILTER_KEYS.some((k) => args[k] !== undefined);
+// The filters an empty result names. include_narrower: false narrows a term filter, so it counts too.
+export const givenObjectFilters = (args) => [...FILTER_KEYS.filter((k) => args[k] !== undefined),
+  ...(args.include_narrower === false ? ['include_narrower'] : [])];
 
 /**
  * Compiles the filters in `args` to { clauses, params, applied, warnings, creatorRow, termIds }.

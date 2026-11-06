@@ -114,7 +114,7 @@ function suggestTerms(db, field, facet, value) {
   const rows = q ? stmt(db, `SELECT t.id, t.label_de, t.label FROM terms_fts f JOIN terms t ON t.id = f.term_id
       WHERE terms_fts MATCH ? AND t.facet = ? ORDER BY t.object_count DESC LIMIT 5`).all(q, facet) : [];
   const list = listedBy({ field }, facet);
-  if (!rows.length) return `No label is similar; most labels are German, so translate the word. ${list}`;
+  if (!rows.length) return `No label is similar. ${list} Most vocabularies are German, so translate an English word first.`;
   const labels = [...new Set(rows.map((r) => r.label_de ?? r.label))];
   return `Did you mean ${labels.map((l) => `"${l}"`).join(', ')}? ${list}`;
 }

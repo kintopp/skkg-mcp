@@ -109,7 +109,7 @@ test('skkg_get_object against the fixture database', { skip: FIXTURE_DB.skip }, 
     });
 
     await t.test('an open end is no date to compute a gap from', async () => {
-      // Period 1 of object/821 ends "o. D.", which SKKG stores as 9999-12-31; the next has no date at all.
+      // Period 1 of object/821 ends "o. D.", which SKKG stores as 9999-12-31; the next period starts after it.
       const { provenance: p } = await get({ id: 'object/821', include: ['provenance'] });
       assert.ok(p.periods.length > 1);
       assert.equal(p.gaps, undefined);
@@ -132,9 +132,12 @@ test('skkg_get_object against the fixture database', { skip: FIXTURE_DB.skip }, 
       }
     });
 
-    await t.test('a section not requested, or not empty, gets no empty warning', async () => {
+    await t.test('a section not requested gets no empty warning', async () => {
       const bare = await get({ id: 'object/060d1324-e87b-45f8-b6c6-5ca65c7eddf1', include: ['exhibitions'] });
       assert.doesNotMatch((bare.warnings ?? []).join(' '), /`texts`|`literature`|no image/);
+    });
+
+    await t.test('a requested section that is not empty gets no empty warning', async () => {
       const full = await get({ id: 'object/1014', include: ['images', 'provenance'] });
       assert.doesNotMatch((full.warnings ?? []).join(' '), /is empty|no image/);
     });

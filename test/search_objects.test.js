@@ -89,10 +89,18 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
       assert.match(two.warnings.join(' '), /No object matches these filters together/);
     });
 
+    await t.test('include_narrower: false counts as a filter when the result is empty', async () => {
+      // "Malerei" has objects only under its narrower terms in the fixture.
+      const r = await search({ object_type: 'Malerei', include_narrower: false });
+      assert.equal(r.total, 0);
+      assert.match(r.warnings.join(' '), /No object matches these filters together/);
+      assert.doesNotMatch(r.warnings.join(' '), /the only filter given/);
+    });
+
     await t.test('an unknown label is refused with the call that lists the vocabulary', async () => {
       const none = await callError(client, NAME, { image_license: 'GPL' });
       assert.match(none, /no term of `image_license` is labelled "GPL"/);
-      assert.match(none, /No label is similar.*skkg_find_terms with vocabulary "image_license" lists the terms `image_license` takes/);
+      assert.match(none, /No label is similar\. skkg_find_terms with vocabulary "image_license" lists the terms `image_license` takes\./);
       assert.match(await callError(client, NAME, { material: 'Hol' }),
         /Did you mean "Holz".*skkg_find_terms with vocabulary "material" lists the terms `material` takes/);
     });
