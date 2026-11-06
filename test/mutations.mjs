@@ -358,6 +358,8 @@ const MUTATIONS = [
   ["src/tools/search_literature.js", "the other, unless SKKG recorded a wrong check digit, ' +\n    'so if an ISBN finds nothing, try the title in `query`. An ISSN", "the other. An ISSN", "literature: isbn description names wrong check digits"],
   ["src/tools/search_literature.js", "the object itself, ' +\n    'not those that document only one of its provenance periods'", "the object'", "literature: refers_to_object description leaves out periods"],
   ["src/tools/search_literature.js", "\n        AND kind IN ('person', 'group') AND is_anonymous = 0 LIMIT 1`)", " LIMIT 1`)", "literature: anonymisation not sent to skkg_search_actors"],
+  ["src/tools/search_literature.js", "  if (n) return `Its words occur", "  if (false) return `Its words occur", "literature: a name only labels hold is sent to query"],
+  ["src/tools/search_literature.js", "SELECT COUNT(*) AS n FROM literature_fts WHERE literature_fts MATCH ?", "SELECT COUNT(*) + 1 AS n FROM literature_fts WHERE literature_fts MATCH ?", "literature: the query hint gives the count query finds"],
 ];
 
 // The cache key changes with the entry, so an edited entry has no record and is selected.

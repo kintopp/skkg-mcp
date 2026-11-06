@@ -137,7 +137,7 @@ const partsIn = (parts) => `la.kind IN (${parts.map((p) => `'${p}'`).join(', ')}
 const ID_LIKE = /^(person|actor)\/|^https?:|^skkg:|^[0-9a-f]{8}-[0-9a-f]{4}-/i;
 
 // Why a name or id that no author (or publisher) has finds nothing, and where to go instead.
-function nameHint(db, field, actorIds) {
+function nameHint(db, field, actorIds, fts) {
   const other = field === 'author' ? 'publisher' : 'author';
   if (actorIds.length) {
     const has = stmt(db, `SELECT 1 FROM literature_actors la WHERE la.actor_id IN (${placeholders(actorIds.length)})
@@ -150,6 +150,9 @@ function nameHint(db, field, actorIds) {
         `${SEARCH_ACTORS_TOOL_NAME} finds them, and skkg_get_record with include ["literature"] lists the literature about them.`;
     }
   }
+  // E.g. SKKG's "Ohne Angaben", which the build does not load as an actor but leaves in the labels.
+  const n = fts && stmt(db, 'SELECT COUNT(*) AS n FROM literature_fts WHERE literature_fts MATCH ?').get(fts).n;
+  if (n) return `Its words occur in the titles, labels, names, or series of ${n} publication${n === 1 ? '' : 's'}: pass it as \`query\`.`;
   return 'Check the spelling, try the surname alone, or use `query`, which also searches titles and series.';
 }
 
@@ -172,7 +175,7 @@ function nameFilter(db, field, value) {
       ORDER BY a.label COLLATE NOCASE`).all(q).map((r) => r.label);
   if (!names.length) {
     const ids = stmt(db, 'SELECT actor_id FROM actors_fts WHERE actors_fts MATCH ? LIMIT 50').all(q).map((r) => r.actor_id);
-    throw new ToolError(`\`${field}\`: no ${what} is named "${v}".`, nameHint(db, field, ids));
+    throw new ToolError(`\`${field}\`: no ${what} is named "${v}".`, nameHint(db, field, ids, q));
   }
   const shown = names.slice(0, APPLIED_NAMES).join(' | ');
   return {

@@ -4,7 +4,9 @@
 // - `author` matches a publisher, or misses an editor; `publisher` matches an author
 // - a name SKKG records as many stubs (one per publication) finds only one publication
 // - SKKG's "not stated" ("Ohne Angaben") is an author, editor, or publisher that a name filter finds
-//   or that a result lists, also in another capitalisation
+//   or that a result lists, also in another capitalisation; refused as a name, it is told to check
+//   its spelling instead of being sent to `query`, which finds it in the labels, or the count the
+//   hint gives differs from what `query` lists
 // - a name no author or editor has runs empty without a hint: to `publisher` when a publisher has
 //   it, to skkg_search_actors when only a person with a record of their own has it, but not when
 //   only SKKG's anonymisation ("Privatperson") has it, which skkg_search_actors never lists
@@ -143,6 +145,17 @@ test('skkg_search_literature against the fixture database', { skip: FIXTURE_DB.s
       assert.match(creator, /a person or group with a record of its own/);
       assert.match(creator, /skkg_search_actors/);
       assert.match(await callError(client, NAME, { author: 'Xqzwvbnm' }), /Check the spelling.*`query`/);
+    });
+
+    await t.test('a name no actor has but the publications\' labels hold is sent to `query`, with the count it finds', async () => {
+      // SKKG's "Ohne Angaben" is no actor since schema 9, but stays in the labels ("Literatur: Ohne Angaben, …").
+      for (const [field, name] of [['author', 'Ohne Angaben'], ['publisher', 'keine Angaben']]) {
+        const text = await callError(client, NAME, { [field]: name });
+        assert.doesNotMatch(text, /Check the spelling|surname/, `${field} ${name}`);
+        const m = text.match(/occur in the titles, labels, names, or series of (\d+) publications?: pass it as `query`/);
+        assert.ok(m, text);
+        assert.equal((await search({ query: name, limit: 1 })).total, Number(m[1]), `${field} ${name}`);
+      }
     });
 
     await t.test('a name only SKKG\'s anonymisation has is not sent to skkg_search_actors', async () => {
