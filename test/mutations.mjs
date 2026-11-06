@@ -192,7 +192,7 @@ const MUTATIONS = [
   ["src/lib/results.js", "    ...(s.warnings ?? []).map((w) => `Warning: ${w}`),\n", "", "warnings in every text"],
   ["src/lib/text.js", "`${lead}${join([...head, p.id], ' · ')}`", "`${lead}${join(head, ' · ')}`", "object text period ids"],
   ["src/tools/object_text.js", "join([photoRights(m.rights), m.rights.iiif_service], ' · ')", "photoRights(m.rights)", "object text image service"],
-  ["src/tools/object_text.js", "    img ? `Photo: ${photoRights(img)}` : 'No published image',\n", "", "object text photo rights"],
+  ["src/tools/object_text.js", "    img ? `${img.kind === 'document' ? 'Document' : 'Photo'}: ${photoRights(img)}` : 'No published image',\n", "", "object text photo rights"],
   ["src/server.js", "if (process.env[CHANNEL_PROBE_ENV] === '1') registerChannelProbeTool", "if (process.env[CHANNEL_PROBE_ENV]) registerChannelProbeTool", "probe gate exact"],
   ["src/tools/channel_probe.js", "content: [{ type: 'text', text: TEXT_MARKER }],", "content: [{ type: 'text', text: `${TEXT_MARKER} ${STRUCTURED_MARKER}` }],", "probe markers kept apart"],
   // skkg_get_record
