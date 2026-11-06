@@ -171,6 +171,11 @@ SKKG's provenance data has two layers, and most questions need both.
 - **SKKG's own purchase is often in both layers.** In most chains the last period
   is SKKG as owner, often with the price of the acquisition. Count either the
   chain periods or the acquisitions, not their sum.
+- **The two prices of one auction purchase can differ.** Most match, but where they
+  differ the acquisition price is often exactly 10% or 15% above the chain's, which
+  fits a buyer's premium on the hammer price. SKKG does not say which price is which,
+  and only a few carry "Zuschlagspreis" (hammer price) in `price_note`. Report both,
+  and call the premium a likely reading, not a fact.
 - **Open periods reach every year on their open side.** "o. D.–12.01.2005" (no start
   date) or "seit 1995" matches any year range on that side. So
   `{layer: "chain", year_from: 1933, year_to: 1945}` matches more than half of the
