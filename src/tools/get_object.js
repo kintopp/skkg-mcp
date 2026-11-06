@@ -1,5 +1,5 @@
 // skkg_get_object: one object with the sections the caller asks for, always with its
-// rights block (object copyright and photo rights side by side).
+// rights block (object copyright and image rights side by side).
 
 import { z } from 'zod';
 import { withTool, toolResult } from '../lib/tool.js';
@@ -45,7 +45,7 @@ const inputSchema = z.object({
     `Sections besides the summary: ${SECTIONS.join(', ')}, or all. Default: none`),
   lang: langIn(),
   live: z.boolean().default(false).describe(
-    'Also fetch the object from SKKG\'s API and compare its credit line, redaction status, images, and photo rights ' +
+    'Also fetch the object from SKKG\'s API and compare its credit line, redaction status, images, and image rights ' +
     'with the dump. The API has no object copyright. Default: false'),
 }).strict();
 

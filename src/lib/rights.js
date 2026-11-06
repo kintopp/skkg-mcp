@@ -1,4 +1,4 @@
-// The rights block (notes/11 "The rights block"). Object copyright and photo rights are
+// The rights block (notes/11 "The rights block"). Object copyright and image rights are
 // separate sets under SKKG's terms, so both are always reported side by side.
 
 import { stmt } from './sql.js';

@@ -339,11 +339,11 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
       const d = tools.find((x) => x.name === NAME).description;
       assert.match(d, /Terms in use come first; among them, exact label matches, then the terms used most/);
       assert.doesNotMatch(d, /exact label matches come first/);
-      // A photo licence counts objects by their primary image, as the image_license filter matches.
-      assert.match(d, /how many objects use it \(a photo licence: objects whose primary image has it\)/);
+      // An image licence counts objects by their primary image, as the image_license filter matches.
+      assert.match(d, /how many objects use it \(an image licence: objects whose primary image has it\)/);
       const props = tools.find((x) => x.name === NAME).outputSchema.properties;
       const termProps = (props.terms ?? props.term).items?.properties ?? (props.terms ?? props.term).properties;
-      assert.match(termProps.object_count.description, /for a photo licence, objects whose primary image has it/);
+      assert.match(termProps.object_count.description, /for an image licence, objects whose primary image has it/);
     });
 
     await t.test('the description promises `filter` only where a search filter takes the term', async () => {

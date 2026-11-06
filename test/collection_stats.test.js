@@ -260,6 +260,13 @@ test('skkg_collection_stats against the fixture database', { skip: FIXTURE_DB.sk
       assert.doesNotMatch(r.warnings.join(' '), /the only filter given/);
     });
 
+    await t.test('an empty result does not count include_narrower: false when the narrower terms have no objects', async () => {
+      // "Faserzement" (type/42156/165969) has a narrower term, and neither has an object in the fixture.
+      const r = await stats({ dimension: 'object_type', material: 'type/42156/165969', include_narrower: false });
+      assert.equal(r.total_objects, 0);
+      assert.match(r.warnings.join(' '), /No object matches `material`, the only filter given\./);
+    });
+
     await t.test('a query without a match says the data is German', async () => {
       const r = await stats({ dimension: 'material', query: 'still life' });
       assert.equal(r.total_objects, 0);

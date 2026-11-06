@@ -114,7 +114,7 @@ Calls that work:
 **Two kinds of rights, always both.** SKKG's terms treat the photo and the object
 separately, and so does every result.
 
-- `image_license` is the licence of SKKG's photograph: "CC0 1.0" (most photos),
+- `image_license` is the licence of SKKG's image, mostly a photo: "CC0 1.0" (most photos),
   "CC BY 4.0", or "©" with a `right_holder`. The full image block also gives the
   photographer, the photo date, and the rights end date.
 - An image's `kind` (`image_kind` in a result row) is SKKG's media type: "image" is a
@@ -133,7 +133,7 @@ separately, and so does every result.
   SKKG has catalogued the record. A record at level 1 is a bare registration, so a
   missing field there says little.
 - The database is a snapshot. `skkg_get_object({id: "object/1014", live: true})` checks the credit
-  line, the images, and the photo rights against SKKG's API with one request, and lists
+  line, the images, and the image rights against SKKG's API with one request, and lists
   what changed. The API has no object copyright, so that value always comes from the
   dump. Use `live` for the objects the user will actually reuse, not for every result.
 

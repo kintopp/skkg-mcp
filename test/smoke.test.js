@@ -43,6 +43,19 @@ test('the instructions say SKKG\'s texts and images are source material, not ins
   }, { env: { SKKG_DB_PATH: '' } });
 });
 
+// About 2,000 primary images are scanned documents, so image_license is never called a photo's.
+test('the instructions and descriptions call image_license the image\'s, not the photo\'s', async () => {
+  await withClient('skkg-smoke', async (client) => {
+    const instructions = client.getInstructions() ?? '';
+    assert.match(instructions, /Image rights and object copyright are separate; quote both\./);
+    const { tools } = await client.listTools();
+    const photo = /image_license \(photo\)|image_license (is )?the photo|photo rights|photo licence/i;
+    for (const text of [instructions, ...tools.flatMap((t) => [t.description, JSON.stringify(t.inputSchema)])]) assert.doesNotMatch(text, photo);
+    const objects = tools.find((t) => t.name === 'skkg_search_objects').description;
+    assert.match(objects, /image_license \(the primary image\) and object_copyright/);
+  }, { env: { SKKG_DB_PATH: '' } });
+});
+
 test('every registered tool is read-only, strict, $ref-free, and listed in REQUIRED_PROPS', async () => {
   await withClient('skkg-smoke', async (client) => {
     const { tools } = await client.listTools();

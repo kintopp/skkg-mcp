@@ -1,5 +1,5 @@
 // skkg_inspect_image: one published image, or a region of it, for the model to look at, with
-// the photo rights and the copyright of each object it shows.
+// the image rights and the copyright of each object it shows.
 
 import { z } from 'zod';
 import { withTool } from '../lib/tool.js';

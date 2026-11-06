@@ -1054,7 +1054,7 @@ def load_multimedia(src, db, used):
         ?n crm:P190_has_symbolic_content ?v FILTER(STRENDS(STR(?n), '/name')) }}"""):
         mm[m]["name"] = v
     for m, t in q("multimedia", f"SELECT ?m ?t WHERE {{ {M} ?m crm:P2_has_type ?t FILTER(STRSTARTS(STR(?t), 'https://data.skkg.ch/')) }}"):
-        slot = {"20060": "usage", "23089": "type", "43088": "category"}.get(scheme_of(t))
+        slot = {"20060": "usage", MEDIA_TYPE_SCHEME: "type", "43088": "category"}.get(scheme_of(t))
         if slot:
             mm[m][slot] = t
             used.add(t)
