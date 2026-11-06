@@ -304,7 +304,7 @@ test('skkg_inspect_image against the fixture database', { skip: FIXTURE_DB.skip 
     assert.fail(`${SHARED} not among the images of ${asked}`);
   });
 
-  await t.test('the text stands alone: ids, size, both rights, region, and that the user may not see it', async () => {
+  await t.test('the text stands alone: ids, size, both rights, region, and that the image is for the model', async () => {
     const { s, text } = await call({ id: OBJ, region_pct: [10, 10, 20, 20] });
     assert.match(text, new RegExp(PRIMARY));
     assert.match(text, /object\/1014/);
@@ -314,9 +314,9 @@ test('skkg_inspect_image against the fixture database', { skip: FIXTURE_DB.skip 
     assert.match(text, /region_pct \[10, 10, 20, 20\]/);
     assert.match(text, new RegExp(`Photo rights: ${s.image_rights.image_license}`));
     assert.match(text, /object copyright Copyright/);
-    // Some clients show the user a thumbnail, so the text must not claim either way.
-    assert.match(text, /some clients show the user a thumbnail, others nothing\. Link website_url to show it/);
-    assert.doesNotMatch(text, /does not see/);
+    // What a client shows the user varies and changes, so the text names the purpose, never the view.
+    assert.match(text, /for your own analysis; to show it to the user, link website_url/);
+    assert.doesNotMatch(text, /does not see|thumbnail|clients show/);
     assert.doesNotMatch(text, /^\s*[{[]/m);
   });
 
@@ -398,12 +398,12 @@ test('skkg_inspect_image refuses bad input before any fetch', { skip: FIXTURE_DB
       assert.match(d, /note says what adds detail/);
       assert.doesNotMatch(d, /not a larger max_long_edge/);
     });
-    await t.test('the description neither claims nor denies that the user sees the image', async () => {
-      // Some clients show the user a thumbnail of the tool call, others nothing.
+    await t.test('the description names the image\'s purpose, not what the user sees', async () => {
+      // What a client shows the user varies and changes, so the description names the purpose, never the view.
       const { tools } = await client.listTools();
       const d = tools.find((x) => x.name === NAME).description;
-      assert.match(d, /some clients show the user a thumbnail of it, others nothing, so link the object's website_url to show it/);
-      assert.doesNotMatch(d, /does not see/);
+      assert.match(d, /for your own analysis; to show it to the user, link the object's website_url/);
+      assert.doesNotMatch(d, /does not see|thumbnail|clients show/);
     });
     await t.test('an id of another record type names the tool to use', async () => {
       assert.match(await callError(client, NAME, { id: 'person/107' }), /object, multimedia ids/);
