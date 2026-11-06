@@ -16,6 +16,7 @@ const REQUIRED_PROPS = {
   skkg_get_record: ['id'],
   skkg_find_terms: [],
   skkg_collection_stats: ['dimension'],
+  skkg_inspect_image: ['id'],
 };
 
 test('starts without a database, with the machine name and no human-readable title', async () => {

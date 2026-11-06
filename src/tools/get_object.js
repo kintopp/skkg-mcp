@@ -12,6 +12,7 @@ import { asStr } from '../lib/format.js';
 import { termLabel, actorRef, objectRef, termListLabels } from '../lib/labels.js';
 import { objectRights, imageRights } from '../lib/rights.js';
 import { objectCreators, objectFacetLabels } from '../lib/objects.js';
+import { objectImages } from '../lib/images.js';
 import { period, acquisition, chainRows } from '../lib/provenance.js';
 import { capList } from '../lib/results.js';
 import { fitLists } from '../lib/fit.js';
@@ -29,7 +30,8 @@ const description =
   'dating and its basis), physical (materials, parts with dimensions, inscriptions, condition), ' +
   'texts (SKKG\'s descriptions), acquisition (how, when, from whom and for how much SKKG acquired it), ' +
   'provenance (the ownership chain before SKKG, where one is recorded), exhibitions, literature, ' +
-  'related (parent, parts, references, groups), images (each photo with its rights and IIIF service), or all. ' +
+  'related (parent, parts, references, groups), images (each photo with its rights and IIIF service; to look at one, ' +
+  'pass its id to skkg_inspect_image), or all. ' +
   'Quote both rights: object_copyright is the object\'s own status, image_license the photo\'s. ' +
   `Lists longer than ${SECTION_LIMIT} are cut and say so in warnings. To find objects, use skkg_search_objects.`;
 
@@ -243,11 +245,8 @@ function related(db, o, lang, ctx) {
   };
 }
 
-// Only multimedia with a published IIIF image; the others are records SKKG did not publish.
 function images(db, o, lang, ctx) {
-  const rows = stmt(db, `SELECT m.*, om.seq AS om_seq, om.is_primary FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id
-      WHERE om.object_id = ? AND m.iiif_service IS NOT NULL ORDER BY m.id = ? DESC, om.seq IS NULL, om.seq`).all(o.id, o.primary_multimedia_id);
-  return capList(rows, 'images', ctx).map((m) => ({
+  return capList(objectImages(db, o), 'images', ctx).map((m) => ({
     id: m.id,
     is_primary: m.id === o.primary_multimedia_id ? true : undefined,
     seq: m.om_seq ?? undefined,

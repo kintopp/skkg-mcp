@@ -70,6 +70,20 @@ export const DATA_BASE = 'https://data.skkg.ch/';
 export const WEBSITE_BASE = 'https://digital.skkg.ch/de/';
 export const IIIF_IMAGE_BASE = 'https://iiif.digital.skkg.ch/iiif/3/';
 
+// skkg_inspect_image asks for the size the model sees (notes/11, tool 10). A vision encoder
+// counts one token per 28×28 patch. The edge cap is 71 patches: a request with more than 20
+// images caps every image near 2000 px, and an image over it fails the whole request, again on
+// every later turn. As 1988 is a whole number of patches, an edge within it stays within it padded.
+export const VISION_PATCH = 28;
+export const VISION_MAX_EDGE = 71 * VISION_PATCH;
+export const VISION_MAX_TOKENS = 4784;
+export const IMAGE_DEFAULT_LONG_EDGE = 1600;
+export const IMAGE_MIN_LONG_EDGE = 100;
+// Bedrock and Vertex accept 5 MB per image after base64, which is 4/3 larger than the bytes.
+export const MAX_IMAGE_BYTES = 3_700_000;
+export const IIIF_TIMEOUT_MS = posIntEnv('SKKG_IIIF_TIMEOUT_MS', 30_000, { min: 1000, max: 600_000 });
+export const USER_AGENT = `${SERVER_NAME}/${SERVER_VERSION}`;
+
 // openWorldHint is false for tools that only read the local database; tools that
 // call SKKG (skkg_get_object with live: true, the image tools) use the open-world set.
 export const READ_ONLY_ANNOTATIONS = Object.freeze({

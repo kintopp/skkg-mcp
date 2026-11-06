@@ -100,7 +100,7 @@ export function resolveId(db, input, { types = Object.keys(RECORD_TABLES) } = {}
 const TOOL_HINTS = {
   object: (s) => `Use skkg_get_object with id "${s}".`,
   type: (s) => `For a vocabulary term, use skkg_find_terms with id "${s}".`,
-  multimedia: () => 'Images come with their object: skkg_get_object with include ["images"].',
+  multimedia: (s) => `To look at the image, use skkg_inspect_image with id "${s}"; images come with their object: skkg_get_object with include ["images"].`,
 };
 const toolHint = (type, s) => TOOL_HINTS[type]?.(s) ?? `Use skkg_get_record with id "${s}".`;
 
