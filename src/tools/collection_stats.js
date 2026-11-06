@@ -286,7 +286,7 @@ export function collectionStats(db, meta, args) {
   if (total === 0) {
     warnings.push(args.query
       ? `No object matches "${args.query}"${q.clauseCount > 1 ? ' with these filters' : ''}. The data is German: check that the keywords are German.`
-      : noMatchWarning('object', givenObjectFilters(args)));
+      : noMatchWarning('object', givenObjectFilters(args, q)));
   } else {
     const past = pastEnd(args.offset, sorted.length, 'buckets');
     if (past) warnings.push(past);

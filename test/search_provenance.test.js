@@ -340,6 +340,15 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
       assert.doesNotMatch(r.warnings.join(' '), /together/);
     });
 
+    await t.test('an empty search of acquisitions alone says nothing about chains', async () => {
+      const acq = await search({ year_from: 2099, layer: 'acquisition' });
+      assert.equal(acq.total, 0);
+      assert.match(acq.warnings.join(' '), /No acquisition matches `year_from`, the only filter given\./);
+      assert.doesNotMatch(acq.warnings.join(' '), /chain/);
+      const chain = await search({ owner: 'person/522' });
+      assert.match(chain.warnings.join(' '), /Only a few hundred objects have a chain before SKKG\./);
+    });
+
     await t.test('paging neither repeats nor skips an object', async () => {
       const { first, rows } = await all({ acquisition_type: 'Auktion', year_from: 1990, year_to: 1999 });
       assert.ok(first.total > 25, 'needs at least two pages');

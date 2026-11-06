@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { ToolError } from '../lib/errors.js';
 import { resolveId } from '../lib/ids.js';
 import { scopedFtsQuery } from '../lib/fts.js';
-import { placeholders } from '../lib/sql.js';
+import { placeholders, stmt } from '../lib/sql.js';
 import { objectRef, recordLabel } from '../lib/labels.js';
 import { resolveTerms, actorFilter, assertRange } from '../lib/filters.js';
 import { TERM_FILTERS as TERM_FILTERS_OF, creatorRowPairs } from './term_filters.js';
@@ -87,12 +87,13 @@ export function objectFilterShape() {
 
 const FILTER_KEYS = Object.keys(objectFilterShape()).filter((k) => k !== 'include_narrower');
 export const hasObjectFilter = (args) => FILTER_KEYS.some((k) => args[k] !== undefined);
-// The filters an empty result names. include_narrower: false narrows a term filter, so it counts too.
-export const givenObjectFilters = (args) => [...FILTER_KEYS.filter((k) => args[k] !== undefined),
-  ...(args.include_narrower === false ? ['include_narrower'] : [])];
+// The filters an empty result names, from the compiled query `q`: include_narrower counts when it
+// kept a term filter from its narrower terms.
+export const givenObjectFilters = (args, q) => [...FILTER_KEYS.filter((k) => args[k] !== undefined),
+  ...(q.narrowed ? ['include_narrower'] : [])];
 
 /**
- * Compiles the filters in `args` to { clauses, params, applied, warnings, creatorRow, termIds }.
+ * Compiles the filters in `args` to { clauses, params, applied, warnings, creatorRow, termIds, narrowed }.
  * `applied` echoes each filter with the terms, actors, and records it resolved to; `termIds`
  * gives the ids of each term filter and of exclude_attributions, narrower terms included when expanded.
  * `creatorRow` ({ sql, params } on `oc`) is the condition one creator row must meet, when a
@@ -202,7 +203,11 @@ export function compileObjectFilters(db, args) {
   }
 
   const creatorRow = creatorParts.length ? { sql: creatorParts.join(' AND '), params: creatorParams } : undefined;
-  return { clauses, params, applied, warnings, creatorRow, termIds };
+  // Whether include_narrower: false kept a term filter from narrower terms; an exclusion it narrows only widens the result.
+  const kept = narrower ? [] : TERM_FILTER_FIELDS.flatMap((f) => termIds[f] ?? []);
+  const narrowed = kept.length > 0 && stmt(db, `SELECT 1 FROM term_ancestors WHERE ancestor_id IN (${placeholders(kept.length)})
+      AND term_id <> ancestor_id LIMIT 1`).get(...kept) !== undefined;
+  return { clauses, params, applied, warnings, creatorRow, termIds, narrowed };
 }
 
 /**
@@ -229,5 +234,6 @@ export function compileObjectQuery(db, args) {
     warnings: filters.warnings,
     creatorRow: filters.creatorRow,
     termIds: filters.termIds,
+    narrowed: filters.narrowed,
   };
 }

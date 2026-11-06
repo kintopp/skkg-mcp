@@ -313,7 +313,7 @@ export function searchProvenance(db, meta, args) {
   const { warnings } = c;
   if (counts.objects === 0 && !unlinked.length) {
     const noun = c.layers.length > 1 ? 'chain period or acquisition' : c.layers[0] === 'chain' ? 'chain period' : 'acquisition';
-    warnings.push(`${noMatchWarning(noun, c.given)} Only a few hundred objects have a chain before SKKG.`);
+    warnings.push(`${noMatchWarning(noun, c.given)}${c.layers.includes('chain') ? ' Only a few hundred objects have a chain before SKKG.' : ''}`);
   }
   const ctx = { warnings, totals: {} };
   const unlinkedRows = capList(unlinked, 'unlinked_periods', ctx).map((p) => periodRef(db, p));

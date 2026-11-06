@@ -89,6 +89,16 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
       assert.match(two.warnings.join(' '), /No object matches these filters together/);
     });
 
+    await t.test('include_narrower: false is no filter of its own when it narrows no term filter', async () => {
+      const none = await search({ acquisition_year_from: 2099, include_narrower: false });
+      assert.equal(none.total, 0);
+      assert.match(none.warnings.join(' '), /No object matches `acquisition_year_from`, the only filter given\./);
+      // "Fass" (type/21087/146997) has no narrower terms and no object in the fixture.
+      const leaf = await search({ object_type: 'type/21087/146997', include_narrower: false });
+      assert.equal(leaf.total, 0);
+      assert.match(leaf.warnings.join(' '), /No object matches `object_type`, the only filter given\./);
+    });
+
     await t.test('include_narrower: false counts as a filter when the result is empty', async () => {
       // "Malerei" has objects only under its narrower terms in the fixture.
       const r = await search({ object_type: 'Malerei', include_narrower: false });
@@ -101,6 +111,8 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
       const none = await callError(client, NAME, { image_license: 'GPL' });
       assert.match(none, /no term of `image_license` is labelled "GPL"/);
       assert.match(none, /No label is similar\. skkg_find_terms with vocabulary "image_license" lists the terms `image_license` takes\./);
+      assert.match(none, /The labels are SKKG's own: German words, codes, or licence names\./);
+      assert.doesNotMatch(none, /translate/);
       assert.match(await callError(client, NAME, { material: 'Hol' }),
         /Did you mean "Holz".*skkg_find_terms with vocabulary "material" lists the terms `material` takes/);
     });

@@ -81,7 +81,7 @@ export function searchObjects(db, meta, args) {
     warnings.push(`No object matches "${args.query}"${q.clauseCount > 1 ? ' with these filters' : ''}. ` +
       'The data is German: check that the keywords are German, try a prefix (Uhr*), or drop a filter.');
   } else if (total === 0) {
-    warnings.push(noMatchWarning('object', givenObjectFilters(args)));
+    warnings.push(noMatchWarning('object', givenObjectFilters(args, q)));
   }
   const past = pastEnd(args.offset, total, 'objects');
   if (past) warnings.push(past);
