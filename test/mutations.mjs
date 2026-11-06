@@ -396,6 +396,12 @@ const MUTATIONS = [
   ["src/tools/term_filters.js", "    status: { facet: 'exhibition_status', count: EXHIBITIONS, sql: 'e.status_id' },\n", "", "every exhibition term filter compiled"],
   ["src/tools/term_filters.js", "internal_external: { facet: 'internal_external', count: EXHIBITIONS, sql: 'e.internal_external_id' },", "internal_external: { facet: 'internal_external', count: EXHIBITIONS, sql: 'e.status_id' },", "internal_external on its column"],
   ["src/tools/find_terms.js", "skkg_search_exhibitions for the types, status, and \"intern\" or \"extern\" of exhibitions", "skkg_search_literature for exhibitions", "find_terms names skkg_search_exhibitions"],
+  ["src/tools/search_exhibitions.js", "  if (type && type !== 'address') {", "  if (false) {", "exhibitions: an id of another type refused as such"],
+  ["src/tools/search_exhibitions.js", "|^\\\\d+$`, 'i');", "`, 'i');", "exhibitions: a bare address number is an id"],
+  ["src/tools/search_exhibitions.js", "    r.organisers && `   Organisers:", "    false && `   Organisers:", "exhibitions: text keeps the organisers"],
+  ["src/tools/search_exhibitions.js", "    applied.includes_object = [{ id, label: o.title ?? o.inventory_number }];\n", "", "exhibitions: applied_filters names includes_object"],
+  ["src/tools/search_exhibitions.js", "; one without a venue, by its own dates", "", "exhibitions: year_from description, no venue by own dates"],
+  ["src/tools/search_exhibitions.js", "; the venues include cancelled stations", "", "exhibitions: query description, cancelled stations"],
 ];
 
 // The cache key changes with the entry, so an edited entry has no record and is selected.

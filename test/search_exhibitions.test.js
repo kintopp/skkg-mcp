@@ -5,7 +5,9 @@
 //   whose station there SKKG cancelled ("abgesagt"); a name of only cancelled stations is sent to
 //   `query`, which would list exhibitions never shown there
 // - venue matches inside a word ("Bern" in "Hornbernsee"), or depends on case or accents
-// - a venue given by address id finds nothing; an address that is no venue (or only organised)
+// - an id of another record type ("person/41", "exhibition/68") is read as a venue name and
+//   refused as one that matches no venue
+// - a venue given by address id, or by its bare number, finds nothing; an address that is no venue (or only organised)
 //   runs empty without a hint; an unknown name runs empty without examples, or a name whose words
 //   occur in titles is not sent to `query` with the count it finds
 // - many venues matched are not counted when applied_filters lists only some
@@ -25,7 +27,8 @@
 // - sort relevance without a query runs silently; date_asc or date_desc puts undated first or
 //   sorts the wrong way; paging repeats or skips an exhibition; an offset past the end is silent;
 //   an empty result is silent
-// - the text drops ids, venues, a station's status, the counts, filters, warnings, or paging;
+// - applied_filters does not name the object of includes_object
+// - the text drops ids, venues, a station's status, the organisers, the counts, filters, warnings, or paging;
 //   results violate the output schema
 
 import { test } from 'node:test';
@@ -78,6 +81,8 @@ test('skkg_search_exhibitions against the fixture database', { skip: FIXTURE_DB.
       const p = tool.inputSchema.properties;
       assert.match(p.venue.description, /but no station SKKG cancelled \("abgesagt"\)/);
       assert.match(p.year_from.description, /One with only a start date matches its start year; undated ones never match/);
+      assert.match(p.year_from.description, /; one without a venue, by its own dates/);
+      assert.match(p.query.description, /the venues include cancelled stations/);
       assert.match(tools.find((x) => x.name === 'skkg_find_terms').description,
         /skkg_search_exhibitions for the types, status, and "intern" or "extern" of exhibitions/);
     });
@@ -130,6 +135,21 @@ test('skkg_search_exhibitions against the fixture database', { skip: FIXTURE_DB.
       }
       assert.deepEqual(await idsOf({ venue: 'zurich' }), await idsOf({ venue: 'Zürich' }));
       assert.ok((await search({ venue: 'zurich' })).total > 0);
+    });
+
+    await t.test('an id of another record type is refused as such, not read as a venue name', async () => {
+      for (const id of ['person/41', 'exhibition/68']) {
+        const text = await callError(client, NAME, { venue: id });
+        assert.match(text, new RegExp(`\`venue\` takes a venue name or an address id; "${id}" is an? ${id.split('/')[0]} id`), text);
+        assert.match(text, /Pass the venue's name, e\.g\. "Kunsthaus Zürich", or the address id of a result's venue/);
+        assert.doesNotMatch(text, /no exhibition was shown/);
+      }
+    });
+
+    await t.test('a venue given by its bare address number finds what its id finds', async () => {
+      const r = await search({ venue: '120' });
+      assert.deepEqual(r.applied_filters.venue, [{ id: 'address/120', label: 'Kunsthaus Zürich, Zürich' }]);
+      assert.deepEqual(await idsOf({ venue: '120' }), await idsOf({ venue: 'address/120' }));
     });
 
     await t.test('a venue that is no station is refused with where to go instead', async () => {
@@ -216,6 +236,8 @@ test('skkg_search_exhibitions against the fixture database', { skip: FIXTURE_DB.
           WHERE o.inventory_number GLOB '*[^0-9]*' GROUP BY o.id ORDER BY COUNT(*) DESC LIMIT 1`);
       assert.deepEqual(await idsOf({ includes_object: byInv.inv }),
         column('SELECT exhibition_id FROM exhibition_objects WHERE object_id = ? ORDER BY 1', byInv.id));
+      const title = one('SELECT COALESCE(title, label, inventory_number) AS t FROM objects WHERE id = ?', o.id).t;
+      assert.deepEqual((await search({ includes_object: o.id })).applied_filters.includes_object, [{ id: o.id, label: title }]);
       const shown = await callOk(client, 'skkg_get_object', { id: o.id, include: ['exhibitions'] }, objectSchema);
       assert.deepEqual(shown.exhibitions.map((e) => e.id).sort(), expected);
     });
@@ -286,6 +308,12 @@ test('skkg_search_exhibitions against the fixture database', { skip: FIXTURE_DB.
       assert.ok(text.includes(`${r.object_count} objects; ${r.literature_count} publications`));
       assert.ok(text.includes(r.website_url));
       assert.match(text, /More: offset 1\./);
+      const org = one(`SELECT e.id, e.title FROM exhibition_organisers o JOIN exhibitions e ON e.id = o.exhibition_id
+          WHERE e.title IS NOT NULL LIMIT 1`);
+      const withOrg = await callSent(client, NAME, { query: `"${org.title.replace(/"/g, '')}"`, limit: 50 }, outputSchema);
+      const orgRow = withOrg.structured.results.find((x) => x.id === org.id);
+      assert.ok(orgRow?.organisers?.length, org.id);
+      for (const o of orgRow.organisers) assert.match(withOrg.text, new RegExp(`Organisers: [^\n]*\(${o.role ? `${o.role}, ` : ''}${o.id}\)`), o.id);
       const warned = await callSent(client, NAME, { venue: 'Museum', limit: 1 }, outputSchema);
       assert.match(warned.text, /Filters: venue = /);
       assert.match(warned.text, /Warning: `venue` "Museum" matched \d+ venues/);

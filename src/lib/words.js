@@ -4,7 +4,7 @@
 const fold = (s) => s.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('de');
 export const words = (s) => fold(s).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 
-/** The texts whose words start with every word of `value`, so "Bern" matches "Bern" but not "Bernhard". */
+/** The texts with a word that starts with each word of `value`, so "Bern" matches "Bernhard" but not "Hornbernsee". */
 export function startingWith(texts, value) {
   const wanted = words(value);
   return texts.filter((t) => {

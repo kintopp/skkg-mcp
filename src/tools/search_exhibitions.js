@@ -8,7 +8,8 @@ import { getDatabase, staleWarning } from '../db.js';
 import { perDb, placeholders, stmt } from '../lib/sql.js';
 import { ftsQuery } from '../lib/fts.js';
 import { objectRef } from '../lib/labels.js';
-import { resolveId, websiteUrl } from '../lib/ids.js';
+import { resolveId, websiteUrl, RECORD_TABLES } from '../lib/ids.js';
+import { withArticle } from '../lib/format.js';
 import { words, startingWith } from '../lib/words.js';
 import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
@@ -58,13 +59,13 @@ const description =
 
 const filterShape = {
   query: z.string().min(1).max(MAX_QUERY_LEN).optional().describe(
-    'Words of the title or of a venue\'s name or place, e.g. "Hodler", "Giacometti Zürich". ' +
+    'Words of the title or of a venue\'s name or place, e.g. "Hodler", "Giacometti Zürich"; the venues include cancelled stations. ' +
     'Every word must occur; "a phrase" matches in order; a trailing * matches a prefix'),
   venue: idField('Venue: a name, e.g. "Kunsthaus Zürich", a place, e.g. "Winterthur", or an address id from a result. ' +
     'Each word matches the start of a word of the venue\'s name and place, ignoring case and accents. Matches the main ' +
     'venue and the other stations, but no station SKKG cancelled ("abgesagt"); applied_filters lists the venues matched'),
   year_from: yearField('Earliest year: an exhibition matches when the dates of one of its stations overlap the range ' +
-    '(with venue, those of the station at that venue). One with only a start date matches its start year; undated ones never match'),
+    '(with venue, those of the station at that venue); one without a venue, by its own dates. One with only a start date matches its start year; undated ones never match'),
   year_to: yearField('Latest year; see year_from'),
   exhibition_type: termField('Kind of exhibition, e.g. "Einzelausstellung", "Wechselausstellung", "Wanderausstellung", "Dauerausstellung"'),
   status: termField('SKKG\'s status of the exhibition, e.g. "aktuell", "abgeschlossen", "historisch"'),
@@ -124,7 +125,9 @@ function yearConditions(args, [from, to]) {
   return { where, params };
 }
 
-const ADDRESS_LIKE = /^(address\/|https?:|skkg:)|^[0-9a-f]{8}-[0-9a-f]{4}-|^\d+$/i;
+// An id of any record type, so that one of another type is refused as such, not read as a name.
+const PREFIX = new RegExp(`^(${Object.keys(RECORD_TABLES).join('|')})/`, 'i');
+const ID_LIKE = new RegExp(`${PREFIX.source}|^(https?:|skkg:)|^[0-9a-f]{8}-[0-9a-f]{4}-|^\\d+$`, 'i');
 
 // The venues of all stations, with the number of exhibitions each is a station of.
 const stationVenues = (db) => perDb(db, 'exhibitionStationVenues', () => db.prepare(`SELECT v.address_id AS id, a.label,
@@ -140,7 +143,12 @@ const matching = (rows, value) => {
 // Resolves `venue` to the station venues it names, as [{ id, label }], or throws with where to go instead.
 function resolveVenue(db, value) {
   const v = value.trim();
-  if (ADDRESS_LIKE.test(v)) {
+  const type = PREFIX.exec(v)?.[1].toLowerCase();
+  if (type && type !== 'address') {
+    throw new ToolError(`\`venue\` takes a venue name or an address id; "${v}" is ${withArticle(type)} id.`,
+      'Pass the venue\'s name, e.g. "Kunsthaus Zürich", or the address id of a result\'s venue.');
+  }
+  if (ID_LIKE.test(v)) {
     const { id } = resolveId(db, v, { types: ['address'] });
     const hit = stationVenues(db).find((x) => x.id === id);
     if (hit) return [{ id, label: hit.label }];
