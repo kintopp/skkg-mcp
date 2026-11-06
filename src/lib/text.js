@@ -69,7 +69,7 @@ export function acquisitionLines(a, { lead = 'Acquisition: ', inlineNote = false
 /** An object row of a search result or a record's object list, numbered `n`. */
 export function objectRowLines(r, n) {
   const what = [r.object_type, (r.creators ?? []).map(creatorRef).join('; '), r.date].filter(Boolean).join(' · ');
-  const rights = [r.has_image ? `photo: ${r.image_license}` : 'no image', `object: ${r.object_copyright}`].join(', ');
+  const rights = [r.has_image ? `${r.image_kind === 'document' ? 'document' : 'photo'}: ${r.image_license}` : 'no image', `object: ${r.object_copyright}`].join(', ');
   return `${n}. ${r.inventory_number ?? ''} ${r.title ?? '(untitled)'}${what ? ` — ${what}` : ''}\n` +
     `   ${r.id} · ${rights} · ${r.website_url ?? ''}`;
 }

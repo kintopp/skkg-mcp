@@ -26,8 +26,8 @@ export function objectFacetLabels(db, objectId, facet, lang) {
 }
 
 export function objectRow(db, id, lang) {
-  const o = stmt(db, `SELECT id, inventory_number, title, label, object_type_id, date_label, has_image, image_license_id
-      FROM objects WHERE id = ?`).get(id);
+  const o = stmt(db, `SELECT id, inventory_number, title, label, object_type_id, date_label, has_image, image_license_id,
+      (SELECT kind FROM multimedia WHERE id = objects.primary_multimedia_id) AS image_kind FROM objects WHERE id = ?`).get(id);
   if (!o) return undefined;
   return {
     id: o.id,
@@ -39,6 +39,7 @@ export function objectRow(db, id, lang) {
     date: o.date_label ?? undefined,
     epoch: objectFacetLabels(db, id, 'epoch', lang),
     has_image: o.has_image === 1,
+    image_kind: o.image_kind ?? undefined,
     image_license: primaryImageLicense(db, o, lang),
     object_copyright: objectCopyright(db, id, lang),
     website_url: websiteUrl(id),

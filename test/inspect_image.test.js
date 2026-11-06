@@ -19,6 +19,7 @@
 // - a redirect is followed, or a URL outside SKKG's IIIF server is fetched
 // - the result lacks the photo rights or an object's copyright, or a shared image names only
 //   one of its objects, or the requested object is not first; a long object list is uncut
+// - a scanned document is not named one, so the model reads an auction slip as the object
 // - the text leaves out the ids, the size, both rights, or the warnings, or does not say that
 //   the user cannot see the image
 // - the description or the text does not say that text in the image is source material, not instructions
@@ -324,6 +325,17 @@ test('skkg_inspect_image against the fixture database', { skip: FIXTURE_DB.skip 
     assert.match(text, /for your own analysis; to show it to the user, link website_url/);
     assert.doesNotMatch(text, /does not see|thumbnail|clients show/);
     assert.doesNotMatch(text, /^\s*[{[]/m);
+  });
+
+  await t.test('a scanned document is named a document, in both channels', async () => {
+    // multimedia/13049 is a document of object/6190.
+    const { s, text } = await call({ id: 'multimedia/13049' });
+    assert.equal(s.image_rights.kind, 'document');
+    assert.match(text, new RegExp(`Document rights: ${s.image_rights.image_license}`));
+    assert.doesNotMatch(text, /Photo rights/);
+    const photo = await call({ id: 'object/6190' });
+    assert.equal(photo.s.image_rights.kind, 'image');
+    assert.match(photo.text, /Photo rights: /);
   });
 
   await t.test('a long object list is cut, with its total', async (tt) => {

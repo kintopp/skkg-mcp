@@ -36,6 +36,11 @@ MUTATIONS = [
     ("loader drops an anonymised owner's nationality", "[r for r in nat if r[0] not in anonymised]", "nat", "anonymised_owner_is_loaded"),
     ("anonymised owner's life data checked", "death_to, death_place, death_place_id, biography) IS NOT NULL)", "death_to, death_place, death_place_id, biography) IS NOT NULL AND 0)", "own_row"),
     # The data rules of test_build_rules.py.
+    ("primary fallback skips documents", "ORDER BY m.kind IS 'document', om.seq IS NULL, om.seq LIMIT 1", "ORDER BY om.seq IS NULL, om.seq LIMIT 1", "primary_image"),
+    ("documents last, untyped kept", "ORDER BY m.kind IS 'document', om.seq IS NULL, om.seq LIMIT 1", "ORDER BY m.kind IS NOT 'image', om.seq IS NULL, om.seq LIMIT 1", "primary_image"),
+    ("kind from the media type", 'MEDIA_KINDS = {"Bild": "image", "Dokument": "document", "Ton": "sound"}', 'MEDIA_KINDS = {"Bild": "image", "Ton": "sound"}', "primary_image"),
+    ("report counts documents beside a photo", "SUM(m.kind = 'document' AND {published_image})", "SUM(m.kind = 'document')", "primary_image"),
+    ("report counts fallback documents", "SUM(sk.multimedia_id IS NULL AND m.kind = 'document')", "SUM(m.kind = 'document')", "primary_image"),
     ('citizenship node not loaded', '            t = t[: -len("/citizenship")]\n            nat.append((a, t))', '            nat.append((a, t[: -len("/citizenship")]))', 'citizenship_node'),
     ('life date year from the label', '    if y0 is None and y1 is None and lab:\n', '    if False:\n', 'life_dates_without'),
     ('label never overrides a time-span', '    if y0 is None and y1 is None and lab:\n', '    if lab:\n', 'life_dates_without'),

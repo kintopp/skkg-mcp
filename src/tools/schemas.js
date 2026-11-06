@@ -39,7 +39,11 @@ export const objectRightsOut = () => z.object({
   redaction_status: str(),
 });
 
+const MEDIA_KIND = 'SKKG\'s media type: "image", a photograph, or "document", a scan of a paper such as an auction slip, ' +
+  'an invoice, or a label; absent when SKKG records none';
+
 export const imageRightsOut = () => z.object({
+  kind: str().describe(MEDIA_KIND),
   image_license: z.string().describe('"CC0 1.0", "CC BY 4.0", "©", or "not recorded"'),
   right_holder: actorOut().optional(),
   original_right_holder: actorOut().optional(),
@@ -62,7 +66,8 @@ export const objectRowShape = () => ({
   date: str(),
   epoch: z.array(z.string()).optional(),
   has_image: z.boolean(),
-  image_license: str().describe('Licence of the primary photo; absent when the object has no image'),
+  image_kind: str().describe(`Of the primary image: ${MEDIA_KIND}`),
+  image_license: str().describe('Licence of the primary image; absent when the object has no image'),
   object_copyright: objectCopyrightOut(),
   website_url: str(),
 });

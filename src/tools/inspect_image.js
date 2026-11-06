@@ -198,7 +198,7 @@ function renderText(s) {
     `Image ${join([s.id, s.label], ' · ')}${where}: ${region} of ${s.full_width}×${s.full_height} px.`,
     `Received: ${s.width}×${s.height} px ${s.mime_type}, ${Math.round(s.byte_size / 1000)} KB, ${s.visual_tokens} visual tokens, ` +
       `scale ${s.scale} (set by ${s.bound_by}). ${s.note}`,
-    `Photo rights: ${photoRights(s.image_rights)}.`,
+    `${s.image_rights.kind === 'document' ? 'Document' : 'Photo'} rights: ${photoRights(s.image_rights)}.`,
     s.objects.length ? `Objects (${s.object_count}):` : 'The image belongs to no object.',
     ...s.objects.map(objectLine),
     `Source: ${s.image_url}`,

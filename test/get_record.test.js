@@ -27,7 +27,8 @@
 // - a relation is reported in the wrong direction
 // - literature references lose their page, figure, or catalogue number, repeat the publication's
 //   citation, or drop a citation that is not the publication's
-// - exhibition images include multimedia SKKG did not publish, or come without their rights
+// - exhibition images include multimedia SKKG did not publish, or come without their rights or,
+//   in the text, without their kind
 // - results violate the output schema
 // - the text repeats structuredContent as JSON, or leaves out the ids, the rights, the anonymisation
 //   note, a requested section, the paging, or the warnings
@@ -297,6 +298,14 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
       for (const m of r.images) {
         assert.match(m.rights.iiif_service, /^https:\/\/iiif\.digital\.skkg\.ch\/iiif\/3\//, m.id);
         assert.ok(m.rights.image_license, m.id);
+      }
+    });
+
+    await t.test('the text names the kind of each exhibition image', async () => {
+      const { structured: r, text } = await callSent(client, NAME, { id: 'exhibition/1d42c3a2-a3b5-439e-b43f-0bc76f203a70', include: ['images'] }, outputSchema);
+      for (const m of r.images) {
+        assert.equal(m.rights.kind, 'image', m.id);
+        assert.match(text, new RegExp(`^- ${m.id} · image( · |$)`, 'm'), m.id);
       }
     });
 

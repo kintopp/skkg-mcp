@@ -125,7 +125,7 @@ const SECTION_TEXT = {
   literature: (ls) => ['Literature:', ...ls.map(litLine)],
   provenance: (ps) => ['Provenance periods it documents:', ...ps.map((p) => `- ${periodRefLine(p, [...refBits(p), p.note, p.citation])}`)],
   about: (as) => ['About:', ...as.map((a) => `- ${join([a.label ?? a.id, a.type, a.role, a.id], ' · ')}`)],
-  images: (ms) => ['Images:', ...ms.map((m) => `- ${join([m.id, m.label, m.usage, m.width && m.height && `${m.width}×${m.height}`], ' · ')}\n` +
+  images: (ms) => ['Images:', ...ms.map((m) => `- ${join([m.id, m.rights.kind, m.label, m.usage, m.width && m.height && `${m.width}×${m.height}`], ' · ')}\n` +
     `   ${join([photoRights(m.rights), m.rights.iiif_service], ' · ')}`)],
   exhibitions: (es) => ['Exhibitions:', ...es.map((e) => `- ${join([e.title ?? e.id, join([e.as, e.role && `(${e.role})`], ' '),
     span(e.date_from, e.date_to), e.id], ' · ')}`)],

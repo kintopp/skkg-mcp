@@ -26,6 +26,7 @@
 // - the date range matches by containment, not overlap, so a work of 1907 misses 1900–1910
 // - paging repeats or skips a record, or has_more is true on the last page
 // - a photo without a recorded licence comes back without image_license, read as unrestricted
+// - a row whose primary image is a scanned document does not say so, in either channel
 // - a current location is accepted as a filter, by name or as a term id of another filter,
 //   although SKKG's API and website publish none (notes/08)
 // - an empty result of one filter says "these filters together", or one of several filters does not
@@ -34,7 +35,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { withClient, callOk, callError, allPages, FIXTURE_DB } from './helpers.js';
+import { withClient, callOk, callSent, callError, allPages, FIXTURE_DB } from './helpers.js';
 import { outputSchema } from '../src/tools/search_objects.js';
 import { outputSchema as findTermsSchema } from '../src/tools/find_terms.js';
 
@@ -297,6 +298,23 @@ test('skkg_search_objects against the fixture database', { skip: FIXTURE_DB.skip
         .filter((x) => x.id === 'object/2037');
       assert.equal(row.has_image, true);
       assert.equal(row.image_license, 'not recorded');
+    });
+
+    await t.test('a row says when its primary image is a document, in both channels', async () => {
+      // Inventory number 55149 is object/a6245334-…, whose published images are all documents;
+      // 5487 is object/6190, whose primary is a photo.
+      const find = async (inv) => {
+        const { structured, text } = await callSent(client, NAME, { query: inv, scope: 'inventory_number' }, outputSchema);
+        const row = structured.results.find((x) => x.inventory_number === inv);
+        return { row, line: text.split('\n').find((l) => l.includes(`${row.id} `) || l.endsWith(row.id)) };
+      };
+      const doc = await find('55149');
+      assert.equal(doc.row.image_kind, 'document');
+      assert.match(doc.line, /document: [^,]+, object: /);
+      const photo = await find('5487');
+      assert.equal(photo.row.image_kind, 'image');
+      assert.match(photo.line, /photo: [^,]+, object: /);
+      assert.doesNotMatch(photo.line, /document: /);
     });
 
     await t.test('scope without a query says it was ignored', async () => {

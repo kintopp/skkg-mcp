@@ -10,6 +10,7 @@ import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { AjvJsonSchemaValidator } from '@modelcontextprotocol/client/validators/ajv';
 import { formatErrorText } from '../src/lib/errors.js';
+import { SCHEMA_VERSION } from '../src/config.js';
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const SERVER_ENTRY = join(ROOT, 'src', 'index.js');
@@ -111,7 +112,7 @@ export function errorOf(fn) {
 // A throwaway database file with `meta` and the given tables, each created with an
 // `id` column plus any extra columns, or a writable copy of the database at `from`.
 // Returns { path, db, cleanup }.
-export function makeTestDb({ meta = { schema_version: '10', data_as_of: '2026-10-28' }, tables = {}, from } = {}) {
+export function makeTestDb({ meta = { schema_version: String(SCHEMA_VERSION), data_as_of: '2026-10-28' }, tables = {}, from } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'skkg-mcp-test-'));
   const path = join(dir, 'test.sqlite');
   if (from) {

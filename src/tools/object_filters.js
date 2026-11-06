@@ -73,7 +73,7 @@ export function objectFilterShape() {
     acquisition_year_from: yearField('Earliest year of SKKG\'s acquisition'),
     acquisition_year_to: yearField('Latest year of SKKG\'s acquisition'),
     has_image: z.boolean().optional().describe('Only objects with (true) or without (false) a published image'),
-    image_license: termField('Licence of the object\'s primary photo: "CC0 1.0", "CC BY 4.0", or "©"'),
+    image_license: termField('Licence of the object\'s primary image: "CC0 1.0", "CC BY 4.0", or "©"'),
     object_copyright: termField('Copyright status of the object itself: "gemeinfrei" or "Copyright"'),
     has_provenance_chain: z.boolean().optional().describe('Only objects with (true) or without (false) a provenance chain before SKKG'),
     provenance_status: termField('Provenance research status: "klar", "geklärt", or "ungeklärt"'),

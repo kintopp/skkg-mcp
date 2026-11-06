@@ -11,6 +11,8 @@
 //   empty, gets that warning
 // - the count of pieces ("Anzahl Teile") reads as child objects in the text
 // - images include multimedia without a published IIIF image, or the primary is not first
+// - when SKKG's primary image is unpublished, a scanned document is chosen over a published photo,
+//   or a document comes without its kind, so the model describes an auction slip as the object
 // - a long image list is returned whole, or cut without a warning
 // - a price without a currency comes back without saying the currency is missing
 // - the credit line is the dump's credit text, not the line SKKG publishes, or the text runs it into
@@ -165,6 +167,29 @@ test('skkg_get_object against the fixture database', { skip: FIXTURE_DB.skip }, 
         assert.match(img.rights.iiif_service, /^https:\/\/iiif\.digital\.skkg\.ch\/iiif\/3\//, img.id);
         assert.ok(img.rights.image_license, img.id);
       }
+    });
+
+    await t.test('without a published primary from SKKG, a photo is preferred over a document', async () => {
+      // object/6190's first published item in SKKG's order is a document (multimedia/13049).
+      const r = await get({ id: 'object/6190', include: ['images'] });
+      assert.equal(r.rights.primary_image.kind, 'image');
+      assert.equal(r.images[0].rights.kind, 'image');
+      assert.ok(r.images.some((i) => i.id === 'multimedia/13049' && i.rights.kind === 'document' && !i.is_primary));
+    });
+
+    await t.test('the text names the kind of each image', async () => {
+      const { text } = await callSent(client, NAME, { id: 'object/6190', include: ['images'] }, outputSchema);
+      assert.match(text, /^- multimedia\/13049 · document · /m);
+      assert.match(text, /^- multimedia\/7e39939d-a8aa-47e0-9c86-807d46ae61f0 · primary · image · /m);
+    });
+
+    await t.test('a document as the primary image is named a document, in both channels', async () => {
+      // object/a6245334-… has no published image other than documents.
+      const id = 'object/a6245334-6e70-4658-a0c4-d2c98327b54f';
+      const { structured: r, text } = await callSent(client, NAME, { id }, outputSchema);
+      assert.equal(r.rights.primary_image.kind, 'document');
+      assert.match(text, /^Document: /m);
+      assert.doesNotMatch(text, /^Photo: /m);
     });
 
     await t.test('a long image list is cut to 50 with a warning that gives the total', async () => {

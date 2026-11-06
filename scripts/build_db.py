@@ -35,7 +35,7 @@ from pathlib import Path
 
 from pyoxigraph import BlankNode, Literal, NamedNode, Store
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 D = "https://data.skkg.ch/"
 AAT = "http://vocab.getty.edu/aat/"
 PREFIX = """PREFIX crm: <http://www.cidoc-crm.org/cidoc-crm/>
@@ -158,7 +158,7 @@ CREATE TABLE multimedia (
   id TEXT PRIMARY KEY, label TEXT, name TEXT, usage_id TEXT, type_id TEXT, category_id TEXT,
   iiif_service TEXT, width INTEGER, height INTEGER, page TEXT, license_id TEXT,
   right_holder_id TEXT, rights_end_date TEXT, rights_note TEXT, credit_line TEXT,
-  original_right_holder_id TEXT, photographer_id TEXT, photo_date TEXT, not_found INTEGER DEFAULT 0);
+  original_right_holder_id TEXT, photographer_id TEXT, photo_date TEXT, not_found INTEGER DEFAULT 0, kind TEXT);
 
 CREATE TABLE provenance (
   id TEXT PRIMARY KEY, label TEXT, statement TEXT, inventory_number TEXT, certainty_id TEXT,
@@ -1088,7 +1088,7 @@ def load_multimedia(src, db, used):
              d.get("holder"), d.get("end"),
              d.get("rights_note"), d.get("credit"), d.get("original_holder"), d.get("photographer"),
              d.get("photo_date"), d.get("not_found", 0)) for m, d in mm.items()]
-    db.executemany("INSERT INTO multimedia VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+    db.executemany("INSERT INTO multimedia VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)", rows)
     return len(rows)
 
 
@@ -1372,6 +1372,9 @@ DATE_QUALIFIERS = {"um", "ca.", "vmtl.", "wohl", "evtl.", "angeblich", "Anfang",
 UNKNOWN_SIDE = {None, "o. D."}
 UNKNOWN_BOUND = {"from": "9999", "to": "0001"}
 
+# SKKG's media types (labels of the type vocabulary of multimedia), as the kinds the server reports.
+MEDIA_KINDS = {"Bild": "image", "Dokument": "document", "Ton": "sound"}
+
 
 def period_span(date_from, date_to, begin_q, begin_from, end_q, end_to):
     """(year_first, year_last, kind, classified) of a period, with -9999 and 9999 for an open side.
@@ -1429,6 +1432,9 @@ def derive(db):
             db.execute(f"DELETE FROM {table} WHERE {where}")
     spans = period_years(db)
     credit = credit_lines(db)
+    # The kind of a multimedia record, from SKKG's media type ("Bild", "Dokument", "Ton").
+    db.executemany("UPDATE multimedia SET kind = ? WHERE type_id IN (SELECT id FROM terms WHERE label_de = ?)",
+                   [(kind, label) for label, kind in MEDIA_KINDS.items()])
     db.executescript("""
     UPDATE objects SET image_count = (SELECT COUNT(*) FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id
         WHERE om.object_id = objects.id AND m.iiif_service IS NOT NULL);
@@ -1436,13 +1442,31 @@ def derive(db):
         (SELECT om.multimedia_id FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id
          WHERE om.object_id = objects.id AND om.is_primary = 1 AND m.iiif_service IS NOT NULL LIMIT 1),
         (SELECT om.multimedia_id FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id
-         WHERE om.object_id = objects.id AND m.iiif_service IS NOT NULL ORDER BY om.seq IS NULL, om.seq LIMIT 1));
+         WHERE om.object_id = objects.id AND m.iiif_service IS NOT NULL
+         ORDER BY m.kind IS 'document', om.seq IS NULL, om.seq LIMIT 1));
     UPDATE objects SET has_image = primary_multimedia_id IS NOT NULL,
         image_license_id = (SELECT license_id FROM multimedia WHERE id = objects.primary_multimedia_id);
     UPDATE objects SET has_provenance_chain = EXISTS (SELECT 1 FROM provenance_objects po WHERE po.object_id = objects.id);
     """)
     count_terms(db)
-    return {"object_links_to_missing": missing, "period_years": spans, "credit_lines": credit}
+    return {"object_links_to_missing": missing, "period_years": spans, "credit_lines": credit, "primary_images": primary_images(db)}
+
+
+def primary_images(db):
+    """The kinds of multimedia, and how each object's primary image was chosen: SKKG's primary when it is
+    published, else the first published item in SKKG's order that is no document, else the first document."""
+    kinds = dict(db.execute("SELECT COALESCE(kind, 'unknown'), COUNT(*) FROM multimedia GROUP BY 1 ORDER BY 1").fetchall())
+    published_image = ("EXISTS (SELECT 1 FROM object_multimedia x JOIN multimedia y ON y.id = x.multimedia_id "
+                       "WHERE x.object_id = o.id AND y.iiif_service IS NOT NULL AND y.kind = 'image')")
+    row = db.execute(f"""SELECT
+        SUM(sk.multimedia_id IS NULL),
+        SUM(sk.multimedia_id IS NULL AND m.kind = 'document'),
+        SUM(m.kind = 'document' AND {published_image})
+        FROM objects o JOIN multimedia m ON m.id = o.primary_multimedia_id
+        LEFT JOIN object_multimedia sk ON sk.object_id = o.id AND sk.multimedia_id = o.primary_multimedia_id AND sk.is_primary = 1""").fetchone()
+    # The fallback never picks a document while a photo is published, so these are SKKG's own primaries.
+    return {"kinds": kinds, "not_skkg_primary": row[0], "document_without_published_image": row[1],
+            "skkg_primary_document_though_an_image_is_published": row[2]}
 
 
 def credit_lines(db):
@@ -2022,7 +2046,7 @@ def main():
               "not_stated": lit["not_stated"], "not_stated_near": lit["not_stated_near"], "life_dates": actors["life_dates"], "redacted": redacted,
               "acquisitions_after_dump": future, "dates_not_iso": odd_dates, "currency_labels_not_mapped": odd_currencies,
               "object_links_to_missing": derived["object_links_to_missing"], "period_years": derived["period_years"],
-              "credit_lines": derived["credit_lines"],
+              "credit_lines": derived["credit_lines"], "primary_images": derived["primary_images"],
               "size_bytes": tmp.stat().st_size, "unloaded_edges": edges, "query_timings": src.timings}
     Path(str(out) + ".report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1))
     Path(str(out) + ".report.md").write_text(render_report(report))
@@ -2075,6 +2099,11 @@ def render_report(r):
               + (", ".join(f"{k} ({n})" for k, n in r["period_years"]["unclassified"].items()) or "none") + ".", "",
               f"Credit lines composed as SKKG's API composes them, with a credit text: {r['credit_lines']['with_credit_text']}, "
               f"with an acquisition year: {r['credit_lines']['with_year']}.", "",
+              "Multimedia by kind: " + ", ".join(f"{k} {n:,}" for k, n in r["primary_images"]["kinds"].items())
+              + f". Primary images not SKKG's (SKKG's is unpublished or unmarked): {r['primary_images']['not_skkg_primary']:,}, "
+              f"of them a document because nothing else is published: {r['primary_images']['document_without_published_image']:,}. "
+              f"SKKG's primary images that are documents though the object has a published photo: "
+              f"{r['primary_images']['skkg_primary_document_though_an_image_is_published']:,}.", "",
               "## Census edges not read by the build", "",
               "Edges of the shape census whose predicate no build query reads for that record type. "
               "New fields in a later dump appear here.", "", "| Root | Shape | Predicate | Subjects |", "|---|---|---|---:|"]

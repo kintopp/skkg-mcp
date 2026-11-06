@@ -37,7 +37,7 @@ const DIMENSIONS = {
   epoch: filterDim('epoch', 'term', 'epoch ("19. Jh.")'),
   object_copyright: filterDim('object_copyright', 'term', 'copyright status of the object'),
   provenance_status: filterDim('provenance_status', 'term', 'provenance research status'),
-  image_license: filterDim('image_license', 'term', 'licence of the primary photo'),
+  image_license: filterDim('image_license', 'term', 'licence of the primary image'),
   creator: { ...filterDim('creator', 'actor', 'person or institution named as creator, "influenced by" included, as the creator filter matches'), row: true },
   creator_role: { ...filterDim('creator_role', 'term', 'role of a creator ("Künstler:in", "Verlag")'), row: true },
   attribution: { ...filterDim('attribution', 'term', 'attribution qualifier ("zugeschrieben", "nach")'), row: true },

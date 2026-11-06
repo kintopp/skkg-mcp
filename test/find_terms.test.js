@@ -7,7 +7,7 @@
 // - object_count_with_narrower differs from what the skkg_search_objects filter matches,
 //   or object_count from what it matches with include_narrower: false
 //   in any vocabulary that offers a filter (photo licences counted over every image, not the primary one),
-//   or the descriptions do not say that a licence counts objects by their primary photo
+//   or the descriptions do not say that a licence counts objects by their primary image
 // - `filters` names the wrong skkg_search_objects parameter ("production_role" for creator_role)
 // - a term two filters take names only one of them: a country only `nationality`, though
 //   `place_country` lists more persons and is the only one for a country no person holds as a
@@ -339,11 +339,11 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
       const d = tools.find((x) => x.name === NAME).description;
       assert.match(d, /Terms in use come first; among them, exact label matches, then the terms used most/);
       assert.doesNotMatch(d, /exact label matches come first/);
-      // A photo licence counts objects by their primary photo, as the image_license filter matches.
-      assert.match(d, /how many objects use it \(a photo licence: objects whose primary photo has it\)/);
+      // A photo licence counts objects by their primary image, as the image_license filter matches.
+      assert.match(d, /how many objects use it \(a photo licence: objects whose primary image has it\)/);
       const props = tools.find((x) => x.name === NAME).outputSchema.properties;
       const termProps = (props.terms ?? props.term).items?.properties ?? (props.terms ?? props.term).properties;
-      assert.match(termProps.object_count.description, /for a photo licence, objects whose primary photo has it/);
+      assert.match(termProps.object_count.description, /for a photo licence, objects whose primary image has it/);
     });
 
     await t.test('the description promises `filter` only where a search filter takes the term', async () => {

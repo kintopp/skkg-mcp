@@ -59,7 +59,7 @@ const description =
   'Labels are German; English and French labels match where SKKG has them. Each word matches ' +
   'the start of a word in a label ("Radier" finds "Radierung"). Terms in use come first; among them, ' +
   'exact label matches, then the terms used most. Each term carries its id, its path in the hierarchy, its year range (epochs), ' +
-  'its matches in GND, AAT, or Wikidata, how many objects use it (a photo licence: objects whose primary photo has it), ' +
+  'its matches in GND, AAT, or Wikidata, how many objects use it (a photo licence: objects whose primary image has it), ' +
   'and `filters`: every search parameter that takes it, each with its tool and the total that filter reports for the term ' +
   '(skkg_search_objects; skkg_search_provenance for the vocabularies of provenance periods; skkg_search_actors for gender, ' +
   'and for a country code both nationality and place_country; skkg_search_literature for literature types; skkg_search_exhibitions for the types, status, and "intern" or "extern" of exhibitions). ' +
@@ -92,7 +92,7 @@ const termRowOut = () => z.object({
   year_from: int(),
   year_to: int(),
   matches: z.array(z.string()).optional().describe('The same concept in GND, AAT, Wikidata, or GeoNames'),
-  object_count: int().describe('Objects that use this term itself; for a photo licence, objects whose primary photo has it, ' +
+  object_count: int().describe('Objects that use this term itself; for a photo licence, objects whose primary image has it, ' +
     'as the image_license filter matches; absent for vocabularies of other records'),
   object_count_with_narrower: int().describe(
     'Objects that use this term or a narrower one: what a filter with include_narrower (the default) matches'),
