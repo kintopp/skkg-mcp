@@ -24,8 +24,8 @@ export const INSPECT_IMAGE_TOOL_NAME = 'skkg_inspect_image';
 
 const description =
   'Look at an SKKG image, or a region of it, to describe or read what it shows. ' +
-  'The image is returned to you only; the user does not see it, so link the object\'s website_url for them ' +
-  'and never embed an image URL as Markdown. Pass an object id for its primary image, with `index` for its ' +
+  'The image is for your own analysis: some clients show the user a thumbnail of it, others nothing, ' +
+  'so link the object\'s website_url to show it, and never embed an image URL as Markdown. Pass an object id for its primary image, with `index` for its ' +
   'other images in the order of skkg_get_object, or an image id from skkg_get_object (include ["images"]). ' +
   `The image comes within max_long_edge and ${VISION_MAX_TOKENS} visual tokens, and never larger than the region's own pixels; ` +
   'the result\'s note says what adds detail, usually a smaller region_pct. ' +
@@ -199,7 +199,7 @@ function renderText(s) {
     s.objects.length ? `Objects (${s.object_count}):` : 'The image belongs to no object.',
     ...s.objects.map(objectLine),
     `Source: ${s.image_url}`,
-    'The image above is for your own analysis; the user does not see it. Link website_url for them; never embed an image URL as Markdown.',
+    'The image above is for your own analysis; some clients show the user a thumbnail, others nothing. Link website_url to show it; never embed an image URL as Markdown.',
     ...(s.warnings ?? []).map((w) => `Warning: ${w}`),
     s.data_as_of && `Data as of ${s.data_as_of}.`,
   ].filter(Boolean).join('\n');
