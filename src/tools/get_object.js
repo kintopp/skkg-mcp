@@ -13,6 +13,7 @@ import { termLabel, actorRef, objectRef, termListLabels } from '../lib/labels.js
 import { objectRights, imageRights } from '../lib/rights.js';
 import { objectCreators, objectFacetLabels } from '../lib/objects.js';
 import { objectImages } from '../lib/images.js';
+import { liveCheck } from '../lib/live.js';
 import { period, acquisition, chainRows } from '../lib/provenance.js';
 import { capList } from '../lib/results.js';
 import { fitLists } from '../lib/fit.js';
@@ -20,7 +21,7 @@ import { renderObjectText, SECTIONS } from './object_text.js';
 import {
   actorOut, creatorOut, objectRefOut, objectRightsOut, imageRightsOut, acquisitionOut, periodShape, langIn, str, int,
 } from './schemas.js';
-import { READ_ONLY_ANNOTATIONS, SECTION_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT } from '../config.js';
+import { READ_ONLY_OPEN_WORLD_ANNOTATIONS, SECTION_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT } from '../config.js';
 
 export const GET_OBJECT_TOOL_NAME = 'skkg_get_object';
 
@@ -33,6 +34,7 @@ const description =
   'related (parent, parts, references, groups), images (each photo with its rights and IIIF service; to look at one, ' +
   'pass its id to skkg_inspect_image), or all. ' +
   'Quote both rights: object_copyright is the object\'s own status, image_license the photo\'s. ' +
+  'live: true checks the rights against SKKG\'s API (one request), and says what differs from the dump. ' +
   `Lists longer than ${SECTION_LIMIT} are cut and say so in warnings. To find objects, use skkg_search_objects.`;
 
 const inputSchema = z.object({
@@ -42,6 +44,9 @@ const inputSchema = z.object({
   include: z.array(z.enum([...SECTIONS, 'all'])).max(SECTIONS.length + 1).default([]).describe(
     `Sections besides the summary: ${SECTIONS.join(', ')}, or all. Default: none`),
   lang: langIn(),
+  live: z.boolean().default(false).describe(
+    'Also fetch the object from SKKG\'s API and compare its credit line, redaction status, images, and photo rights ' +
+    'with the dump. The API has no object copyright. Default: false'),
 }).strict();
 
 const periodOut = z.object({
@@ -124,6 +129,22 @@ export const outputSchema = z.object({
     page: str(),
     rights: imageRightsOut(),
   })).optional(),
+  live: z.object({
+    status: z.enum(['matches', 'differs', 'not_found', 'unavailable']).describe(
+      'matches or differs: compared with SKKG\'s API; not_found: the API no longer has the record; unavailable: the check failed'),
+    checked_at: z.string(),
+    api_url: z.string(),
+    updated: str().describe('When SKKG last changed the record, from the API'),
+    differences: z.array(z.object({
+      record: z.string().describe('The object, or one of its images'),
+      field: z.string(),
+      dump: str().describe('Absent: not recorded in the dump'),
+      live: str().describe('Absent: not recorded by the API, or not quoted, as the note says'),
+      note: str(),
+    })).optional(),
+    error: str(),
+    note: str(),
+  }).optional().describe('Only with live: true'),
   warnings: z.array(z.string()).optional(),
   data_as_of: str(),
 });
@@ -259,7 +280,7 @@ function images(db, o, lang, ctx) {
   }));
 }
 
-export function getObject(db, meta, args) {
+export async function getObject(db, meta, args, signal) {
   const { id } = resolveId(db, args.id, { types: ['object'] });
   const o = stmt(db, 'SELECT * FROM objects WHERE id = ?').get(id);
   const lang = args.lang;
@@ -289,8 +310,9 @@ export function getObject(db, meta, args) {
     images: want.has('images') ? images(db, o, lang, ctx) : undefined,
   };
   if (want.has('acquisition') && !out.acquisition) warnings.push('SKKG records no acquisition for this object.');
+  if (args.live) out.live = await liveCheck(db, o, ctx, signal);
   const stale = staleWarning(meta);
-  if (stale) warnings.push(stale);
+  if (stale) warnings.push(args.live ? stale : `${stale} To check this object's rights, call again with live: true.`);
   out.warnings = warnings;
   out.data_as_of = meta.data_as_of;
 
@@ -305,7 +327,7 @@ export function getObject(db, meta, args) {
 // so it yields its room before they do. Provenance periods are never cut:
 // gaps and computed_previous_owner refer to neighbouring periods, and a chain is short.
 const CUTTABLE = [['literature'], ['images'], ['exhibitions'], ['texts'], ['related', 'parts'], ['related', 'references'],
-  ['physical', 'parts']];
+  ['physical', 'parts'], ['live', 'differences']];
 
 function fitCeiling(result, totals) {
   return fitLists(result, {
@@ -326,12 +348,12 @@ export function registerGetObjectTool(server) {
       description,
       inputSchema,
       outputSchema,
-      annotations: READ_ONLY_ANNOTATIONS,
+      annotations: READ_ONLY_OPEN_WORLD_ANNOTATIONS,
       _meta: { 'anthropic/maxResultSizeChars': RESULT_CHAR_CEILING },
     },
-    withTool(GET_OBJECT_TOOL_NAME, 'Get object failed', async (args) => {
+    withTool(GET_OBJECT_TOOL_NAME, 'Get object failed', async (args, ctx) => {
       const { db, meta } = getDatabase();
-      return toolResult(getObject(db, meta, args));
+      return toolResult(await getObject(db, meta, args, ctx?.mcpReq?.signal));
     }),
   );
 }

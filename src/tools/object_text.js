@@ -71,6 +71,22 @@ const SECTION_TEXT = {
   images: (ms) => ['Images:', ...ms.map(imageLine)],
 };
 
+const LIVE_STATUS = {
+  matches: 'matches the dump',
+  differs: 'differs from the dump',
+  not_found: 'SKKG\'s API no longer has this record',
+  unavailable: 'failed',
+};
+
+// A difference without a live value either has none in the API or is not quoted; its note says which.
+const differenceLine = (d) => `- ${d.record} ${d.field}: dump ${d.dump ?? 'not recorded'} → live ${d.live ?? (d.note ? 'see note' : 'not recorded')}` +
+  (d.note ? ` (${d.note})` : '');
+
+function liveLines(l) {
+  return [`Live check ${l.checked_at}: ${LIVE_STATUS[l.status]}${l.updated ? `; SKKG last changed the record ${l.updated}` : ''}`,
+    ...(l.differences ?? []).map(differenceLine), l.error && `Error: ${l.error}`, `API: ${l.api_url}`, `Note: ${l.note}`];
+}
+
 /** The sections of skkg_get_object, in the order they are rendered. */
 export const SECTIONS = Object.keys(SECTION_TEXT);
 
@@ -93,6 +109,7 @@ export function renderObjectText(s) {
   for (const k of SECTIONS) {
     if (s[k] !== undefined) lines.push('', ...SECTION_TEXT[k](s[k]));
   }
+  if (s.live) lines.push('', ...liveLines(s.live));
   if (s.warnings?.length) lines.push('');
   return [...lines.filter((l) => l === '' || present(l)), ...tailLines(s)].join('\n');
 }

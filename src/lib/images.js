@@ -3,8 +3,9 @@
 
 import { stmt } from './sql.js';
 import { ToolError } from './errors.js';
+import { fetchCapped } from './http.js';
 import {
-  INVENTORY_ORDER, IIIF_IMAGE_BASE, IIIF_TIMEOUT_MS, MAX_IMAGE_BYTES, USER_AGENT,
+  INVENTORY_ORDER, IIIF_IMAGE_BASE, IIIF_TIMEOUT_MS, MAX_IMAGE_BYTES,
   VISION_PATCH, VISION_MAX_TOKENS,
 } from '../config.js';
 
@@ -73,57 +74,21 @@ const tooLarge = (bytes) => new ToolError(
   `The image is ${(bytes / 1e6).toFixed(1)} MB, over the ${(MAX_IMAGE_BYTES / 1e6).toFixed(1)} MB a client accepts.`,
   'Ask for a smaller max_long_edge or a region_pct.');
 
-const httpError = (status) => new ToolError(`SKKG's IIIF server answered HTTP ${status}.`,
-  status === 404 || status === 410
-    ? 'SKKG may have withdrawn the image; check the object\'s website_url, and do not look for the image elsewhere.'
-    : 'Retry later.');
-
-// Reads a body up to `max` bytes. Leaving the loop by the throw cancels the stream.
-async function readCapped(body, max) {
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of body) {
-    size += chunk.length;
-    if (size > max) throw tooLarge(size);
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks);
-}
-
 /** Fetches an image from SKKG's IIIF server: `{ buffer, mimeType }`, at most MAX_IMAGE_BYTES. */
-export async function fetchImage(url, signal) {
-  const signals = [AbortSignal.timeout(IIIF_TIMEOUT_MS), signal].filter(Boolean);
-  let res;
-  try {
-    res = await fetch(url, {
-      redirect: 'error',
-      headers: { Accept: 'image/jpeg', 'User-Agent': USER_AGENT },
-      signal: AbortSignal.any(signals),
-    });
-  } catch (err) {
-    if (signal?.aborted) throw err;
-    if (err?.name === 'TimeoutError') {
-      throw new ToolError(`SKKG's IIIF server did not answer within ${IIIF_TIMEOUT_MS / 1000} s.`, 'Retry later, or ask for a smaller image.');
-    }
-    throw new ToolError('Could not reach SKKG\'s IIIF server (a network error or a redirect, which the tool refuses).', 'Retry later.');
-  }
-  if (!res.ok) {
-    await res.body?.cancel().catch(() => {});
-    throw httpError(res.status);
-  }
-  const mimeType = (res.headers.get('content-type') || '').split(';')[0].trim();
-  if (!mimeType.startsWith('image/')) {
-    await res.body?.cancel().catch(() => {});
-    throw new ToolError(`SKKG's IIIF server returned ${mimeType || 'no content type'} instead of an image.`, 'Retry later.');
-  }
-  const declared = Number(res.headers.get('content-length'));
-  if (declared > MAX_IMAGE_BYTES) {
-    await res.body?.cancel().catch(() => {});
-    throw tooLarge(declared);
-  }
-  const buffer = res.body ? await readCapped(res.body, MAX_IMAGE_BYTES) : Buffer.alloc(0);
-  return { buffer, mimeType };
-}
+export const fetchImage = (url, signal) => fetchCapped(url, {
+  server: 'SKKG\'s IIIF server',
+  accept: 'image/jpeg',
+  accepts: (mimeType) => mimeType.startsWith('image/'),
+  kind: 'an image',
+  maxBytes: MAX_IMAGE_BYTES,
+  tooLarge,
+  timeoutMs: IIIF_TIMEOUT_MS,
+  timeoutHint: 'Retry later, or ask for a smaller image.',
+  statusHint: (status) => (status === 404 || status === 410
+    ? 'SKKG may have withdrawn the image; check the object\'s website_url, and do not look for the image elsewhere.'
+    : 'Retry later.'),
+  signal,
+});
 
 /** Width and height from a JPEG's frame header, or undefined when the bytes are no JPEG it can read. */
 export function jpegSize(buf) {
