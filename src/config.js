@@ -85,7 +85,6 @@ export const IIIF_TIMEOUT_MS = posIntEnv('SKKG_IIIF_TIMEOUT_MS', 30_000, { min: 
 export const USER_AGENT = `${SERVER_NAME}/${SERVER_VERSION}`;
 
 // `live: true` of skkg_get_object: one RetrieveObject request (notes/08, "Rights in RetrieveObject").
-// The largest record seen, with 190 images, is 233 KB.
 export const API_DATA_BASE = 'https://api.digital.skkg.ch/api/v1/graphs/skkg/data/';
 export const API_TIMEOUT_MS = posIntEnv('SKKG_API_TIMEOUT_MS', 30_000, { min: 1000, max: 600_000 });
 export const API_MAX_BYTES = 5_000_000;

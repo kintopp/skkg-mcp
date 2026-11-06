@@ -16,7 +16,7 @@ const PREFIX = 'skkg:';
 // A value of the API that is neither absent nor of the expected form.
 export const UNREADABLE = 'unreadable';
 
-export const LIVE_NOTE = 'Compared with SKKG\'s API: the credit line, the redaction status, the last update, ' +
+export const LIVE_NOTE = 'The live check compares with SKKG\'s API: the credit line, the redaction status, the last update, ' +
   'which images are published and which is the primary, and for each published image its licence, holders, ' +
   'photographer, rights end date, photo date, and IIIF service. The API has no object copyright, so ' +
   'object_copyright is the dump\'s alone.';
@@ -51,6 +51,8 @@ const readId = (v) => (typeof v === 'string' && v.startsWith(PREFIX) && ID.test(
   ? v.slice(PREFIX.length) : UNREADABLE);
 const readDate = (v) => (typeof v === 'string' && /^\d{4}(-\d{2}(-\d{2})?)?$/.test(v) ? v : UNREADABLE);
 const readIiif = (v) => (typeof v === 'string' && /^iiif:[0-9A-Za-z-]+$/.test(v) ? IIIF_IMAGE_BASE + v.slice(5) : UNREADABLE);
+// A value equal to the dump's matches in any form, also one the readers refuse ("20219-12-31").
+const orDump = (dump, read) => (v) => (v === dump ? v : read(v));
 const readText = (v) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : UNREADABLE);
 // "2026-04-14T11:42:42.298000" (API) and "2026-04-14T11:42:42.298" (dump) are the same time.
 export function readTime(v) {
@@ -137,8 +139,8 @@ function differences(db, o, { main, images }) {
     add(mid, 'right_holder', m.right_holder_id, readAll(n['skkgapi:right_holder'], readId), actor);
     add(mid, 'original_right_holder', m.original_right_holder_id, readAll(n['skkgapi:additional_right_holder'], readId), actor);
     add(mid, 'photographer', m.photographer_id, readAll(n['skkgapi:right_author'], readId), actor);
-    add(mid, 'rights_end_date', m.rights_end_date, readAll(n['skkgapi:right_holder_date'], readDate));
-    add(mid, 'photo_date', m.photo_date, readAll(n['skkgapi:right_photography_date'], readDate));
+    add(mid, 'rights_end_date', m.rights_end_date, readAll(n['skkgapi:right_holder_date'], orDump(m.rights_end_date, readDate)));
+    add(mid, 'photo_date', m.photo_date, readAll(n['skkgapi:right_photography_date'], orDump(m.photo_date, readDate)));
     add(mid, 'iiif_service', m.iiif_service, readAll(n['skkgapi:iiif_uri'], readIiif));
   }
   return { diffs, withdrawn, liveUpdated: readAll(main['skkgapi:update_date'], readTime) };
@@ -173,8 +175,9 @@ export async function liveCheck(db, o, ctx, signal) {
       (changed ? ` SKKG changed the record on ${changed.slice(0, 10)}, so sections the check does not compare may be out of date too.` : ''));
   }
   if (withdrawn.length) {
-    ctx.warnings.push(`SKKG no longer publishes ${withdrawn.join(', ')}: do not use ${withdrawn.length === 1 ? 'this image' : 'these images'}, ` +
-      'and do not look for them elsewhere.');
+    const one = withdrawn.length === 1;
+    ctx.warnings.push(`SKKG no longer publishes ${withdrawn.join(', ')}: do not use ${one ? 'this image' : 'these images'}, ` +
+      `and do not look for ${one ? 'it' : 'them'} elsewhere.`);
   }
   return {
     status: diffs.length ? 'differs' : 'matches',

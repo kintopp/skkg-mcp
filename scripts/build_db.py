@@ -80,7 +80,7 @@ AAT_CREDIT = AAT + "300026687"
 AAT_EDITION = AAT + "300435435"
 AAT_MATERIAL_STATEMENT = AAT + "300435429"
 # SKKG's published credit line (the API's skkgapi:credit_line) joins this, the object's credit
-# text, and the year of its acquisition; the dump holds only the last two (notes/08).
+# text, and the year of its acquisition in four digits ("0996"); the dump holds only the last two (notes/08).
 CREDIT_LINE_HOLDER = "Stiftung für Kunst, Kultur und Geschichte, Winterthur"
 AAT_GIVEN, AAT_SURNAME, AAT_ORG = AAT + "300404651", AAT + "300404652", AAT + "300445020"
 ANON_ACTOR = "person/privateIndividual"
@@ -1451,7 +1451,8 @@ def credit_lines(db):
         """SELECT COUNT(NULLIF(TRIM(o.credit_line), '')), COUNT(a.year) FROM objects o
            LEFT JOIN acquisitions a ON a.object_id = o.id""").fetchone()))
     db.execute("""UPDATE objects SET credit_line = ? || COALESCE(', ' || NULLIF(TRIM(credit_line), ''), '')
-        || COALESCE(', ' || (SELECT year FROM acquisitions a WHERE a.object_id = objects.id), '')""", (CREDIT_LINE_HOLDER,))
+        || COALESCE(', ' || (SELECT printf('%04d', year) FROM acquisitions a WHERE a.object_id = objects.id AND year IS NOT NULL), '')""",
+               (CREDIT_LINE_HOLDER,))
     return counts
 
 

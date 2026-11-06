@@ -9,7 +9,8 @@
 // - images include multimedia without a published IIIF image, or the primary is not first
 // - a long image list is returned whole, or cut without a warning
 // - a price without a currency comes back without saying the currency is missing
-// - the credit line is the dump's credit text, not the line SKKG publishes
+// - the credit line is the dump's credit text, not the line SKKG publishes, or the text runs it into
+//   the redaction status, though it holds commas of its own
 // - the physical section returns the current location, which SKKG's API and website do not publish
 // - results violate the output schema
 // - the text repeats structuredContent as JSON, or leaves out a requested section, its ids,
@@ -139,6 +140,13 @@ test('skkg_get_object against the fixture database', { skip: FIXTURE_DB.skip }, 
     await t.test('a price without a currency says the currency is not recorded', async () => {
       const { acquisition: a } = await get({ id: 'object/915c2b68-58c5-4f75-8033-ed0b1499c2b9', include: ['acquisition'] });
       assert.deepEqual([a.price.value, a.price.currency], [1000, 'not recorded']);
+    });
+
+    await t.test('the text keeps the credit line apart from the redaction status', async () => {
+      // The credit line holds commas of its own.
+      const { text } = await callSent(client, NAME, { id: 'object/1014' }, outputSchema);
+      assert.ok(text.split('\n').includes(
+        'Object copyright: Copyright · credit: Stiftung für Kunst, Kultur und Geschichte, Winterthur, 2000 · Bearbeitungstiefe 1: Registrierung'), text);
     });
 
     await t.test('the text renders every requested section with its ids and rights, never as JSON', async () => {

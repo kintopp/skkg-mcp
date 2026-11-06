@@ -16,9 +16,9 @@ test('no path and a missing file give ToolErrors that name SKKG_DB_PATH', () => 
 });
 
 test('a database with another schema version is refused', () => {
-  // A schema-8 copy still loads SKKG's "not stated" ("Ohne Angaben") as authors, so a name filter
-  // would list unrelated publications without an error; a schema-6 copy misses label-only life dates.
-  for (const version of ['1', '6', '9']) {
+  // A schema-9 copy holds the bare credit text instead of SKKG's credit line, which a live check then
+  // reports as a difference; a schema-8 copy loads SKKG's "not stated" ("Ohne Angaben") as authors.
+  for (const version of ['1', '8', '9']) {
     const t = makeTestDb({ meta: { schema_version: version } });
     try {
       assert.throws(() => openDatabase(t.path), new RegExp(`schema version ${version}`));

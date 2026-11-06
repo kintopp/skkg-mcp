@@ -3,7 +3,8 @@
 //   than RetrieveObject with the id's slash encoded twice, follows a redirect, or sends no User-Agent
 // - an inventory number is checked under the number instead of the object's id
 // - a record that matches reports a difference: for the API's longer timestamps, the whitespace of
-//   its credit line, "(c)" for ©, or a record unpublished on both sides (a PDF)
+//   its credit line, "(c)" for ©, a malformed date the dump holds too ("20219-12-31"), or a record
+//   unpublished on both sides (a PDF)
 // - a field that differs is not reported, or with the wrong side's value: licence, holder, original
 //   holder, photographer, rights end date, photo date, IIIF service, redaction status, last update,
 //   primary image, credit line
@@ -18,12 +19,13 @@
 // - the caller's abort is reported as a failed check instead of ending the call
 // - a long list of differences is returned whole, or cut without the total
 // - the stale warning offers live: true to a call that used it, or not to one that did not
-// - the text leaves out the status, a difference, the error, or the note
+// - the text leaves out the status, a difference, the error, or the note; the note of a failed
+//   check says a comparison was made; a warning about one image says "them"
 // - results violate the output schema
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { assertWireValid, withClient, FIXTURE_DB } from './helpers.js';
+import { assertWireValid, withClient, makeTestDb, FIXTURE_DB } from './helpers.js';
 import { openDatabase } from '../src/db.js';
 import { getObject, outputSchema } from '../src/tools/get_object.js';
 
@@ -130,7 +132,7 @@ test('skkg_get_object with live: true against a stubbed API', { skip: FIXTURE_DB
     assert.ok(!(s.warnings ?? []).some((w) => /differs|no longer/.test(w)), String(s.warnings));
     assert.match(text, /^Live check .*: matches the dump; SKKG last changed the record 2026-05-13T07:23:19\.814$/m);
     assert.match(s.live.note, /no object copyright/);
-    assert.match(text, /^Note: Compared with SKKG's API: .*no object copyright/m);
+    assert.match(text, /^Note: The live check compares with SKKG's API: .*no object copyright/m);
     assert.ok(text.split('\n').includes(`API: ${URL_10013}`));
   });
 
@@ -199,7 +201,7 @@ test('skkg_get_object with live: true against a stubbed API', { skip: FIXTURE_DB
   await t.test('a withdrawn image is reported, with a warning not to use it', async () => {
     const { s } = await call({ id: OBJ }, record((_main, sc) => { sc[PRIMARY]['skkgapi:iiif_uri'] = null; }));
     assert.deepEqual(diff(s, PRIMARY, 'published'), { record: PRIMARY, field: 'published', dump: 'published', live: 'not published' });
-    assert.ok(s.warnings.some((w) => w === `SKKG no longer publishes ${PRIMARY}: do not use this image, and do not look for them elsewhere.`), String(s.warnings));
+    assert.ok(s.warnings.some((w) => w === `SKKG no longer publishes ${PRIMARY}: do not use this image, and do not look for it elsewhere.`), String(s.warnings));
     const gone = await call({ id: OBJ }, record((main) => {
       main['crm:P138i_has_representation'] = main['crm:P138i_has_representation'].filter((r) => r !== `skkg:${OTHER}`);
     }));
@@ -211,6 +213,15 @@ test('skkg_get_object with live: true against a stubbed API', { skip: FIXTURE_DB
     const { s } = await call({ id: OBJ }, record((_main, sc) => { delete sc[PRIMARY]; }));
     assert.deepEqual([diff(s, PRIMARY, 'published').dump, diff(s, PRIMARY, 'published').live], ['published', 'unreadable']);
     assert.ok(!s.warnings.some((w) => /no longer publishes/.test(w)), String(s.warnings));
+  });
+
+  await t.test('several withdrawn images are named in one warning', async () => {
+    const { s } = await call({ id: OBJ }, record((_main, sc) => {
+      sc[PRIMARY]['skkgapi:iiif_uri'] = null;
+      sc[OTHER]['skkgapi:iiif_uri'] = null;
+    }));
+    assert.ok(s.warnings.some((w) => /^SKKG no longer publishes multimedia\/.*, multimedia\/.*: do not use these images, and do not look for them elsewhere\.$/.test(w)),
+      String(s.warnings));
   });
 
   await t.test('a newly published image is reported, without the withdrawal warning', async () => {
@@ -253,6 +264,11 @@ test('skkg_get_object with live: true against a stubbed API', { skip: FIXTURE_DB
     assert.ok(s.rights.object.object_copyright);
     assert.ok(s.warnings.some((w) => /SKKG's API no longer has object\/10013 \(HTTP 404\).*Do not rely on this record; check its website_url/.test(w)));
     assert.match(text, /^Live check .*: SKKG's API no longer has this record$/m);
+  });
+
+  await t.test('the note of a failed check does not claim a comparison was made', async () => {
+    const { s } = await call({ id: OBJ }, () => new Response('', { status: 503 }));
+    assert.match(s.live.note, /^The live check compares with SKKG's API: /);
   });
 
   await t.test('any other failure is reported in the result, which stays the dump\'s', async () => {
@@ -300,6 +316,25 @@ test('skkg_get_object with live: true against a stubbed API', { skip: FIXTURE_DB
     const stale = withLive.s.warnings.find((w) => /The data is from 2020-01-01/.test(w));
     assert.ok(stale && !/live: true/.test(stale), stale);
   });
+});
+
+test('a date the dump holds in a malformed form matches the same value from the API', { skip: FIXTURE_DB.skip }, async () => {
+  // Two published images have the photo date "20219-12-31" in the dump, and SKKG's API gives the same (object/4730).
+  const copy = makeTestDb({ from: FIXTURE_DB.path });
+  try {
+    copy.db.prepare('UPDATE multimedia SET photo_date = ?, rights_end_date = ? WHERE id = ?').run('20219-12-31', '20219', PRIMARY);
+    copy.db.close();
+    const { db, meta } = openDatabase(copy.path);
+    try {
+      const { structured: s } = await withFetch(() => json(apiRecord(db, OBJ)), () => getObject(db, meta, { id: OBJ, include: [], lang: 'de', live: true }));
+      assertWireValid(outputSchema, s);
+      assert.equal(s.live.status, 'matches', JSON.stringify(s.live.differences));
+    } finally {
+      db.close();
+    }
+  } finally {
+    copy.cleanup();
+  }
 });
 
 test('skkg_get_object declares that it may call SKKG', { skip: FIXTURE_DB.skip }, async () => {

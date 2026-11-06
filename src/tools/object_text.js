@@ -101,7 +101,7 @@ export function renderObjectText(s) {
     ...(sm.titles ?? []).filter((t) => t.title !== s.title)
       .map((t) => `Title: ${join([t.title, t.short_title && `short: ${t.short_title}`, t.type, t.language, t.note])}`),
     list('Identifiers', (sm.identifiers ?? []).map((i) => join([i.type, i.value], ' '))),
-    `Object copyright: ${join([oc.object_copyright, oc.credit_line && `credit: ${oc.credit_line}`, oc.redaction_status])}`,
+    `Object copyright: ${join([oc.object_copyright, oc.credit_line && `credit: ${oc.credit_line}`, oc.redaction_status], ' · ')}`,
     img ? `Photo: ${photoRights(img)}` : 'No published image',
     s.website_url,
     s.manifest_url && `IIIF manifest: ${s.manifest_url}`,
