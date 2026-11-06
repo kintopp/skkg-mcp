@@ -313,7 +313,9 @@ test('skkg_search_exhibitions against the fixture database', { skip: FIXTURE_DB.
       const withOrg = await callSent(client, NAME, { query: `"${org.title.replace(/"/g, '')}"`, limit: 50 }, outputSchema);
       const orgRow = withOrg.structured.results.find((x) => x.id === org.id);
       assert.ok(orgRow?.organisers?.length, org.id);
-      for (const o of orgRow.organisers) assert.match(withOrg.text, new RegExp(`Organisers: [^\n]*\(${o.role ? `${o.role}, ` : ''}${o.id}\)`), o.id);
+      const orgLine = withOrg.text.split('\n').find((l) => l.trim().startsWith('Organisers:') && l.includes(orgRow.organisers[0].id));
+      assert.ok(orgLine, withOrg.text);
+      for (const o of orgRow.organisers) assert.ok(orgLine.includes(`(${o.role ? `${o.role}, ` : ''}${o.id})`), `${o.id}: ${orgLine}`);
       const warned = await callSent(client, NAME, { venue: 'Museum', limit: 1 }, outputSchema);
       assert.match(warned.text, /Filters: venue = /);
       assert.match(warned.text, /Warning: `venue` "Museum" matched \d+ venues/);

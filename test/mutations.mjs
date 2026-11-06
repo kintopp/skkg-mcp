@@ -402,6 +402,7 @@ const MUTATIONS = [
   ["src/tools/search_exhibitions.js", "    applied.includes_object = [{ id, label: o.title ?? o.inventory_number }];\n", "", "exhibitions: applied_filters names includes_object"],
   ["src/tools/search_exhibitions.js", "; one without a venue, by its own dates", "", "exhibitions: year_from description, no venue by own dates"],
   ["src/tools/search_exhibitions.js", "; the venues include cancelled stations", "", "exhibitions: query description, cancelled stations"],
+  ["src/tools/search_exhibitions.js", "`${nameOf(o)} (${join([o.role, o.id])})`", "`${nameOf(o)} ${join([o.role, o.id])}`", "exhibitions: text gives each organiser's role and id in brackets"],
 ];
 
 // The cache key changes with the entry, so an edited entry has no record and is selected.
