@@ -111,7 +111,7 @@ export function errorOf(fn) {
 // A throwaway database file with `meta` and the given tables, each created with an
 // `id` column plus any extra columns, or a writable copy of the database at `from`.
 // Returns { path, db, cleanup }.
-export function makeTestDb({ meta = { schema_version: '7', data_as_of: '2026-10-28' }, tables = {}, from } = {}) {
+export function makeTestDb({ meta = { schema_version: '8', data_as_of: '2026-10-28' }, tables = {}, from } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'skkg-mcp-test-'));
   const path = join(dir, 'test.sqlite');
   if (from) {

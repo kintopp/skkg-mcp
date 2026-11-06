@@ -105,10 +105,12 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
       // actor/004D58F3… is only an editor, actor/5412749E… an editor and a publisher.
       const editor = await get({ id: 'actor/004D58F3-3932-3E47-BC63-719C82D7E5D3' });
       assert.equal(editor.summary.kind, 'editor');
-      assert.equal(editor.summary.note, 'SKKG records only the name of this editor, from its literature.');
+      assert.equal(editor.summary.note, 'SKKG records only the name of this editor, from its literature, often as one record ' +
+        'per publication: skkg_search_literature with `author` and this name lists all their publications.');
       const both = await get({ id: 'actor/5412749E-E5B1-358D-AB2D-FA598F77886E' });
       assert.equal(both.summary.kind, 'publisher');
-      assert.equal(both.summary.note, 'SKKG records only the name of this editor and publisher, from its literature.');
+      assert.equal(both.summary.note, 'SKKG records only the name of this editor and publisher, from its literature, often as one ' +
+        'record per publication: skkg_search_literature with `publisher` and this name lists all their publications.');
       // person/1047 has no skkg:Person record and is no author: it is an influence on objects.
       const named = await get({ id: 'person/1047' });
       assert.equal(named.summary.kind, 'actor');

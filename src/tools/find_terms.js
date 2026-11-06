@@ -60,9 +60,10 @@ const description =
   'the start of a word in a label ("Radier" finds "Radierung"). Terms in use come first; among them, ' +
   'exact label matches, then the terms used most. Each term carries its id, its path in the hierarchy, its year range (epochs), ' +
   'its matches in GND, AAT, or Wikidata, how many objects use it (a photo licence: objects whose primary photo has it), ' +
-  'and, when a search filter takes it, `filter` and `filter_tool`: that parameter and its tool (skkg_search_objects, ' +
-  'skkg_search_provenance for the vocabularies of provenance periods, or skkg_search_actors for gender and the country codes ' +
-  'of nationalities); many vocabularies have none. Currency terms carry none either: ' +
+  'and `filters`: every search parameter that takes it, each with its tool and the total that filter reports for the term ' +
+  '(skkg_search_objects; skkg_search_provenance for the vocabularies of provenance periods; skkg_search_actors for gender, ' +
+  'and for a country code both nationality and place_country; skkg_search_literature for literature types). ' +
+  'Many vocabularies have no filter. Currency terms have none either: ' +
   '`currency` of skkg_search_provenance takes the codes of the prices ("CHF", "DEM") and SKKG\'s labels of them. With `id`, returns one term with its broader and narrower terms. ' +
   'With only `vocabulary`, lists that vocabulary. To search objects, use skkg_search_objects; ' +
   'its term filters take these labels or ids directly.';
@@ -99,8 +100,13 @@ const termRowOut = () => z.object({
   record_count: int().describe('Records of `record_kind` that use this term, for vocabularies of other records and of provenance periods, ' +
     'and for terms of SKKG\'s unnamed schemes, where record_kind is the kind of record that uses the term most'),
   record_kind: str(),
-  filter: str().describe('The parameter of filter_tool that takes this term; absent when no search filter takes it'),
-  filter_tool: str().describe('The search tool whose `filter` parameter takes this term: skkg_search_objects, skkg_search_provenance, or skkg_search_actors'),
+  filters: z.array(z.object({
+    tool: z.string(),
+    parameter: z.string(),
+    count: z.number().int().describe('What `tool` reports for a call with only `parameter` set to this term: its `total`, ' +
+      'or for provenance periods its `total_periods`'),
+    count_of: z.string().describe('What `count` counts: objects, provenance periods, persons and groups, or publications'),
+  })).optional().describe('Every search parameter that takes this term; absent when no search filter takes it'),
 });
 
 export const outputSchema = z.object({
@@ -127,8 +133,7 @@ function termRow(db, t, lang) {
   const up = ancestors(db, t.id);
   const label = termLabel(db, t.id, lang);
   const languages = [t.label_de, t.label_en, t.label_fr].filter(Boolean);
-  // The first tool that filters the facet: skkg_search_objects for the acquisition types, which both take.
-  const { tool, field } = filtersOfFacet(t.facet)[0] ?? {};
+  const filters = filtersOfFacet(t.facet).map((f) => ({ tool: f.tool, parameter: f.field, count: t[f.count.column] ?? 0, count_of: f.count.of }));
   return prune({
     id: t.id,
     label,
@@ -144,8 +149,7 @@ function termRow(db, t, lang) {
     narrower_count: t.narrower_count || undefined,
     record_count: t.record_kind ? t.record_count : undefined,
     record_kind: t.record_kind ?? undefined,
-    filter: field,
-    filter_tool: tool,
+    filters: filters.length ? filters : undefined,
   });
 }
 
@@ -264,8 +268,8 @@ function termLine(t) {
     t.object_count_with_narrower !== undefined && `${t.object_count_with_narrower} with narrower`,
     t.record_count !== undefined && `${t.record_count} ${t.record_kind}`].filter(Boolean).join(', ');
   const years = t.year_from !== undefined || t.year_to !== undefined ? ` (${t.year_from ?? '?'}–${t.year_to ?? '?'})` : '';
-  return [`${t.path ?? t.label ?? t.id}${years} — ${t.vocabulary}`, counts, t.id, t.filter && `filter: ${t.filter_tool} ${t.filter}`]
-    .filter(Boolean).join(' · ');
+  const filters = t.filters && `filters: ${t.filters.map((f) => `${f.tool} ${f.parameter} (${f.count} ${f.count_of})`).join(', ')}`;
+  return [`${t.path ?? t.label ?? t.id}${years} — ${t.vocabulary}`, counts, t.id, filters].filter(Boolean).join(' · ');
 }
 
 

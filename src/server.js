@@ -7,6 +7,7 @@ import { SERVER_NAME, SERVER_VERSION, SERVER_INSTRUCTIONS, CACHE_HINTS, CHANNEL_
 import { registerSearchObjectsTool } from './tools/search_objects.js';
 import { registerSearchProvenanceTool } from './tools/search_provenance.js';
 import { registerSearchActorsTool } from './tools/search_actors.js';
+import { registerSearchLiteratureTool } from './tools/search_literature.js';
 import { registerGetObjectTool } from './tools/get_object.js';
 import { registerGetRecordTool } from './tools/get_record.js';
 import { registerFindTermsTool } from './tools/find_terms.js';
@@ -27,6 +28,7 @@ export function createServer() {
   registerSearchObjectsTool(server);
   registerSearchProvenanceTool(server);
   registerSearchActorsTool(server);
+  registerSearchLiteratureTool(server);
   registerGetObjectTool(server);
   registerGetRecordTool(server);
   registerFindTermsTool(server);

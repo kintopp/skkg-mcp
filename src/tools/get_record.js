@@ -20,6 +20,7 @@ import { renderRecordText } from './record_text.js';
 import { actorOut, imageRightsOut, objectRowShape, periodShape, periodRefShape, langIn, str, int } from './schemas.js';
 import {
   READ_ONLY_ANNOTATIONS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT, INVENTORY_ORDER,
+  SEARCH_LITERATURE_TOOL_NAME,
 } from '../config.js';
 
 export const GET_RECORD_TOOL_NAME = 'skkg_get_record';
@@ -312,7 +313,11 @@ function getActor(db, id, want, args, ctx) {
   } else if (a.kind === 'stub') {
     const parts = roles.filter((r) => LITERATURE_KINDS.includes(r.as)).map((r) => r.as);
     kind = STUB_KINDS.find((k) => parts.includes(k)) ?? 'actor';
-    note = parts.length ? `SKKG records only the name of this ${parts.join(' and ')}, from its literature.` : 'SKKG records only the name of this actor.';
+    const field = parts.includes('publisher') ? 'publisher' : 'author';
+    note = parts.length
+      ? `SKKG records only the name of this ${parts.join(' and ')}, from its literature, often as one record per publication: ` +
+        `${SEARCH_LITERATURE_TOOL_NAME} with \`${field}\` and this name lists all their publications.`
+      : 'SKKG records only the name of this actor.';
   }
   const out = {
     summary: {

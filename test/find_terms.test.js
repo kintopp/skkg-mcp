@@ -8,7 +8,10 @@
 //   or object_count from what it matches with include_narrower: false
 //   in any vocabulary that offers a filter (photo licences counted over every image, not the primary one),
 //   or the descriptions do not say that a licence counts objects by their primary photo
-// - `filter` names the wrong skkg_search_objects parameter ("production_role" for creator_role)
+// - `filters` names the wrong skkg_search_objects parameter ("production_role" for creator_role)
+// - a term two filters take names only one of them: a country only `nationality`, though
+//   `place_country` lists more persons and is the only one for a country no person holds as a
+//   nationality (0 against 9 for AR in the full dump); a filter's count is not the total it reports
 // - a currency term gets a `filter`: `currency` takes the code, which also lists the prices of
 //   the currency's other terms ("DM" and "DEM"), so the filter would not reproduce the term's count
 // - a term found in another vocabulary than the one asked for is answered with "translate it"
@@ -37,11 +40,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { withClient, callOk, callError, FIXTURE_DB } from './helpers.js';
+import { withClient, callOk, callSent, callError, FIXTURE_DB } from './helpers.js';
 import { outputSchema } from '../src/tools/find_terms.js';
 import { outputSchema as searchSchema } from '../src/tools/search_objects.js';
 import { outputSchema as provenanceSchema } from '../src/tools/search_provenance.js';
 import { outputSchema as actorsSchema } from '../src/tools/search_actors.js';
+import { outputSchema as literatureSchema } from '../src/tools/search_literature.js';
+
+const SCHEMAS = {
+  skkg_search_objects: searchSchema,
+  skkg_search_provenance: provenanceSchema,
+  skkg_search_actors: actorsSchema,
+  skkg_search_literature: literatureSchema,
+};
 
 const NAME = 'skkg_find_terms';
 const MALEREI = 'type/21087/140347';
@@ -73,7 +84,7 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
       const hit = r.results.find((x) => x.label === 'Radierung');
       assert.ok(hit, JSON.stringify(r.results));
       assert.equal(hit.vocabulary, 'material');
-      assert.equal(hit.filter, 'material');
+      assert.deepEqual(hit.filters.map((f) => [f.tool, f.parameter]), [['skkg_search_objects', 'material']]);
     });
 
     await t.test('the exact label comes first, with its path and narrower counts', async () => {
@@ -101,27 +112,20 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
       const vocabularies = tools.find((x) => x.name === NAME).inputSchema.properties.vocabulary.enum.filter((v) => v !== 'all');
       let checked = 0;
       for (const vocabulary of vocabularies) {
-        for (const x of (await find({ vocabulary, limit: 15 })).results.filter((y) => y.filter)) {
-          if (x.filter_tool === 'skkg_search_provenance') {
-            const r = await callOk(client, x.filter_tool, { [x.filter]: x.id, limit: 1 }, provenanceSchema);
-            assert.equal(x.object_count ?? 0, r.total, `${vocabulary} ${x.label} objects`);
-            assert.equal(x.record_count ?? 0, x.record_kind === 'provenance periods' ? r.total_periods : r.total_acquisitions,
-              `${vocabulary} ${x.label} ${x.record_kind}`);
+        for (const x of (await find({ vocabulary, limit: 15 })).results.filter((y) => y.filters)) {
+          for (const f of x.filters) {
+            const what = `${vocabulary} ${x.label}: ${f.tool} ${f.parameter}`;
+            const r = await callOk(client, f.tool, { [f.parameter]: x.id, limit: 1 }, SCHEMAS[f.tool]);
+            assert.equal(f.count, f.count_of === 'provenance periods' ? r.total_periods : r.total, what);
+            if (f.tool === 'skkg_search_provenance' && f.count_of === 'provenance periods') {
+              assert.equal(x.object_count ?? 0, r.total, `${what} objects`);
+            }
+            if (f.tool === 'skkg_search_objects') {
+              assert.equal(f.count_of, 'objects', what);
+              assert.equal(x.object_count, await searchTotal({ [f.parameter]: x.id, include_narrower: false }), `${what} itself`);
+            }
             checked++;
-            continue;
           }
-          if (x.filter_tool === 'skkg_search_actors') {
-            const r = await callOk(client, x.filter_tool, { [x.filter]: x.id, limit: 1 }, actorsSchema);
-            assert.equal(x.record_count ?? 0, r.total, `${vocabulary} ${x.label} ${x.record_kind}`);
-            checked++;
-            continue;
-          }
-          assert.equal(x.filter_tool, 'skkg_search_objects', `${vocabulary} ${x.label}`);
-          assert.equal(x.object_count, await searchTotal({ [x.filter]: x.id, include_narrower: false }), `${vocabulary} ${x.label}`);
-          if (x.object_count_with_narrower !== undefined) {
-            assert.equal(x.object_count_with_narrower, await searchTotal({ [x.filter]: x.id }), `${vocabulary} ${x.label} with narrower`);
-          }
-          checked++;
         }
       }
       assert.ok(checked > 50, `${checked} terms checked`);
@@ -131,14 +135,13 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
       const r = await find({ query: 'DM', vocabulary: 'currency' });
       const dm = r.results.find((x) => x.id === 'type/20033/287982');
       assert.ok(dm, r.results.map((x) => x.id).join(', '));
-      assert.equal(dm.filter, undefined);
-      assert.equal(dm.filter_tool, undefined);
+      assert.equal(dm.filters, undefined);
     });
 
     await t.test('filter names the skkg_search_objects parameter, not the vocabulary', async () => {
       const r = await find({ query: 'Künstler:in', vocabulary: 'production_role' });
       assert.equal(r.results[0].label, 'Künstler:in');
-      assert.equal(r.results[0].filter, 'creator_role');
+      assert.deepEqual(r.results[0].filters.map((f) => f.parameter), ['creator_role']);
       assert.ok(r.results[0].object_count > 0);
       assert.ok(await searchTotal({ creator_role: r.results[0].id }) > 0);
     });
@@ -179,6 +182,39 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
       const { n } = db.prepare("SELECT COUNT(DISTINCT actor_id) AS n FROM actor_nationalities WHERE country_id = 'type/20007/20047'").get();
       db.close();
       assert.equal(ch.record_count, n);
+    });
+
+    await t.test('a country names both actor filters, each with the persons it lists, also where one lists none', async () => {
+      const db = new DatabaseSync(FIXTURE_DB.path, { readOnly: true });
+      const placeOnly = db.prepare(`SELECT e.place_id AS id FROM actor_events e WHERE e.place_id IS NOT NULL
+          AND e.kind IN ('birth', 'death', 'formation', 'dissolution')
+          AND e.place_id NOT IN (SELECT country_id FROM actor_nationalities) LIMIT 1`).get();
+      db.close();
+      assert.ok(placeOnly, 'the fixture has a country used only as a place');
+      for (const id of ['type/20007/20047', placeOnly.id]) {
+        const { term } = await find({ id });
+        assert.deepEqual(term.filters.map((f) => [f.tool, f.parameter]),
+          [['skkg_search_actors', 'nationality'], ['skkg_search_actors', 'place_country']], id);
+        for (const f of term.filters) {
+          const r = await callOk(client, f.tool, { [f.parameter]: id, limit: 1 }, actorsSchema);
+          assert.equal(f.count, r.total, `${id} ${f.parameter}`);
+          assert.equal(f.count_of, 'persons and groups');
+        }
+      }
+      const only = (await find({ id: placeOnly.id })).term.filters;
+      assert.equal(only[0].count, 0);
+      assert.ok(only[1].count > 0, JSON.stringify(only));
+      const { text } = await callSent(client, NAME, { id: placeOnly.id }, outputSchema);
+      assert.match(text, /filters: skkg_search_actors nationality \(0 persons and groups\), skkg_search_actors place_country \(\d+ persons and groups\)/);
+    });
+
+    await t.test('a literature type names skkg_search_literature, with the publications it lists', async () => {
+      const r = await find({ vocabulary: 'literature_type' });
+      assert.ok(r.results.length > 1);
+      for (const x of r.results) {
+        assert.deepEqual(x.filters.map((f) => [f.tool, f.parameter, f.count_of]), [['skkg_search_literature', 'literature_type', 'publications']], x.label);
+        assert.equal(x.filters[0].count, x.record_count, x.label);
+      }
     });
 
     await t.test('every term of provenance periods counts the objects of its periods that are in the database', async () => {
@@ -299,13 +335,14 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
     await t.test('the description promises `filter` only where a search filter takes the term', async () => {
       const { tools } = await client.listTools();
       const d = tools.find((x) => x.name === NAME).description;
-      assert.match(d, /when a search filter takes it, `filter` and `filter_tool`/);
-      assert.match(d, /many vocabularies have none/);
+      assert.match(d, /`filters`: every search parameter that takes it, each with its tool and the total that filter reports/);
+      assert.match(d, /for a country code both nationality and place_country/);
+      assert.match(d, /Many vocabularies have no filter/);
       assert.match(d, /`currency` of skkg_search_provenance takes the codes of the prices \("CHF", "DEM"\) and SKKG's labels of them/);
       // "Stabil" is a condition, a vocabulary no search filter takes.
       const stabil = (await find({ id: 'type/25086/133788' })).term;
       assert.ok(stabil.object_count > 0);
-      assert.equal(stabil.filter, undefined);
+      assert.equal(stabil.filters, undefined);
     });
 
     await t.test('words outside a quoted phrase still match as prefixes', async () => {

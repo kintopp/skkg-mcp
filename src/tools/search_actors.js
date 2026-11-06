@@ -19,7 +19,7 @@ import { TERM_FILTERS as TERM_FILTERS_OF, LIFE_PLACES } from './term_filters.js'
 import { appliedOut, langIn, termField, yearField, int, str } from './schemas.js';
 import {
   READ_ONLY_ANNOTATIONS, SEARCH_DEFAULT_LIMIT, SEARCH_MAX_LIMIT, MAX_QUERY_LEN, RESULT_CHAR_CEILING, RESULT_CHAR_LIMIT,
-  SEARCH_ACTORS_TOOL_NAME,
+  SEARCH_ACTORS_TOOL_NAME, SEARCH_LITERATURE_TOOL_NAME,
 } from '../config.js';
 
 const TERM_FILTERS = TERM_FILTERS_OF[SEARCH_ACTORS_TOOL_NAME];
@@ -46,7 +46,8 @@ const description =
   'how the actor is linked to the collection (role_in_collection), and whether a GND or Wikidata id is recorded. ' +
   'Each result lists its roles with their counts. SKKG\'s anonymisation ("Privatperson", "Unbekannte:r Eigentümer:in") ' +
   'is never a result: never try to identify those persons. Actors SKKG records only by name, most of them authors, ' +
-  'editors, and publishers of literature, are not listed; name_only counts those that match and names a few. ' +
+  'editors, and publishers of literature, are not listed; name_only counts those that match and names a few, each with ' +
+  `the ${SEARCH_LITERATURE_TOOL_NAME} arguments that list their publications. ` +
   'For one actor\'s full record, with their objects and literature, use skkg_get_record with its id; for the objects ' +
   'of a creator, skkg_search_objects with `creator`; for labels of gender and the country codes, skkg_find_terms.';
 
@@ -116,9 +117,15 @@ export const outputSchema = z.object({
   results: z.array(resultOut),
   name_only: z.object({
     total: z.number().int(),
-    examples: z.array(z.object({ id: z.string(), name: str() })),
+    examples: z.array(z.object({
+      id: z.string(),
+      name: str(),
+      literature_filter: z.object({ author: str(), publisher: str() }).optional()
+        .describe(`${SEARCH_LITERATURE_TOOL_NAME} arguments that list the publications under this name`),
+    })),
   }).optional().describe('Actors SKKG records only by name that meet the same filters; they are not listed. ' +
-    'examples gives up to five distinct names, each with one id for skkg_get_record'),
+    `examples gives up to five distinct names, each with one id for skkg_get_record and, for authors, editors, and publishers, ` +
+    `the ${SEARCH_LITERATURE_TOOL_NAME} arguments that list their publications`),
   applied_filters: appliedOut().optional(),
   warnings: z.array(z.string()).optional(),
   data_as_of: z.string().optional(),
@@ -205,6 +212,16 @@ function fromSql(c, kinds) {
   return { sql: `FROM actors a ${join} WHERE ${[kinds, ...c.where].join(' AND ')}`, params: [...(c.fts ? [c.fts] : []), ...c.params] };
 }
 
+// The skkg_search_literature arguments that list a name-only actor's publications under its name:
+// `publisher` for a publisher (also when it edits, as skkg_get_record names it), `author` for an
+// author or editor; none for the few that no publication names, or a name without a word.
+function literatureFilter(db, id, name) {
+  if (!name || !ftsQuery(name)) return undefined;
+  const parts = stmt(db, 'SELECT DISTINCT kind FROM literature_actors WHERE actor_id = ?').all(id).map((r) => r.kind);
+  if (!parts.length) return undefined;
+  return parts.includes('publisher') ? { publisher: name } : { author: name };
+}
+
 function actorRow(db, id, lang) {
   const a = stmt(db, 'SELECT * FROM actors WHERE id = ?').get(id);
   const roles = roleCounts(db, id);
@@ -240,7 +257,9 @@ export function searchActors(db, meta, args) {
   if (nameOnlyCount) {
     const examples = [];
     for (const r of db.prepare(`SELECT a.id, a.label ${n.sql} ORDER BY ${c.fts ? ORDER.relevance : BY_NAME}`).iterate(...n.params)) {
-      if (!examples.some((e) => e.name === r.label)) examples.push({ id: r.id, name: r.label ?? undefined });
+      if (!examples.some((e) => e.name === r.label)) {
+        examples.push(prune({ id: r.id, name: r.label ?? undefined, literature_filter: literatureFilter(db, r.id, r.label) }));
+      }
       if (examples.length === NAME_ONLY_EXAMPLES) break;
     }
     nameOnly = { total: nameOnlyCount, examples };
@@ -249,7 +268,8 @@ export function searchActors(db, meta, args) {
   const { warnings } = c;
   if (total === 0) {
     warnings.push(nameOnly
-      ? 'No person or group with a record of its own matches; see name_only for the actors SKKG records only by name.'
+      ? 'No person or group with a record of its own matches; see name_only for the actors SKKG records only by name, ' +
+        `and ${SEARCH_LITERATURE_TOOL_NAME} with an example's literature_filter for their publications.`
       : 'No person or group matches these filters together. Drop one filter at a time to see which one empties the result.');
   }
   const past = pastEnd(args.offset, total, 'actors');
@@ -294,8 +314,9 @@ function actorLines(r, n) {
 function renderText(s) {
   const head = `${s.total} persons and groups${showing(s, s.total)} (sorted by ${s.sort}).`;
   const lines = s.results.flatMap((r, i) => actorLines(r, s.offset + i + 1));
+  const filterText = (f) => f && `; ${SEARCH_LITERATURE_TOOL_NAME} ${Object.entries(f).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')}`;
   const nameOnly = s.name_only && `Also ${s.name_only.total} actors SKKG records only by name (not listed), e.g. ` +
-    `${s.name_only.examples.map((e) => `${e.name} (${e.id})`).join(', ')}.`;
+    `${s.name_only.examples.map((e) => `${e.name} (${e.id}${filterText(e.literature_filter) ?? ''})`).join(', ')}.`;
   return [head, ...lines, nameOnly, ...tailLines(s)].filter(Boolean).join('\n');
 }
 

@@ -12,16 +12,16 @@ import { MAX_NAME_MATCHES, WITHHELD_FACETS } from '../config.js';
 import { TERM_FILTERS } from '../tools/term_filters.js';
 
 // Where the terms of each vocabulary (facet) go: the parameters of the search tools that take
-// them, as [{ tool, field, facet }] in the order of TERM_FILTERS. Built once from its records.
+// them, as [{ tool, field, facet, count }] in the order of TERM_FILTERS. Built once from its records.
 const FILTERS_OF_FACET = new Map();
 for (const [tool, fields] of Object.entries(TERM_FILTERS)) {
-  for (const [field, { facet }] of Object.entries(fields)) {
+  for (const [field, { facet, count }] of Object.entries(fields)) {
     if (!FILTERS_OF_FACET.has(facet)) FILTERS_OF_FACET.set(facet, []);
-    FILTERS_OF_FACET.get(facet).push(Object.freeze({ tool, field, facet }));
+    FILTERS_OF_FACET.get(facet).push(Object.freeze({ tool, field, facet, count }));
   }
 }
 
-/** The parameters that take a facet's terms, as [{ tool, field, facet }]. */
+/** The parameters that take a facet's terms, as [{ tool, field, facet, count }]. */
 export const filtersOfFacet = (facet) => FILTERS_OF_FACET.get(facet) ?? [];
 
 /** A term id with its label, as refusals name it. */

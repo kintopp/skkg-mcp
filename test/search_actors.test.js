@@ -6,7 +6,8 @@
 //   result, also when searched by name or with has_authority false
 // - an actor SKKG records only by name (a literature author) is listed, or is dropped without a
 //   count; name_only repeats one name, or gives an id skkg_get_record refuses; a kind filter,
-//   which leaves them out, still counts them; an empty result with name_only says nothing matched
+//   which leaves them out, still counts them; an empty result with name_only says nothing matched;
+//   an example's literature_filter does not list its publications, or names `author` for a publisher
 // - a year range misses an actor born in its first or last year (an equal range included), an
 //   open range is closed, an actor without the year matches, or a reversed range runs; a year
 //   SKKG gives only in the label ("14.12.1879") is missed; a group's formation is not its start
@@ -27,9 +28,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { withClient, callOk, callError, allPages, FIXTURE_DB } from './helpers.js';
+import { withClient, callOk, callSent, callError, allPages, FIXTURE_DB } from './helpers.js';
 import { outputSchema } from '../src/tools/search_actors.js';
 import { outputSchema as recordSchema } from '../src/tools/get_record.js';
+import { outputSchema as literatureSchema } from '../src/tools/search_literature.js';
 
 const NAME = 'skkg_search_actors';
 const AUTHORITIES = ['gnd', 'wikidata'];
@@ -92,6 +94,45 @@ test('skkg_search_actors against the fixture database', { skip: FIXTURE_DB.skip 
       }
       // A kind filter leaves them out by itself.
       assert.equal((await search({ query: word, kind: 'person' })).name_only, undefined);
+    });
+
+    await t.test('each name_only example of literature hands skkg_search_literature a filter that lists its publications', async () => {
+      const lit = (args) => callOk(client, 'skkg_search_literature', { ...args, limit: 50 }, literatureSchema);
+      const parts = (id) => column('SELECT DISTINCT kind FROM literature_actors WHERE actor_id = ?', id);
+      let checked = 0;
+      for (const query of ['Verlag', 'Durant', 'Zahn', 'Scott']) {
+        const r = await search({ query });
+        for (const e of r.name_only?.examples ?? []) {
+          const kinds = parts(e.id);
+          if (!kinds.length) {
+            assert.equal(e.literature_filter, undefined, e.id);
+            continue;
+          }
+          assert.deepEqual(Object.keys(e.literature_filter), [kinds.includes('publisher') ? 'publisher' : 'author'], `${e.id}: ${kinds}`);
+          const listed = new Set((await allPages(lit, e.literature_filter, { limit: 50 })).rows.map((x) => x.id));
+          for (const l of column('SELECT literature_id FROM literature_actors WHERE actor_id = ? AND kind IN (?, ?)', e.id,
+            ...(e.literature_filter.publisher ? ['publisher', 'publisher'] : ['author', 'editor']))) {
+            assert.ok(listed.has(l), `${e.name} (${e.id}): ${l}`);
+          }
+          checked++;
+        }
+        const { text } = await callSent(client, NAME, { query }, outputSchema);
+        for (const e of r.name_only?.examples ?? []) {
+          if (e.literature_filter) assert.ok(text.includes(`skkg_search_literature ${Object.keys(e.literature_filter)[0]}: ${JSON.stringify(e.name)}`), e.id);
+        }
+      }
+      assert.ok(checked >= 5, `${checked} examples checked`);
+    });
+
+    await t.test('a name-only actor that no publication names gets no literature_filter', async () => {
+      const stub = one(`SELECT a.id, a.label FROM actors a WHERE a.kind = 'stub' AND a.id NOT IN (SELECT actor_id FROM literature_actors)
+          AND a.label NOT IN (SELECT b.label FROM actors b JOIN literature_actors la ON la.actor_id = b.id)
+          AND a.label NOT GLOB '*"*' ORDER BY a.id LIMIT 1`);
+      assert.ok(stub, 'the fixture has a name-only actor that is no author, editor, or publisher');
+      const r = await search({ query: `"${stub.label}"` });
+      const e = r.name_only?.examples.find((x) => x.name === stub.label);
+      assert.ok(e, JSON.stringify(r.name_only));
+      assert.equal(e.literature_filter, undefined, e.id);
     });
 
     await t.test('an empty result with name-only matches points to name_only', async () => {

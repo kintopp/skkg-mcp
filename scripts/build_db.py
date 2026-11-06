@@ -35,7 +35,7 @@ from pathlib import Path
 
 from pyoxigraph import BlankNode, Literal, NamedNode, Store
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 D = "https://data.skkg.ch/"
 AAT = "http://vocab.getty.edu/aat/"
 PREFIX = """PREFIX crm: <http://www.cidoc-crm.org/cidoc-crm/>
@@ -92,7 +92,7 @@ CREATE TABLE terms (
   id TEXT PRIMARY KEY, scheme_id TEXT, facet TEXT, label_de TEXT, label_en TEXT, label_fr TEXT,
   label TEXT, broader_id TEXT, year_from INTEGER, year_to INTEGER, matches TEXT,
   object_count INTEGER, object_count_with_narrower INTEGER, narrower_count INTEGER DEFAULT 0,
-  record_count INTEGER, record_kind TEXT, use_rank INTEGER DEFAULT 0);
+  record_count INTEGER, record_kind TEXT, use_rank INTEGER DEFAULT 0, life_place_count INTEGER);
 CREATE TABLE term_labels (term_id TEXT, lang TEXT, label TEXT);
 CREATE TABLE term_ancestors (term_id TEXT, ancestor_id TEXT, depth INTEGER,
   PRIMARY KEY (term_id, ancestor_id)) WITHOUT ROWID;
@@ -170,7 +170,7 @@ CREATE TABLE provenance_sources (provenance_id TEXT, seq INTEGER, type_id TEXT, 
 CREATE TABLE provenance_characteristics (provenance_id TEXT, seq INTEGER, type_ids TEXT, note TEXT);
 
 CREATE TABLE literature (
-  id TEXT PRIMARY KEY, label TEXT, title TEXT, type_id TEXT, signature TEXT, isbn TEXT,
+  id TEXT PRIMARY KEY, label TEXT, title TEXT, type_id TEXT, signature TEXT, isbn TEXT, isbn_key TEXT,
   year_label TEXT, year_from INTEGER, year_to INTEGER, place_id TEXT, series TEXT,
   series_id TEXT, volume TEXT, edition TEXT, pages TEXT, citation TEXT, language_id TEXT,
   urls TEXT);
@@ -240,6 +240,7 @@ CREATE INDEX ix_mm_holder ON multimedia(right_holder_id);
 CREATE INDEX ix_mm_photographer ON multimedia(photographer_id);
 CREATE INDEX ix_la_lit ON literature_actors(literature_id);
 CREATE INDEX ix_la_actor ON literature_actors(actor_id);
+CREATE INDEX ix_lit_isbn ON literature(isbn_key);
 CREATE INDEX ix_lr_lit ON literature_refs(literature_id);
 CREATE INDEX ix_lr_obj ON literature_refs(object_id);
 CREATE INDEX ix_lr_prov ON literature_refs(provenance_id);
@@ -280,6 +281,23 @@ def sid(iri):
 DATE_YEAR = re.compile(r"\s*(-?\d{1,4})(?!\d)")
 # The date form the sort keys compare as text after the year: every date of the 2026-10-28 dump.
 ISO_DATE = re.compile(r"-?\d{4}-\d{2}-\d{2}")
+
+
+def isbn_key(value):
+    """The key skkg_search_literature matches an ISBN or ISSN by: an ISBN as its 13 digits (an
+    ISBN-10 converted), an ISSN as its 8 characters (its barcode, 977 and 10 digits, converted),
+    else None. Mirrors isbnKey in src/tools/search_literature.js; a test finds every publication
+    by its recorded ISBN."""
+    s = re.sub(r"[^0-9X]", "", (value or "").upper())
+    if len(s) == 13 and s.startswith("977") and s.isdigit():
+        c = -sum(int(d) * (8 - i) for i, d in enumerate(s[3:10])) % 11
+        return s[3:10] + ("X" if c == 10 else str(c))
+    if len(s) == 10 and s[:9].isdigit():
+        s = "978" + s[:9]
+        return s + str(-sum(int(d) * (3 if i % 2 else 1) for i, d in enumerate(s)) % 10)
+    if len(s) == 13 and s[:3] in ("978", "979") and s.isdigit():
+        return s
+    return s if len(s) == 8 and s[:7].isdigit() else None
 
 
 def year(value):
@@ -1198,11 +1216,12 @@ def load_literature(src, db, used):
         found.sort(key=lambda x: (x[0] < 0, x[0], x[1][1]))
         ordered += [(*r, seq) for seq, (_, r) in enumerate(found)]
     db.executemany("INSERT INTO literature_actors VALUES (?,?,?,?,?)", ordered)
-    rows = [(l, d.get("label"), d.get("title"), d.get("type"), d.get("signature"), d.get("isbn"), d.get("year_label"),
+    rows = [(l, d.get("label"), d.get("title"), d.get("type"), d.get("signature"), d.get("isbn"), isbn_key(d.get("isbn")), d.get("year_label"),
              d.get("year_from"), d.get("year_to"), d.get("place"), d.get("series"), d.get("series_id"), d.get("volume"),
              d.get("edition"), d.get("pages"), d.get("citation"), d.get("language"),
              json.dumps(d["urls"]) if d.get("urls") else None) for l, d in lit.items()]
-    db.executemany("INSERT INTO literature VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+    db.executemany("INSERT INTO literature VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+    isbn_unread = sorted(d["isbn"] for d in lit.values() if d.get("isbn") and not isbn_key(d["isbn"]))
 
     refs = {}
     for l, r in q("literature", f"SELECT ?l ?r WHERE {{ {L} ?l crm:P165_incorporates ?r }}"):
@@ -1242,7 +1261,7 @@ def load_literature(src, db, used):
             links.append((l, t, None))
     db.executemany("INSERT INTO literature_links VALUES (?,?,?)", links)
     used.update(r[2] for r in links)
-    return {"publications": len(rows), "authors_not_in_label": unmatched}
+    return {"publications": len(rows), "authors_not_in_label": unmatched, "isbn_unread": isbn_unread}
 
 
 def load_exhibitions(src, db, used):
@@ -1511,6 +1530,10 @@ def count_terms(db):
         rows.append((obj, with_narrower, narrower.get(t, 0), rec, kind, rank, t))
     db.executemany("""UPDATE terms SET object_count = ?, object_count_with_narrower = ?, narrower_count = ?,
         record_count = ?, record_kind = ?, use_rank = ? WHERE id = ?""", rows)
+    # A country also counts the actors with a place of birth, death, formation, or dissolution in
+    # it, which the `place_country` filter of skkg_search_actors lists.
+    db.execute("""UPDATE terms SET life_place_count = (SELECT COUNT(DISTINCT e.actor_id) FROM actor_events e
+        WHERE e.place_id = terms.id AND e.kind IN ('birth', 'death', 'formation', 'dissolution')) WHERE facet = 'country'""")
     db.execute("DROP TABLE term_uses")
 
 
@@ -1948,7 +1971,7 @@ def main():
     report = {"ok": ok, "meta": info, "seconds": round(time.time() - start), "steps": steps, "counts": counts,
               "privacy_checks": [{"check": c, "ok": k, "detail": d} for c, k, d in checks],
               "count_drops": drops, "object_terms_without_term": unknown_terms,
-              "authors_not_in_label": lit["authors_not_in_label"], "life_dates": actors["life_dates"], "redacted": redacted,
+              "authors_not_in_label": lit["authors_not_in_label"], "isbn_unread": lit["isbn_unread"], "life_dates": actors["life_dates"], "redacted": redacted,
               "acquisitions_after_dump": future, "dates_not_iso": odd_dates, "currency_labels_not_mapped": odd_currencies,
               "object_links_to_missing": derived["object_links_to_missing"], "period_years": derived["period_years"],
               "size_bytes": tmp.stat().st_size, "unloaded_edges": edges, "query_timings": src.timings}
@@ -1977,6 +2000,8 @@ def render_report(r):
     lines += ["", f"Object terms without a term record: {r['object_terms_without_term']}.", "",
               f"Authors of publications with several authors whose name is not in the publication's label, "
               f"so their order is a guess: {r['authors_not_in_label']}.", "",
+              f"ISBNs that are neither 10 nor 13 digits nor an 8-character ISSN, which the `isbn` filter cannot find: "
+              f"{len(r['isbn_unread'])}" + (f" ({', '.join(repr(v) for v in r['isbn_unread'][:20])})" if r["isbn_unread"] else "") + ".", "",
               "Life dates of actors (births, deaths, formations, dissolutions) that SKKG gives only as a label, and place "
               "labels that stand for a country only: " + (", ".join(f"{k} {n}" for k, n in r["life_dates"].items()) or "none") + ".", "",
               "Rows whose protected names were replaced by \"Privatperson\": "
