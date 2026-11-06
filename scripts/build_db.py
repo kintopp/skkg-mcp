@@ -35,7 +35,7 @@ from pathlib import Path
 
 from pyoxigraph import BlankNode, Literal, NamedNode, Store
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 D = "https://data.skkg.ch/"
 AAT = "http://vocab.getty.edu/aat/"
 PREFIX = """PREFIX crm: <http://www.cidoc-crm.org/cidoc-crm/>
@@ -365,6 +365,15 @@ def fts_text(*parts):
 def is_anonymisation(label):
     """SKKG's placeholder for owners it does not name, in either capitalisation."""
     return (label or "").strip().casefold().startswith("unbekannte:r")
+
+
+NOT_STATED = frozenset({"ohne angaben", "ohne angabe", "keine angaben", "keine angabe"})
+
+
+def is_not_stated(label):
+    """SKKG's "not stated", written as an actor where a publication names no author, editor, or
+    publisher, in any capitalisation."""
+    return (label or "").strip().casefold() in NOT_STATED
 
 
 def scheme_of(term_id):
@@ -1204,6 +1213,13 @@ def load_literature(src, db, used):
         used.add(role)
     # The dump does not order the authors; the publication's label names them in citation order.
     names = dict(db.execute("SELECT id, label FROM actors"))
+    # "Ohne Angaben" is no actor, so its parts and its label-only actors are not loaded; a privacy
+    # check fails if any table still holds one of those actors.
+    not_stated = {a for a, lab in db.execute("SELECT id, label FROM actors WHERE kind = 'stub'") if is_not_stated(lab)}
+    dropped = Counter(names[r[1]] for r in actors if r[1] in not_stated)
+    actors = [r for r in actors if r[1] not in not_stated]
+    db.executemany("DELETE FROM actors WHERE id = ?", [(a,) for a in not_stated])
+    near = sorted({lab for a, lab in names.items() if a not in not_stated and lab and "angabe" in lab.casefold()})
     by_part = defaultdict(list)
     for r in actors:
         by_part[r[0], r[2]].append(r)
@@ -1261,7 +1277,8 @@ def load_literature(src, db, used):
             links.append((l, t, None))
     db.executemany("INSERT INTO literature_links VALUES (?,?,?)", links)
     used.update(r[2] for r in links)
-    return {"publications": len(rows), "authors_not_in_label": unmatched, "isbn_unread": isbn_unread}
+    return {"publications": len(rows), "authors_not_in_label": unmatched, "isbn_unread": isbn_unread,
+            "not_stated": {"actors": len(not_stated), "parts": dict(sorted(dropped.items()))}, "not_stated_near": near}
 
 
 def load_exhibitions(src, db, used):
@@ -1731,16 +1748,20 @@ def privacy_expectations(src):
     private |= {a for a, n in q("SELECT ?a ?n WHERE { ?a a skkg:Address ; crm:P1_is_identified_by ?n }")
                 if not n.endswith(("/name", "/order"))}
     private.add(ANON_ADDRESS)
-    anon = {ANON_ACTOR}
+    anon, not_stated = {ANON_ACTOR}, set()
     for pred in ("rdfs:label", "skos:prefLabel"):
-        anon |= {a for a, v in q(f"""SELECT ?a ?v WHERE {{ ?a a ?c VALUES ?c {{ crm:E21_Person crm:E39_Actor crm:E74_Group skkg:Actor }}
-            ?a {pred} ?v }}""") if is_anonymisation(v)}
+        for a, v in q(f"""SELECT ?a ?v WHERE {{ ?a a ?c VALUES ?c {{ crm:E21_Person crm:E39_Actor crm:E74_Group skkg:Actor }}
+            ?a {pred} ?v }}"""):
+            if is_anonymisation(v):
+                anon.add(a)
+            if is_not_stated(v):
+                not_stated.add(a)
     owners = {(p, o) for p, o in q("""SELECT ?p ?o WHERE { ?p a skkg:Provenance ; crm:P9_consists_of ?tr .
         ?tr crm:P11_had_participant ?ac . ?ac crm:P107_has_current_or_former_member ?o }""") if o in anon}
     sources = {(o, s) for o, s in q("""SELECT ?o ?s WHERE { ?o a skkg:Object ; crm:P24i_changed_ownership_through ?a .
         ?a a crm:E8_Acquisition ; crm:P23_transferred_title_from ?s }""") if s in anon}
     return {"pref": pref, "org": org, "place": place, "region": region, "private": private & pref.keys(),
-            "anon": anon, "owners": owners, "sources": sources, "names": Names(protected_names(src))}
+            "anon": anon, "owners": owners, "sources": sources, "names": Names(protected_names(src)), "not_stated": not_stated}
 
 
 def _schema(conn):
@@ -1841,6 +1862,15 @@ def privacy_checks(db, exp):
     out.append(("every address website is an outside URL", n == 0, f"{n} rows"))
     n = db.execute("SELECT COUNT(*) FROM objects WHERE inventory_number IS NULL").fetchone()[0]
     out.append(("every object has an inventory number (no stubs)", n == 0, f"{n} rows"))
+
+    # Every column of every table, not the loader's: a "not stated" actor in a creator or owner
+    # column is left dangling by the loader and must fail too.
+    db.execute("CREATE TEMP TABLE not_stated_ids (id TEXT PRIMARY KEY)")
+    db.executemany("INSERT INTO not_stated_ids VALUES (?)", [(a,) for a in sorted(exp["not_stated"])])
+    held = [f"{t}.{c}" for t, cols in _schema(db).items() if "fts" not in t for c in cols
+            if db.execute(f'SELECT 1 FROM "{t}" WHERE "{c}" IN (SELECT id FROM not_stated_ids) LIMIT 1').fetchone()]
+    db.execute("DROP TABLE not_stated_ids")
+    out.append(("no table holds an actor whose name is SKKG's \"not stated\" (\"Ohne Angaben\")", not held, ", ".join(held)))
     return out
 
 
@@ -1971,7 +2001,8 @@ def main():
     report = {"ok": ok, "meta": info, "seconds": round(time.time() - start), "steps": steps, "counts": counts,
               "privacy_checks": [{"check": c, "ok": k, "detail": d} for c, k, d in checks],
               "count_drops": drops, "object_terms_without_term": unknown_terms,
-              "authors_not_in_label": lit["authors_not_in_label"], "isbn_unread": lit["isbn_unread"], "life_dates": actors["life_dates"], "redacted": redacted,
+              "authors_not_in_label": lit["authors_not_in_label"], "isbn_unread": lit["isbn_unread"],
+              "not_stated": lit["not_stated"], "not_stated_near": lit["not_stated_near"], "life_dates": actors["life_dates"], "redacted": redacted,
               "acquisitions_after_dump": future, "dates_not_iso": odd_dates, "currency_labels_not_mapped": odd_currencies,
               "object_links_to_missing": derived["object_links_to_missing"], "period_years": derived["period_years"],
               "size_bytes": tmp.stat().st_size, "unloaded_edges": edges, "query_timings": src.timings}
@@ -2002,6 +2033,10 @@ def render_report(r):
               f"so their order is a guess: {r['authors_not_in_label']}.", "",
               f"ISBNs that are neither 10 nor 13 digits nor an 8-character ISSN, which the `isbn` filter cannot find: "
               f"{len(r['isbn_unread'])}" + (f" ({', '.join(repr(v) for v in r['isbn_unread'][:20])})" if r["isbn_unread"] else "") + ".", "",
+              f"Literature parts not loaded because their actor is SKKG's \"not stated\" ({r['not_stated']['actors']} label-only actors, not loaded either): "
+              + (", ".join(f"{k} {n}" for k, n in r["not_stated"]["parts"].items()) or "none")
+              + ". Other actor names with \"Angabe\", which the rule does not catch: "
+              + (", ".join(repr(v) for v in r["not_stated_near"][:20]) or "none") + ".", "",
               "Life dates of actors (births, deaths, formations, dissolutions) that SKKG gives only as a label, and place "
               "labels that stand for a country only: " + (", ".join(f"{k} {n}" for k, n in r["life_dates"].items()) or "none") + ".", "",
               "Rows whose protected names were replaced by \"Privatperson\": "

@@ -3,6 +3,8 @@
 // - `query` matches only the title, not the authors, editors, publishers, or series
 // - `author` matches a publisher, or misses an editor; `publisher` matches an author
 // - a name SKKG records as many stubs (one per publication) finds only one publication
+// - SKKG's "not stated" ("Ohne Angaben") is an author, editor, or publisher that a name filter finds
+//   or that a result lists, also in another capitalisation
 // - a name no author or editor has runs empty without a hint: to `publisher` when a publisher has
 //   it, to skkg_search_actors when only a person with a record of their own has it, but not when
 //   only SKKG's anonymisation ("Privatperson") has it, which skkg_search_actors never lists
@@ -38,14 +40,11 @@ import { outputSchema } from '../src/tools/search_literature.js';
 import { outputSchema as objectsSchema } from '../src/tools/search_objects.js';
 
 const NAME = 'skkg_search_literature';
-// Placeholders SKKG writes for "no author stated"; they are names of many stubs, not of an author.
-const PLACEHOLDERS = ['Ohne Angaben', 'Ohne Angabe', 'keine Angaben'];
 
 test('skkg_search_literature against the fixture database', { skip: FIXTURE_DB.skip }, async (t) => {
   const db = new DatabaseSync(FIXTURE_DB.path, { readOnly: true });
   const one = (sql, ...p) => db.prepare(sql).get(...p);
   const column = (sql, ...p) => db.prepare(sql).all(...p).map((r) => Object.values(r)[0]);
-  const placeholderList = PLACEHOLDERS.map((p) => `'${p}'`).join(', ');
   await withClient('search-literature-test', async (client) => {
     const search = (args) => callOk(client, NAME, args, outputSchema);
     const all = (args) => allPages(search, args, { limit: 50 });
@@ -89,7 +88,7 @@ test('skkg_search_literature against the fixture database', { skip: FIXTURE_DB.s
       for (const id of expected) assert.ok(got.includes(id), `${editor.label}: ${id}`);
       for (const [field, parts] of [['author', ['authors', 'editors']], ['publisher', ['publishers']]]) {
         const name = one(`SELECT a.label FROM literature_actors la JOIN actors a ON a.id = la.actor_id WHERE la.kind IN (${field === 'author' ? "'author', 'editor'" : "'publisher'"})
-            AND a.label NOT IN (${placeholderList}) AND a.label GLOB '[A-Z][a-z]*' GROUP BY a.label ORDER BY COUNT(*) DESC LIMIT 1`).label;
+            AND a.label GLOB '[A-Z][a-z]*' GROUP BY a.label ORDER BY COUNT(*) DESC LIMIT 1`).label;
         const word = name.split(' ').at(-1);
         const { rows } = await all({ [field]: word });
         assert.ok(rows.length > 0, `${field} ${word}`);
@@ -102,11 +101,27 @@ test('skkg_search_literature against the fixture database', { skip: FIXTURE_DB.s
 
     await t.test('a name SKKG records as many stubs finds every publication under it', async () => {
       const name = one(`SELECT a.label FROM literature_actors la JOIN actors a ON a.id = la.actor_id WHERE la.kind = 'author'
-          AND a.label NOT IN (${placeholderList}) GROUP BY a.label HAVING COUNT(DISTINCT a.id) > 2 ORDER BY COUNT(*) DESC LIMIT 1`).label;
+          GROUP BY a.label HAVING COUNT(DISTINCT a.id) > 2 ORDER BY COUNT(*) DESC LIMIT 1`).label;
       const expected = column(`SELECT DISTINCT la.literature_id FROM literature_actors la JOIN actors a ON a.id = la.actor_id
           WHERE la.kind = 'author' AND a.label = ?`, name);
       const got = await idsOf({ author: name });
       for (const id of expected) assert.ok(got.includes(id), `${name}: ${id}`);
+    });
+
+    await t.test('SKKG\'s "not stated" is no author, editor, or publisher', async () => {
+      // The partial dump has about a hundred publications with "Ohne Angaben" in their label.
+      assert.ok(column("SELECT id FROM literature WHERE label LIKE '%Ohne Angabe%'").length > 10);
+      for (const name of ['Ohne Angaben', 'Ohne Angabe', 'keine Angaben', 'Keine Angaben', 'keine Angabe']) {
+        for (const field of ['author', 'publisher']) {
+          assert.match(await callError(client, NAME, { [field]: name }), /no (author or editor|publisher)/, `${field} ${name}`);
+        }
+      }
+      const { rows } = await all({ query: '"Ohne Angaben"' });
+      assert.ok(rows.length > 0);
+      for (const r of rows) {
+        const named = ['authors', 'editors', 'publishers'].flatMap((p) => r[p] ?? []).map((x) => x.name.toLowerCase());
+        assert.ok(!named.some((n) => n.includes('angabe')), `${r.id}: ${JSON.stringify(named)}`);
+      }
     });
 
     await t.test('a name no author has is refused with where to go instead', async () => {

@@ -11,7 +11,9 @@ Ways the checks could fail, which the tests below pin:
 - the anonymisation is checked for presence, not for content and links, or an anonymised owner's
   own row (its name fields, gender, life data) or nationality is not checked, though the row feeds
   the actor search, or the owners checked are those the loader flagged, not those of the store;
-- the allowed fields (acquisition notes) or a person's own organisation are refused.
+- the allowed fields (acquisition notes) or a person's own organisation are refused;
+- an actor whose name is SKKG's "not stated" passes when it stays as a part, as an actor row, or in
+  any other column, or the actors checked are those the loader dropped, not those of the store.
 
 Values from the store are injected but never printed: assertions compare check names only.
 
@@ -38,6 +40,7 @@ NAMES = "no protected name outside"
 FTS = "full-text table holds exactly"
 WEBSITE = "outside URL"
 STUBS = "no stubs"
+NOT_STATED = 'whose name is SKKG\'s "not stated"'
 
 
 @pytest.fixture(scope="module")
@@ -331,3 +334,27 @@ def test_redaction_replaces_each_name_and_keeps_the_rest():
 
 def test_no_persons_match_nothing():
     assert not b.Names({}).found("Erika Beispiel")
+
+
+# ------------------------------------------------------------ SKKG's "not stated" (review of da75a8e)
+
+def test_the_store_gives_not_stated_actors_to_check(env):
+    assert len(env["exp"]["not_stated"]) > 10
+
+
+def test_a_not_stated_part_fails(env):
+    a = min(env["exp"]["not_stated"])
+    lit = env["conn"].execute("SELECT MIN(id) FROM literature").fetchone()[0]
+    assert fails(env, NOT_STATED, ("INSERT INTO literature_actors VALUES (?, ?, 'author', NULL, 0)", lit, a))
+
+
+def test_a_not_stated_actor_row_fails_also_without_a_part(env):
+    a = min(env["exp"]["not_stated"])
+    assert fails(env, NOT_STATED, ("INSERT INTO actors (id, kind, label) VALUES (?, 'stub', 'Ohne Angaben')", a))
+
+
+def test_a_not_stated_actor_in_any_other_table_fails_and_is_named(env):
+    a = min(env["exp"]["not_stated"])
+    for table, col in (("object_creators", "actor_id"), ("provenance", "owner_id")):
+        sql = f"UPDATE {table} SET {col} = ? WHERE rowid = (SELECT MIN(rowid) FROM {table})"
+        assert detail(env, NOT_STATED, (sql, a)) == f"{table}.{col}"

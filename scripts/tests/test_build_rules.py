@@ -23,7 +23,11 @@ Ways the rules could fail, which the tests below pin:
 - a column that holds object ids does not declare its link, so the count misses it;
 - a currency label that is neither an alias nor an ISO-like code passes without a count;
 - an anonymised owner keeps a gender or a nationality the store gives it, which the privacy
-  check would have to tell from a real one.
+  check would have to tell from a real one;
+- SKKG's "not stated" ("Ohne Angaben", "keine Angabe") is loaded as an author, editor, or
+  publisher, or as a name-only actor, in another capitalisation or with spaces; a real name that
+  only contains "Angabe" is dropped, or not counted as one the rule does not catch; the parts
+  dropped are not counted.
 
 Run: uv run --with pyoxigraph --with pytest python -I -m pytest -q scripts/tests
 """
@@ -283,3 +287,41 @@ def test_a_nationality_loads_its_country_term_not_the_citizenship_node():
     b.load_actors(b.Source(store), empty_db(), used)
     assert "type/20007/20047" in used
     assert not any(t and t.endswith("/citizenship") for t in used)
+
+
+@pytest.mark.parametrize("label, want", [
+    ("Ohne Angaben", True), ("Ohne Angabe", True), ("keine Angaben", True), ("Keine Angaben", True),
+    (" keine Angabe ", True), ("OHNE ANGABEN", True),
+    ("Dr. Med. Anonymus", False), ("Angaben zur Person", False), ("Ohne Angaben, Hans", False), ("", False), (None, False),
+])
+def test_not_stated_is_skkgs_placeholder_in_any_capitalisation_and_nothing_else(label, want):
+    assert b.is_not_stated(label) == want
+
+
+def test_not_stated_parts_and_their_label_only_actors_are_not_loaded_and_are_counted():
+    from pyoxigraph import Store, RdfFormat
+    d = "https://data.skkg.ch/"
+    store = Store()
+    store.load(f"""@prefix crm: <http://www.cidoc-crm.org/cidoc-crm/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix frbroo: <http://iflastandards.info/ns/fr/frbr/frbroo/> .
+<{d}literature/1> a <https://ontology.skkg.ch/Literature> ; skos:prefLabel "Literatur: Autor, A.; Ohne Angaben, Titel" ;
+    frbroo:R24i_was_created_through <{d}literature/1/pub> .
+<{d}literature/1/pub> crm:P9_consists_of <{d}literature/1/pub/authoring/1>, <{d}literature/1/pub/authoring/2>, <{d}literature/1/pub/editing> .
+<{d}literature/1/pub/authoring/1> crm:P14_carried_out_by <{d}person/10> .
+<{d}literature/1/pub/authoring/2> crm:P14_carried_out_by <{d}person/11> .
+<{d}literature/1/pub/editing> crm:P14_carried_out_by <{d}actor/20> .
+<{d}person/10> a crm:E21_Person ; rdfs:label "Ohne Angaben" .
+<{d}person/11> a crm:E21_Person ; rdfs:label "Autor, A." .
+<{d}actor/20> a crm:E39_Actor ; rdfs:label " Keine Angabe " .
+<{d}actor/21> a crm:E39_Actor ; rdfs:label "Angaben zur Person" .
+""".encode(), format=RdfFormat.TURTLE)
+    db = empty_db()
+    src = b.Source(store)
+    b.load_actors(src, db, set())
+    r = b.load_literature(src, db, set())
+    assert db.execute("SELECT actor_id, kind FROM literature_actors").fetchall() == [("person/11", "author")]
+    assert sorted(a for (a,) in db.execute("SELECT id FROM actors WHERE kind = 'stub'")) == ["actor/21", "person/11"]
+    assert r["not_stated"] == {"actors": 2, "parts": {" Keine Angabe ": 1, "Ohne Angaben": 1}}
+    assert r["not_stated_near"] == ["Angaben zur Person"]

@@ -17,7 +17,7 @@ MUTATIONS = [
     ("organisation from the store", "same = all(", "same = True or all(", "organisation_column"),
     ("other labels from the store", "bad_other += not (same and label in exp[\"pref\"].get(a, ()))", "bad_other += 0", "another_address"),
     ("anonymous nodes by content", "n == 1 and m == 1", "True", "anonymous_person_node or anonymous_address_node"),
-    ("placeholder label stripped", "return (label or \"\").strip().casefold()", "return (label or \"\").casefold()", "leading_space"),
+    ("placeholder label stripped", "return (label or \"\").strip().casefold().startswith(", "return (label or \"\").casefold().startswith(", "leading_space"),
     ("anonymised owners keep their label", "relabelled = sum(", "relabelled = 0 * sum(", "unflagged_or_relabelled"),
     ("anonymised owners have no child rows", "children = sum(", "children = 0 * sum(", "attached"),
     ("anonymised links from the store", "owners == exp[\"owners\"] and", "", "replaced_in_a_period"),
@@ -72,6 +72,12 @@ MUTATIONS = [
     ("acquisition sort key stored", '1 if re.search(r"\\bTotal\\b", notes) else 0, c[0], c[1], y, sort_key(y, d.get("date"))))',
      '1 if re.search(r"\\bTotal\\b", notes) else 0, c[0], c[1], y, None))', "dated_acquisition"),
     ("odd currency labels counted", "if s and s not in CURRENCY_ALIASES and not re.fullmatch(r\"[A-Z]{3}\", s):", "if False:", "currency_labels"),
+    ('not stated read from the store', '            if is_not_stated(v):\n                not_stated.add(a)', '            if False:\n                not_stated.add(a)', 'not_stated'),
+    ('not stated checked in every table', 'if "fts" not in t for c in cols', 'if t == "literature_actors" for c in cols', 'actor_row or any_other_table'),
+    ('not stated in any capitalisation', 'return (label or "").strip().casefold() in NOT_STATED', 'return (label or "").strip() in NOT_STATED', 'not_stated_is or label_only_actors'),
+    ('not stated parts dropped', '    actors = [r for r in actors if r[1] not in not_stated]\n', '', 'label_only_actors'),
+    ('not stated actors dropped', 'db.executemany("DELETE FROM actors WHERE id = ?", [(a,) for a in not_stated])', 'None', 'label_only_actors'),
+    ('names near not stated counted', 'and lab and "angabe" in lab.casefold()}', 'and False}', 'label_only_actors'),
 ]
 
 
