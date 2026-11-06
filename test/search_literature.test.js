@@ -14,9 +14,12 @@
 // - literature_type: a term of another vocabulary is refused without naming the tool that takes it
 // - series matches inside a word, or an unknown series runs empty without the series SKKG uses
 // - isbn misses hyphens or an "ISBN" prefix, an ISBN-10 given for a recorded ISBN-13 or the
-//   reverse, an X check digit, or an ISSN; a value that is no ISBN runs instead of being refused
+//   reverse, an X check digit, or an ISSN; a value that is no ISBN runs instead of being refused;
+//   an ISSN barcode (977…) is refused or resolves to the wrong ISSN, also one whose check is X; the
+//   description promises that every form finds the other although SKKG recorded some wrong check digits
 // - refers_to_object misses the publications of an object given by inventory number, or lists one
-//   that does not refer to it
+//   that does not refer to it; the description promises the publications of its provenance periods
+// - the description says an author is recorded once per publication, or an id finds only one
 // - object_count differs from what skkg_search_objects lists with `literature`, e.g. by counting
 //   references to objects the database does not hold
 // - authors come out of their recorded order; a publication with many authors breaks the size limit
@@ -220,6 +223,24 @@ test('skkg_search_literature against the fixture database', { skip: FIXTURE_DB.s
       for (const bad of ['12', 'ISBN', '978-3-855']) {
         assert.match(await callError(client, NAME, { isbn: bad }), /is not an ISBN \(10 or 13 digits\) or an ISSN/, bad);
       }
+    });
+
+    await t.test('an ISSN barcode is matched as its ISSN, also one whose check is X', async () => {
+      // 977 1013694 00 5 is the barcode of ISSN 1013-6940, 977 2434561 00 6 that of ISSN 2434-561X.
+      for (const [barcode, issn] of [['977-1013694-00-5', '10136940'], ['9772434561006', '2434561X']]) {
+        const r = await callOk(client, NAME, { isbn: barcode, limit: 1 }, outputSchema);
+        assert.equal(r.applied_filters.isbn, issn, barcode);
+      }
+    });
+
+    await t.test('the description says what a name, an id, an ISBN, and refers_to_object find', async () => {
+      const { tools } = await client.listTools();
+      const tool = tools.find((x) => x.name === NAME);
+      assert.match(tool.description, /only by name, often with one record per publication/);
+      assert.match(tool.description, /an id only those of that record/);
+      const p = tool.inputSchema.properties;
+      assert.match(p.isbn.description, /unless SKKG recorded a wrong check digit, so if an ISBN finds nothing, try the title in `query`/);
+      assert.match(p.refers_to_object.description, /the object itself, not those that document only one of its provenance periods/);
     });
 
     await t.test('refers_to_object lists the publications that cite the object, also by inventory number', async () => {

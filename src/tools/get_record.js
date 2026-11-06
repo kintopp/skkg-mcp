@@ -313,10 +313,12 @@ function getActor(db, id, want, args, ctx) {
   } else if (a.kind === 'stub') {
     const parts = roles.filter((r) => LITERATURE_KINDS.includes(r.as)).map((r) => r.as);
     kind = STUB_KINDS.find((k) => parts.includes(k)) ?? 'actor';
-    const field = parts.includes('publisher') ? 'publisher' : 'author';
+    const lists = !parts.includes('publisher') ? '`author` and this name lists all their publications'
+      : parts.every((p) => p === 'publisher') ? '`publisher` and this name lists all their publications'
+        : '`publisher` and this name lists those it published, with `author` those it wrote or edited';
     note = parts.length
       ? `SKKG records only the name of this ${parts.join(' and ')}, from its literature, often as one record per publication: ` +
-        `${SEARCH_LITERATURE_TOOL_NAME} with \`${field}\` and this name lists all their publications.`
+        `${SEARCH_LITERATURE_TOOL_NAME} with ${lists}.`
       : 'SKKG records only the name of this actor.';
   }
   const out = {

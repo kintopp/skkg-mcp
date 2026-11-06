@@ -39,9 +39,9 @@ const description =
   'Search the publications SKKG records, by title, author, year, and type. ' +
   'Most are typed only "Literatur"; exhibition and auction catalogues, monographs, and catalogues raisonnés have types of their own. ' +
   'Filters: `query` (words of the title, authors, editors, publishers, and series), author (authors and editors), ' +
-  'publisher, a year range, literature_type, series, isbn, and refers_to_object (the publications that cite or show an object). ' +
-  'SKKG records authors, editors, and publishers only by name, and an author once per publication, so search them by name: ' +
-  'a name finds all their publications, an id only the one of that record. ' +
+  'publisher, a year range, literature_type, series, isbn, and refers_to_object (the publications that cite or show an object itself). ' +
+  'SKKG records authors, editors, and publishers only by name, often with one record per publication, so search them by name: ' +
+  'a name finds all their publications, an id only those of that record. ' +
   'Each result gives its authors, editors, and publishers with ids, its year, place, series, ISBN, and object_count, ' +
   'the objects it refers to. For one publication with its objects (page, figure, catalogue number) and the provenance ' +
   'periods it documents, use skkg_get_record with its id; for its objects as search rows, skkg_search_objects with `literature`; ' +
@@ -65,8 +65,10 @@ const filterShape = {
     'Series, as SKKG writes it, e.g. "Neujahrsblatt", "Insel-Bücherei". Each word matches the start of a word, ignoring case ' +
     'and accents; applied_filters lists the series matched'),
   isbn: z.string().min(1).max(40).optional().describe(
-    'ISBN-10 or ISBN-13, with or without hyphens; either form finds the other. An ISSN (8 characters) finds a periodical'),
-  refers_to_object: idField('Object id or inventory number: the publications that cite or show the object'),
+    'ISBN-10 or ISBN-13, with or without hyphens; either form finds the other, unless SKKG recorded a wrong check digit, ' +
+    'so if an ISBN finds nothing, try the title in `query`. An ISSN (8 characters) finds a periodical'),
+  refers_to_object: idField('Object id or inventory number: the publications that cite or show the object itself, ' +
+    'not those that document only one of its provenance periods'),
 };
 const FILTERS = Object.keys(filterShape);
 const inputSchema = z.object({

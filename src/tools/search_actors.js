@@ -47,7 +47,8 @@ const description =
   'Each result lists its roles with their counts. SKKG\'s anonymisation ("Privatperson", "Unbekannte:r Eigentümer:in") ' +
   'is never a result: never try to identify those persons. Actors SKKG records only by name, most of them authors, ' +
   'editors, and publishers of literature, are not listed; name_only counts those that match and names a few, each with ' +
-  `the ${SEARCH_LITERATURE_TOOL_NAME} arguments that list their publications. ` +
+  `the ${SEARCH_LITERATURE_TOOL_NAME} arguments that list their publications ` +
+  '(for a publisher, those it published; `author` with the same name lists what it wrote or edited). ' +
   'For one actor\'s full record, with their objects and literature, use skkg_get_record with its id; for the objects ' +
   'of a creator, skkg_search_objects with `creator`; for labels of gender and the country codes, skkg_find_terms.';
 
@@ -121,11 +122,12 @@ export const outputSchema = z.object({
       id: z.string(),
       name: str(),
       literature_filter: z.object({ author: str(), publisher: str() }).optional()
-        .describe(`${SEARCH_LITERATURE_TOOL_NAME} arguments that list the publications under this name`),
+        .describe(`${SEARCH_LITERATURE_TOOL_NAME} arguments that list the publications under this name; ` +
+          '`publisher` lists only those it published, so pass the same name as `author` for what it wrote or edited'),
     })),
   }).optional().describe('Actors SKKG records only by name that meet the same filters; they are not listed. ' +
     `examples gives up to five distinct names, each with one id for skkg_get_record and, for authors, editors, and publishers, ` +
-    `the ${SEARCH_LITERATURE_TOOL_NAME} arguments that list their publications`),
+    'its literature_filter'),
   applied_filters: appliedOut().optional(),
   warnings: z.array(z.string()).optional(),
   data_as_of: z.string().optional(),
@@ -213,8 +215,9 @@ function fromSql(c, kinds) {
 }
 
 // The skkg_search_literature arguments that list a name-only actor's publications under its name:
-// `publisher` for a publisher (also when it edits, as skkg_get_record names it), `author` for an
-// author or editor; none for the few that no publication names, or a name without a word.
+// `publisher` for a publisher (also one that writes or edits, whose other publications `author`
+// lists, as the descriptions and skkg_get_record say), `author` for an author or editor; none for
+// the few that no publication names, or a name without a word.
 function literatureFilter(db, id, name) {
   if (!name || !ftsQuery(name)) return undefined;
   const parts = stmt(db, 'SELECT DISTINCT kind FROM literature_actors WHERE actor_id = ?').all(id).map((r) => r.kind);
@@ -268,8 +271,9 @@ export function searchActors(db, meta, args) {
   const { warnings } = c;
   if (total === 0) {
     warnings.push(nameOnly
-      ? 'No person or group with a record of its own matches; see name_only for the actors SKKG records only by name, ' +
-        `and ${SEARCH_LITERATURE_TOOL_NAME} with an example's literature_filter for their publications.`
+      ? 'No person or group with a record of its own matches; see name_only for the actors SKKG records only by name' +
+        (nameOnly.examples.some((e) => e.literature_filter)
+          ? `, and ${SEARCH_LITERATURE_TOOL_NAME} with an example's literature_filter for their publications.` : '.')
       : 'No person or group matches these filters together. Drop one filter at a time to see which one empties the result.');
   }
   const past = pastEnd(args.offset, total, 'actors');

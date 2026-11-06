@@ -11,7 +11,8 @@
 // - an object row lacks image_license or object_copyright
 // - the filter given for a list or a role lists other objects than the tool counted, or a role
 //   that has an exact filter gets none
-// - an actor SKKG knows only from literature is called by the wrong part (an editor a "publisher")
+// - an actor SKKG knows only from literature is called by the wrong part (an editor a "publisher"),
+//   or its note says `publisher` lists all its publications when it also wrote or edited some
 // - a publication's authors are listed out of citation order
 // - SKKG's placeholder address "Privatperson" is not flagged as a private person
 // - counts.external leaves out the links or GND rows that the section lists
@@ -110,11 +111,20 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
       const both = await get({ id: 'actor/5412749E-E5B1-358D-AB2D-FA598F77886E' });
       assert.equal(both.summary.kind, 'publisher');
       assert.equal(both.summary.note, 'SKKG records only the name of this editor and publisher, from its literature, often as one ' +
-        'record per publication: skkg_search_literature with `publisher` and this name lists all their publications.');
+        'record per publication: skkg_search_literature with `publisher` and this name lists those it published, ' +
+        'with `author` those it wrote or edited.');
       // person/1047 has no skkg:Person record and is no author: it is an influence on objects.
       const named = await get({ id: 'person/1047' });
       assert.equal(named.summary.kind, 'actor');
       assert.equal(named.summary.note, 'SKKG records only the name of this actor.');
+    });
+
+    await t.test('a name-only actor that only publishes is sent to `publisher` for all its publications', async () => {
+      // actor/00568FC2… is a publisher and nothing else.
+      const r = await get({ id: 'actor/00568FC2-091E-3451-9AA5-9477037D2356' });
+      assert.equal(r.summary.kind, 'publisher');
+      assert.equal(r.summary.note, 'SKKG records only the name of this publisher, from its literature, often as one record ' +
+        'per publication: skkg_search_literature with `publisher` and this name lists all their publications.');
     });
 
     await t.test('counts.external counts every row of the external section', async () => {

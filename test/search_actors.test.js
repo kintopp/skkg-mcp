@@ -7,7 +7,10 @@
 // - an actor SKKG records only by name (a literature author) is listed, or is dropped without a
 //   count; name_only repeats one name, or gives an id skkg_get_record refuses; a kind filter,
 //   which leaves them out, still counts them; an empty result with name_only says nothing matched;
-//   an example's literature_filter does not list its publications, or names `author` for a publisher
+//   an example's literature_filter does not list its publications, or names `author` for a publisher;
+//   the descriptions say `publisher` lists all of a publisher's publications when `author` must list
+//   what it wrote or edited, or `author` does not; an empty result points to a literature_filter
+//   that no example has
 // - a year range misses an actor born in its first or last year (an equal range included), an
 //   open range is closed, an actor without the year matches, or a reversed range runs; a year
 //   SKKG gives only in the label ("14.12.1879") is missed; a group's formation is not its start
@@ -144,6 +147,39 @@ test('skkg_search_actors against the fixture database', { skip: FIXTURE_DB.skip 
       const none = await search({ query: 'Xqzwvbnm' });
       assert.equal(none.name_only, undefined);
       assert.match(none.warnings.join(' '), /No person or group matches/);
+    });
+
+    await t.test('an empty result points to literature_filter only when an example has one', async () => {
+      const ruskin = await search({ query: 'John Ruskin' });
+      assert.match(ruskin.warnings.join(' '), /with an example's literature_filter for their publications/);
+      const stub = one(`SELECT a.label FROM actors a WHERE a.kind = 'stub' AND a.id NOT IN (SELECT actor_id FROM literature_actors)
+          AND a.label NOT IN (SELECT b.label FROM actors b JOIN literature_actors la ON la.actor_id = b.id)
+          AND a.label NOT GLOB '*"*' ORDER BY a.id LIMIT 1`);
+      const r = await search({ query: `"${stub.label}"` });
+      assert.equal(r.total, 0, stub.label);
+      assert.ok(r.name_only.examples.every((e) => !e.literature_filter), JSON.stringify(r.name_only));
+      assert.match(r.warnings.join(' '), /see name_only for the actors SKKG records only by name\./);
+      assert.doesNotMatch(r.warnings.join(' '), /literature_filter/);
+    });
+
+    await t.test('the descriptions say a publisher\'s literature_filter lists what it published, and `author` lists the rest', async () => {
+      const { tools } = await client.listTools();
+      const tool = tools.find((x) => x.name === NAME);
+      assert.match(tool.description, /for a publisher, those it published; `author` with the same name lists what it wrote or edited/);
+      const field = tool.outputSchema.properties.name_only.properties.examples.items.properties.literature_filter;
+      assert.match(field.description, /`publisher` lists only those it published, so pass the same name as `author` for what it wrote or edited/);
+      // What the descriptions promise: `author` with a mixed publisher's name lists what it wrote or edited.
+      const lit = (args) => callOk(client, 'skkg_search_literature', { ...args, limit: 50 }, literatureSchema);
+      const mixed = db.prepare(`SELECT a.id, a.label FROM actors a WHERE a.kind = 'stub'
+          AND EXISTS (SELECT 1 FROM literature_actors WHERE actor_id = a.id AND kind = 'publisher')
+          AND EXISTS (SELECT 1 FROM literature_actors WHERE actor_id = a.id AND kind IN ('author', 'editor'))`).all();
+      assert.ok(mixed.length >= 1, 'the fixture has a publisher that also wrote or edited');
+      for (const a of mixed) {
+        const listed = new Set((await allPages(lit, { author: a.label }, { limit: 50 })).rows.map((x) => x.id));
+        for (const l of column(`SELECT literature_id FROM literature_actors WHERE actor_id = ? AND kind IN ('author', 'editor')`, a.id)) {
+          assert.ok(listed.has(l), `${a.id}: ${l}`);
+        }
+      }
     });
 
     await t.test('kind keeps persons or groups', async () => {
