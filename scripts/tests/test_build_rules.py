@@ -25,6 +25,9 @@ Ways the rules could fail, which the tests below pin:
   untyped item is published, or SKKG's own published primary is replaced; a multimedia record's
   kind is not SKKG's media type; the report miscounts the primary images that are not SKKG's or
   are documents;
+- a multimedia record that no object or exhibition links (a library cover named by a shelf mark that
+  equals an inventory number) is kept, or one linked by an exhibition only is dropped, or the report
+  miscounts them;
 - a currency label that is neither an alias nor an ISO-like code passes without a count;
 - an anonymised owner keeps a gender or a nationality the store gives it, which the privacy
   check would have to tell from a real one;
@@ -192,6 +195,13 @@ def test_currency_labels_that_are_no_alias_and_no_iso_code_are_counted():
     db.execute("INSERT INTO provenance (id, currency_id, price_value) VALUES ('provenance/a', 'type/c/3', 5)")
     assert b.set_currency_codes(db) == {"MK": 0, "RM": 2}
     assert dict(db.execute("SELECT object_id, currency_code FROM acquisitions")) == {"object/1": "DEM", "object/2": "RM", "object/3": "RM"}
+
+
+@pytest.mark.skipif(not (DB and DB.exists()), reason="needs the fixture database (test/CLAUDE.md)")
+def test_the_fixture_holds_no_multimedia_that_no_object_or_exhibition_links():
+    db = sqlite3.connect(f"file:{DB}?mode=ro", uri=True)
+    assert db.execute(f"SELECT COUNT(*) FROM multimedia WHERE {b.UNLINKED_MULTIMEDIA}").fetchone()[0] == 0
+    assert db.execute("SELECT COUNT(*) FROM multimedia").fetchone()[0] > 1000
 
 
 @pytest.mark.skipif(not (DB and DB.exists()), reason="needs the fixture database (test/CLAUDE.md)")
@@ -377,3 +387,17 @@ def test_the_primary_image_is_skkgs_when_published_else_the_first_that_is_no_doc
         "object/4": "multimedia/doc", "object/5": None}
     assert out == {"kinds": {"document": 2, "image": 2, "unknown": 1}, "not_skkg_primary": 3,
                    "document_without_published_image": 1, "skkg_primary_document_though_an_image_is_published": 1}
+
+
+def test_multimedia_that_no_object_or_exhibition_links_is_dropped_and_counted():
+    db = empty_db()
+    iiif = "https://iiif.digital.skkg.ch/iiif/3/x"
+    db.executemany("INSERT INTO multimedia (id, iiif_service) VALUES (?, ?)",
+                   [("multimedia/on-object", iiif), ("multimedia/on-exhibition", iiif), ("multimedia/cover", iiif),
+                    ("multimedia/unpublished", None)])
+    db.execute("INSERT INTO objects (id) VALUES ('object/1')")
+    db.execute("INSERT INTO object_multimedia VALUES ('object/1', 'multimedia/on-object', 1, 1)")
+    db.execute("INSERT INTO exhibition_multimedia VALUES ('exhibition/1', 'multimedia/on-exhibition')")
+    out = b.derive(db)["multimedia_unlinked"]
+    assert sorted(i for (i,) in db.execute("SELECT id FROM multimedia")) == ["multimedia/on-exhibition", "multimedia/on-object"]
+    assert out == {"records": 2, "with_iiif_image": 1}

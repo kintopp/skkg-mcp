@@ -74,7 +74,16 @@ const sized = (url) => {
 const tokens = (w, h) => Math.ceil(w / 28) * Math.ceil(h / 28);
 
 test('skkg_inspect_image against the fixture database', { skip: FIXTURE_DB.skip }, async (t) => {
-  const { db, meta } = openDatabase(FIXTURE_DB.path);
+  // WIDE and SMALL fix the sizes the tests below were checked against on SKKG's IIIF server; the build
+  // drops them, since no record of the dump links them, so a copy of the fixture puts them back.
+  const copy = makeTestDb({ from: FIXTURE_DB.path });
+  t.after(copy.cleanup);
+  const add = copy.db.prepare('INSERT INTO multimedia (id, iiif_service, width, height) VALUES (?, ?, ?, ?)');
+  for (const [id, w, h] of [[WIDE, 5228, 3487], [SMALL, 300, 399]]) {
+    add.run(id, `https://iiif.digital.skkg.ch/iiif/3/${id.slice('multimedia/'.length)}`, w, h);
+  }
+  copy.db.close();
+  const { db, meta } = openDatabase(copy.path);
   const call = (args, respond = sized) => withFetch(respond, async (calls) => {
     const res = await inspectImage(db, meta, { max_long_edge: 1600, lang: 'de', ...args });
     assertWireValid(outputSchema, res.structuredContent);
@@ -404,9 +413,9 @@ test('skkg_inspect_image refuses bad input before any fetch', { skip: FIXTURE_DB
       assert.doesNotMatch(missing, /skkg_inspect_image/);
     });
     await t.test('the hint for an image on no object names no object tool', async () => {
-      // A published image linked to no object or exhibition in the partial dump.
-      const text = await callError(client, 'skkg_get_record', { id: 'multimedia/3471f9ce-b5fc-4029-bd61-e475b37eb23f' });
-      assert.match(text, /use skkg_inspect_image with id "multimedia\/3471f9ce-b5fc-4029-bd61-e475b37eb23f"/);
+      // A published image of an exhibition, linked to no object.
+      const text = await callError(client, 'skkg_get_record', { id: 'multimedia/032fa8a6-360a-4f8c-ba3c-b68e603b5c88' });
+      assert.match(text, /use skkg_inspect_image with id "multimedia\/032fa8a6-360a-4f8c-ba3c-b68e603b5c88"/);
       assert.doesNotMatch(text, /skkg_get_object/);
     });
     await t.test('the description points to the note for detail, not to a larger max_long_edge alone', async () => {

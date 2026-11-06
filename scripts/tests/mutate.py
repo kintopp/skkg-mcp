@@ -36,6 +36,9 @@ MUTATIONS = [
     ("loader drops an anonymised owner's nationality", "[r for r in nat if r[0] not in anonymised]", "nat", "anonymised_owner_is_loaded"),
     ("anonymised owner's life data checked", "death_to, death_place, death_place_id, biography) IS NOT NULL)", "death_to, death_place, death_place_id, biography) IS NOT NULL AND 0)", "own_row"),
     # The data rules of test_build_rules.py.
+    ("unlinked multimedia dropped", "    unlinked = drop_unlinked_multimedia(db)\n", "    unlinked = {}\n", "no_object_or_exhibition"),
+    ("exhibition images kept", "\"AND NOT EXISTS (SELECT 1 FROM exhibition_multimedia x WHERE x.multimedia_id = multimedia.id)\")", "\"\")", "no_object_or_exhibition"),
+    ("unlinked published counted", "COUNT(iiif_service) FROM multimedia WHERE {UNLINKED_MULTIMEDIA}", "COUNT(*) FROM multimedia WHERE {UNLINKED_MULTIMEDIA}", "no_object_or_exhibition"),
     ("primary fallback skips documents", "ORDER BY m.kind IS 'document', om.seq IS NULL, om.seq LIMIT 1", "ORDER BY om.seq IS NULL, om.seq LIMIT 1", "primary_image"),
     ("documents last, untyped kept", "ORDER BY m.kind IS 'document', om.seq IS NULL, om.seq LIMIT 1", "ORDER BY m.kind IS NOT 'image', om.seq IS NULL, om.seq LIMIT 1", "primary_image"),
     ("kind from the media type", 'MEDIA_KINDS = {"Bild": "image", "Dokument": "document", "Ton": "sound"}', 'MEDIA_KINDS = {"Bild": "image", "Ton": "sound"}', "primary_image"),

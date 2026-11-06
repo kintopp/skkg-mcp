@@ -255,6 +255,7 @@ CREATE INDEX ix_eo_exh ON exhibition_objects(exhibition_id);
 CREATE INDEX ix_eo_obj ON exhibition_objects(object_id);
 CREATE INDEX ix_eorg_exh ON exhibition_organisers(exhibition_id);
 CREATE INDEX ix_em_exh ON exhibition_multimedia(exhibition_id);
+CREATE INDEX ix_em_mm ON exhibition_multimedia(multimedia_id);
 CREATE INDEX ix_gm_group ON object_group_members(group_id);
 CREATE INDEX ix_gm_obj ON object_group_members(object_id);
 """
@@ -1430,6 +1431,7 @@ def derive(db):
         missing[f"{table}.{col}"] = db.execute(f"SELECT COUNT(*) FROM {table} WHERE {where}").fetchone()[0]
         if (table, col) in DROPPED_LINKS:
             db.execute(f"DELETE FROM {table} WHERE {where}")
+    unlinked = drop_unlinked_multimedia(db)
     spans = period_years(db)
     credit = credit_lines(db)
     # The kind of a multimedia record, from SKKG's media type ("Bild", "Dokument", "Ton").
@@ -1449,7 +1451,21 @@ def derive(db):
     UPDATE objects SET has_provenance_chain = EXISTS (SELECT 1 FROM provenance_objects po WHERE po.object_id = objects.id);
     """)
     count_terms(db)
-    return {"object_links_to_missing": missing, "period_years": spans, "credit_lines": credit, "primary_images": primary_images(db)}
+    return {"object_links_to_missing": missing, "period_years": spans, "credit_lines": credit, "primary_images": primary_images(db),
+            "multimedia_unlinked": unlinked}
+
+
+UNLINKED_MULTIMEDIA = ("NOT EXISTS (SELECT 1 FROM object_multimedia x WHERE x.multimedia_id = multimedia.id) "
+                       "AND NOT EXISTS (SELECT 1 FROM exhibition_multimedia x WHERE x.multimedia_id = multimedia.id)")
+
+
+def drop_unlinked_multimedia(db):
+    """Drop the multimedia records that no object or exhibition links. SKKG's website shows an image only on
+    the page of its object or exhibition, and these are mostly covers of library books named by shelf mark,
+    whose number can equal an object's inventory number (notes/08, "Images linked to no record")."""
+    records, published = db.execute(f"SELECT COUNT(*), COUNT(iiif_service) FROM multimedia WHERE {UNLINKED_MULTIMEDIA}").fetchone()
+    db.execute(f"DELETE FROM multimedia WHERE {UNLINKED_MULTIMEDIA}")
+    return {"records": records, "with_iiif_image": published}
 
 
 def primary_images(db):
@@ -2047,6 +2063,7 @@ def main():
               "acquisitions_after_dump": future, "dates_not_iso": odd_dates, "currency_labels_not_mapped": odd_currencies,
               "object_links_to_missing": derived["object_links_to_missing"], "period_years": derived["period_years"],
               "credit_lines": derived["credit_lines"], "primary_images": derived["primary_images"],
+              "multimedia_unlinked": derived["multimedia_unlinked"],
               "size_bytes": tmp.stat().st_size, "unloaded_edges": edges, "query_timings": src.timings}
     Path(str(out) + ".report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1))
     Path(str(out) + ".report.md").write_text(render_report(report))
@@ -2099,6 +2116,8 @@ def render_report(r):
               + (", ".join(f"{k} ({n})" for k, n in r["period_years"]["unclassified"].items()) or "none") + ".", "",
               f"Credit lines composed as SKKG's API composes them, with a credit text: {r['credit_lines']['with_credit_text']}, "
               f"with an acquisition year: {r['credit_lines']['with_year']}.", "",
+              f"Multimedia records linked to no object or exhibition, dropped: {r['multimedia_unlinked']['records']:,}, "
+              f"{r['multimedia_unlinked']['with_iiif_image']:,} of them with a IIIF image.", "",
               "Multimedia by kind: " + ", ".join(f"{k} {n:,}" for k, n in r["primary_images"]["kinds"].items())
               + f". Primary images not SKKG's (SKKG's is unpublished or unmarked): {r['primary_images']['not_skkg_primary']:,}, "
               f"of them a document because nothing else is published: {r['primary_images']['document_without_published_image']:,}. "
