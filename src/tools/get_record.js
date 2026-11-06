@@ -14,6 +14,7 @@ import { imageRights } from '../lib/rights.js';
 import { objectRow, RELATION } from '../lib/objects.js';
 import { ROLE_KINDS, roleCounts, lifeDates } from '../lib/actors.js';
 import { period, periodRef } from '../lib/provenance.js';
+import { exhibitionFields } from '../lib/exhibitions.js';
 import { capList, paging, pastEnd } from '../lib/results.js';
 import { fitLists } from '../lib/fit.js';
 import { renderRecordText } from './record_text.js';
@@ -460,17 +461,7 @@ function getExhibition(db, id, want, args, ctx) {
       WHERE em.exhibition_id = ? AND m.iiif_service IS NOT NULL ORDER BY m.id`).all(id);
   const out = {
     summary: {
-      title: e.title,
-      exhibition_type: termLabel(db, e.exhibition_type_id, lang),
-      status: termLabel(db, e.status_id, lang),
-      internal_external: termLabel(db, e.internal_external_id, lang),
-      date_from: e.date_from,
-      date_to: e.date_to,
-      venue: actorRef(db, e.venue_id),
-      other_venues: stmt(db, "SELECT * FROM exhibition_venues WHERE exhibition_id = ? AND kind = 'other' ORDER BY date_from").all(id)
-        .map((v) => ({ venue: actorRef(db, v.address_id), type: termLabel(db, v.type_id, lang), date_from: v.date_from, date_to: v.date_to, note: v.note })),
-      organisers: stmt(db, 'SELECT address_id, role_id FROM exhibition_organisers WHERE exhibition_id = ? ORDER BY seq IS NULL, seq').all(id)
-        .map((o) => ({ ...actorRef(db, o.address_id), role: termLabel(db, o.role_id, lang) })),
+      ...exhibitionFields(db, e, lang),
       counts: { objects: objectIds.length, literature: lit.length, images: images.length },
     },
   };

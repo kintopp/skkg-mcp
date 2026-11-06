@@ -46,12 +46,14 @@ import { outputSchema as searchSchema } from '../src/tools/search_objects.js';
 import { outputSchema as provenanceSchema } from '../src/tools/search_provenance.js';
 import { outputSchema as actorsSchema } from '../src/tools/search_actors.js';
 import { outputSchema as literatureSchema } from '../src/tools/search_literature.js';
+import { outputSchema as exhibitionsSchema } from '../src/tools/search_exhibitions.js';
 
 const SCHEMAS = {
   skkg_search_objects: searchSchema,
   skkg_search_provenance: provenanceSchema,
   skkg_search_actors: actorsSchema,
   skkg_search_literature: literatureSchema,
+  skkg_search_exhibitions: exhibitionsSchema,
 };
 
 const NAME = 'skkg_find_terms';

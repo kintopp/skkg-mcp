@@ -8,6 +8,7 @@ import { registerSearchObjectsTool } from './tools/search_objects.js';
 import { registerSearchProvenanceTool } from './tools/search_provenance.js';
 import { registerSearchActorsTool } from './tools/search_actors.js';
 import { registerSearchLiteratureTool } from './tools/search_literature.js';
+import { registerSearchExhibitionsTool } from './tools/search_exhibitions.js';
 import { registerGetObjectTool } from './tools/get_object.js';
 import { registerGetRecordTool } from './tools/get_record.js';
 import { registerFindTermsTool } from './tools/find_terms.js';
@@ -29,6 +30,7 @@ export function createServer() {
   registerSearchProvenanceTool(server);
   registerSearchActorsTool(server);
   registerSearchLiteratureTool(server);
+  registerSearchExhibitionsTool(server);
   registerGetObjectTool(server);
   registerGetRecordTool(server);
   registerFindTermsTool(server);

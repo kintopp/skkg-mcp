@@ -49,7 +49,7 @@ const VOCABULARIES = {
   author_role: 'roles of authors of publications',
   exhibition_type: 'kinds of exhibition',
   exhibition_status: 'status of exhibitions',
-  internal_external: 'SKKG exhibitions or loans to others',
+  internal_external: 'SKKG\'s "intern" or "extern" for exhibitions',
   gender: 'gender of persons',
   country: 'countries, e.g. nationalities of persons',
 };
@@ -62,7 +62,7 @@ const description =
   'its matches in GND, AAT, or Wikidata, how many objects use it (a photo licence: objects whose primary photo has it), ' +
   'and `filters`: every search parameter that takes it, each with its tool and the total that filter reports for the term ' +
   '(skkg_search_objects; skkg_search_provenance for the vocabularies of provenance periods; skkg_search_actors for gender, ' +
-  'and for a country code both nationality and place_country; skkg_search_literature for literature types). ' +
+  'and for a country code both nationality and place_country; skkg_search_literature for literature types; skkg_search_exhibitions for the types, status, and "intern" or "extern" of exhibitions). ' +
   'Many vocabularies have no filter. Currency terms have none either: ' +
   '`currency` of skkg_search_provenance takes the codes of the prices ("CHF", "DEM") and SKKG\'s labels of them. With `id`, returns one term with its broader and narrower terms. ' +
   'With only `vocabulary`, lists that vocabulary. To search objects, use skkg_search_objects; ' +

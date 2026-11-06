@@ -22,6 +22,7 @@ export const SEARCH_OBJECTS_TOOL_NAME = 'skkg_search_objects';
 export const SEARCH_PROVENANCE_TOOL_NAME = 'skkg_search_provenance';
 export const SEARCH_ACTORS_TOOL_NAME = 'skkg_search_actors';
 export const SEARCH_LITERATURE_TOOL_NAME = 'skkg_search_literature';
+export const SEARCH_EXHIBITIONS_TOOL_NAME = 'skkg_search_exhibitions';
 // The years a year filter accepts. The build stores an open side of a provenance period as
 // -9999 or 9999 (scripts/build_db.py, OPEN_YEAR), which must stay outside this range.
 export const YEAR_MIN = -5000;
@@ -48,6 +49,9 @@ export const STATS_SQL_RESTRICT_MAX = posIntEnv('SKKG_STATS_SQL_RESTRICT_MAX', 1
 export const INVENTORY_ORDER = "o.inventory_number GLOB '[0-9]*' DESC, CAST(o.inventory_number AS INTEGER), o.inventory_number";
 // Longest list per section of skkg_get_object.
 export const SECTION_LIMIT = 50;
+// SKKG's status "abgesagt" of a station (another venue) of an exhibition: a cancelled station
+// is listed with the exhibition but never matches the venue or year filters.
+export const CANCELLED_VENUE = 'type/26127/149040';
 // More actors than this for one name filter is refused rather than OR-ed together.
 export const MAX_NAME_MATCHES = 25;
 // Vocabularies the server never returns. SKKG's API and website publish no object's current

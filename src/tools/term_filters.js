@@ -7,12 +7,14 @@
 
 import {
   SEARCH_OBJECTS_TOOL_NAME, SEARCH_PROVENANCE_TOOL_NAME, SEARCH_ACTORS_TOOL_NAME, SEARCH_LITERATURE_TOOL_NAME,
+  SEARCH_EXHIBITIONS_TOOL_NAME,
 } from '../config.js';
 
 // An object filter includes narrower terms by default, so a call with only the term id lists them.
 const OBJECTS = Object.freeze({ column: 'object_count_with_narrower', of: 'objects' });
 const PERIODS = Object.freeze({ column: 'record_count', of: 'provenance periods' });
 const ACTORS = Object.freeze({ column: 'record_count', of: 'persons and groups' });
+const EXHIBITIONS = Object.freeze({ column: 'record_count', of: 'exhibitions' });
 
 // skkg_search_objects: `pairs` is a query of (oid, k) pairs, an object and one of its values. The
 // filter selects `oid IN (… WHERE k IN (?))`, and skkg_collection_stats counts the same pairs, so a
@@ -64,5 +66,11 @@ export const TERM_FILTERS = Object.freeze({
   // skkg_search_literature: the column `sql` of the publication `l`.
   [SEARCH_LITERATURE_TOOL_NAME]: Object.freeze({
     literature_type: { facet: 'literature_type', count: { column: 'record_count', of: 'publications' }, sql: 'l.type_id' },
+  }),
+  // skkg_search_exhibitions: the column `sql` of the exhibition `e`.
+  [SEARCH_EXHIBITIONS_TOOL_NAME]: Object.freeze({
+    exhibition_type: { facet: 'exhibition_type', count: EXHIBITIONS, sql: 'e.exhibition_type_id' },
+    status: { facet: 'exhibition_status', count: EXHIBITIONS, sql: 'e.status_id' },
+    internal_external: { facet: 'internal_external', count: EXHIBITIONS, sql: 'e.internal_external_id' },
   }),
 });
