@@ -383,6 +383,12 @@ test('skkg_inspect_image refuses bad input before any fetch', { skip: FIXTURE_DB
       assert.match(missing, /No such multimedia record/);
       assert.doesNotMatch(missing, /skkg_inspect_image/);
     });
+    await t.test('the hint for an image on no object names no object tool', async () => {
+      // A published image linked to no object or exhibition in the partial dump.
+      const text = await callError(client, 'skkg_get_record', { id: 'multimedia/3471f9ce-b5fc-4029-bd61-e475b37eb23f' });
+      assert.match(text, /use skkg_inspect_image with id "multimedia\/3471f9ce-b5fc-4029-bd61-e475b37eb23f"/);
+      assert.doesNotMatch(text, /skkg_get_object/);
+    });
     await t.test('the description points to the note for detail, not to a larger max_long_edge alone', async () => {
       const { tools } = await client.listTools();
       const d = tools.find((x) => x.name === NAME).description;

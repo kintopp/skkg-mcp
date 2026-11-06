@@ -105,7 +105,7 @@ const TOOL_HINTS = {
     const m = stmt(db, 'SELECT iiif_service FROM multimedia WHERE id = ?').get(s);
     if (!m) return 'No such multimedia record; check the id.';
     if (!m.iiif_service) return 'SKKG has not published an image for it; do not look for one elsewhere.';
-    return `To look at the image, use skkg_inspect_image with id "${s}"; images come with their object: skkg_get_object with include ["images"].`;
+    return `To look at the image, use skkg_inspect_image with id "${s}"; its result lists the objects the image belongs to.`;
   },
 };
 const toolHint = (type, s, db) => TOOL_HINTS[type]?.(s, db) ?? `Use skkg_get_record with id "${s}".`;

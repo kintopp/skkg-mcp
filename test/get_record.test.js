@@ -50,7 +50,7 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
     await t.test('ids of objects, terms, and images are refused with the call to make', async () => {
       assert.match(await callError(client, NAME, { id: 'object/1014' }), /Use skkg_get_object with id "object\/1014"/);
       assert.match(await callError(client, NAME, { id: 'type/21087/140347' }), /skkg_find_terms with id "type\/21087\/140347"/);
-      assert.match(await callError(client, NAME, { id: 'multimedia/13006' }), /skkg_get_object with include \["images"\]/);
+      assert.match(await callError(client, NAME, { id: 'multimedia/13006' }), /To look at the image, use skkg_inspect_image with id "multimedia\/13006"/);
     });
 
     await t.test('a bare number that two record types share is refused', async () => {
