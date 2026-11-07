@@ -3,6 +3,8 @@
 //   or an error result, for the images
 // - it opens a service outside SKKG's IIIF server (another host, http, a longer path, a query)
 // - it opens another image than start_index, or pages past either end
+// - a turn past either end, or on a single image, still counts as one, so the image reloads and the
+//   model is told the user turned to it
 // - the credit line shows another image's rights, drops the holder or photographer, reads a missing
 //   licence as free, or calls a document a photo
 // - the model is not told which image the user turned to, by an id skkg_inspect_image takes
@@ -57,9 +59,15 @@ test('only services on SKKG\'s IIIF server are opened', () => {
 test('the viewer opens start_index and pages within the images', () => {
   assert.equal(startPosition(RESULT), 1);
   assert.equal(startPosition({ ...RESULT, images: RESULT.images.slice(1), start_index: 2 }), 0);
-  assert.equal(step(0, -1, 3), 0);
-  assert.equal(step(2, 1, 3), 2);
+  assert.equal(step(1, -1, 3), 0);
   assert.equal(step(1, 1, 3), 2);
+});
+
+test('a turn past either end, or on a single image, goes nowhere', () => {
+  assert.equal(step(0, -1, 3), null);
+  assert.equal(step(2, 1, 3), null);
+  assert.equal(step(0, 1, 1), null);
+  assert.equal(step(0, -1, 1), null);
 });
 
 test('the caption names a document as one, with its place among the object\'s images', () => {

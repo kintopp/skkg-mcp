@@ -21,8 +21,9 @@ import { existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { availableParallelism } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { VIEWER_SRC_DIR } from '../scripts/viewer-hash.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const tests = readdirSync(join(root, 'test')).filter((n) => n.endsWith('.test.js')).sort().map((n) => `test/${n}`);
@@ -614,7 +615,7 @@ const MUTATIONS = [
   ["src/tools/view_image.js", "    const from = numbered.slice(start - 1);", "    const from = numbered;", "view_image: a cut keeps the image opened first"],
   ["src/tools/view_image.js", "    warnings: window.length < numbered.length", "    warnings: false", "view_image: a cut is warned"],
   ["src/tools/view_image.js", "{ type: 'text', text: JSON.stringify(r.s) }", "{ type: 'text', text: r.text }", "view_image: the viewer's JSON block"],
-  ["src/tools/view_image.js", "const withObjects = (s) => ({ ...s, objects: s.objects ?? [] });", "const withObjects = (s) => s;", "view_image: empty object list kept"],
+  ["src/tools/view_image.js", "    s.objects ??= [];\n", "", "view_image: empty object list kept"],
   ["src/tools/view_image.js", "${i.kind === 'document' ? ' (document)' : ''}", "", "view_image text: documents marked"],
   ["src/tools/view_image.js", "    ...s.image_rights.map((r, i) => setLine(r, i + 1)),\n", "", "view_image text: rights sets"],
   ["src/tools/view_image.js", "    if (last && n === last[1] + 1) last[1] = n;", "    if (false) last[1] = n;", "view_image text: image ranges"],
@@ -625,7 +626,9 @@ const MUTATIONS = [
   ["apps/image-viewer/model.js", "[A-Za-z0-9._~%-]+$/;", "[A-Za-z0-9._~%/?=-]+$/;", "viewer: only SKKG's IIIF services opened"],
   ["apps/image-viewer/model.js", "      if (isResult(parsed)) return parsed;\n", "", "viewer: JSON block read when structuredContent is dropped"],
   ["apps/image-viewer/model.js", "  return i < 0 ? 0 : i;", "  return 0;", "viewer: opens start_index"],
-  ["apps/image-viewer/model.js", "Math.min(count - 1, Math.max(0, pos + delta))", "Math.min(count, Math.max(0, pos + delta))", "viewer: paging stops at the last image"],
+  ["apps/image-viewer/model.js", "next >= 0 && next < count ? next : null", "next >= 0 && next <= count ? next : null", "viewer: paging stops at the last image"],
+  ["apps/image-viewer/model.js", "next >= 0 && next < count ? next : null", "next < count ? next : null", "viewer: paging stops at the first image"],
+  ["apps/image-viewer/model.js", "next >= 0 && next < count ? next : null", "Math.min(count - 1, Math.max(0, next))", "viewer: a turn past either end goes nowhere"],
   ["apps/image-viewer/model.js", "s.image_rights[m.rights_set - 1] ?? {}", "s.image_rights[0] ?? {}", "viewer: rights of the image shown"],
   ["apps/image-viewer/model.js", "(kind === 'document' ? 'Document' : 'Photo')", "'Photo'", "viewer: documents named"],
   ["apps/image-viewer/model.js", "skkg_inspect_image takes this id.`", "`", "viewer: model told the id it can inspect"],
@@ -701,7 +704,7 @@ async function runFiles(files, parallel = Math.max(1, availableParallelism() - 1
 
 // Any change under apps/image-viewer/ makes the built page stale, so test/viewer_build.test.js
 // fails on every such mutation; it may not count as their killer.
-const STAMPED_SOURCES = 'apps/image-viewer/';
+const STAMPED_SOURCES = `${relative(root, VIEWER_SRC_DIR)}/`;
 const testsFor = (m) => (m[0].startsWith(STAMPED_SOURCES) ? tests.filter((f) => f !== 'test/viewer_build.test.js') : tests);
 
 // The test file to try first: the quickest that killed the entry before, or the one named after its file.

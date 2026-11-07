@@ -123,29 +123,33 @@ export function viewImage(db, meta, args) {
   });
   const stale = staleWarning(meta);
   if (stale) warnings.push(stale);
-  const numbered = images.map((m, i) => ({ m, index: type === 'object' ? i + 1 : 1 }));
+  const numbered = images.map((m, i) => ({ m, index: i + 1 }));
 
-  const build = (window) => withObjects(prune({
-    id,
-    type,
-    start_index: start,
-    image_count: images.length,
-    ...imageList(db, window, args.lang),
-    objects,
-    object_count: ctx.totals.objects,
-    warnings: window.length < numbered.length
-      ? [...warnings, `images: cut to ${window.length} of ${numbered.length}, from image ${start}, to fit the result size limit; ` +
-        `pass a later index for the others.`]
-      : warnings,
-    data_as_of: meta.data_as_of,
-  }));
+  const build = (window) => {
+    const s = prune({
+      id,
+      type,
+      start_index: start,
+      image_count: images.length,
+      ...imageList(db, window, args.lang),
+      objects,
+      object_count: ctx.totals.objects,
+      warnings: window.length < numbered.length
+        ? [...warnings, `images: cut to ${window.length} of ${numbered.length}, from image ${start}, to fit the result size limit; ` +
+          `pass a later index for the others.`]
+        : warnings,
+      data_as_of: meta.data_as_of,
+    });
+    s.objects ??= [];
+    return s;
+  };
   const size = (s) => { const text = renderText(s); return { s, text, size: 2 * JSON.stringify(s).length + text.length }; };
 
   let r = size(build(numbered));
   if (r.size > RESULT_CHAR_LIMIT) {
     // Keep the image opened first: the longest run of images from `start` that fits.
     const from = numbered.slice(start - 1);
-    const k = longestPrefix(from.length, (n) => n === 0 || size(build(from.slice(0, n))).size <= RESULT_CHAR_LIMIT);
+    const k = longestPrefix(from.length, (n) => size(build(from.slice(0, n))).size <= RESULT_CHAR_LIMIT);
     if (k === 0) throw new ToolError('The result is too large for the result size limit even with one image.', 'Pass an image id.');
     r = size(build(from.slice(0, k)));
   }
@@ -156,8 +160,6 @@ export function viewImage(db, meta, args) {
     structuredContent: r.s,
   };
 }
-
-const withObjects = (s) => ({ ...s, objects: s.objects ?? [] });
 
 // "1–3, 5": a sorted list of numbers as ranges.
 function ranges(nums) {

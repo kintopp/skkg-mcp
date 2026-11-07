@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 // ChatGPT's iframe CSP lacks 'unsafe-eval'. The zod bundled in ext-apps probes `new Function("")` at load; the
 // caught throw still fires a CSP violation that hangs the viewer, so the probe is rewritten and the build fails
-// if one survives. Taken from odeuropa-eokg-mcp, where the hang was found.
+// if one survives.
 const ZOD_EVAL_PROBES = [
   [/try\s*\{\s*return\s+(?:new\s+)?Function\(\s*(?:""|''|``)\s*\)\s*,\s*!0\s*\}\s*catch\s*(?:\(\s*[\w$]+\s*\))?\s*\{\s*return\s*!1\s*\}/g, 'return!1'],
   [/const\s+F\s*=\s*Function;\s*new\s+F\(\s*(?:""|'')\s*\);\s*return\s+true;/g, 'return false;'],
@@ -33,10 +33,5 @@ function stripZodEvalProbe() {
 export default defineConfig({
   plugins: [stripZodEvalProbe(), viteSingleFile()],
   root: fileURLToPath(new URL('.', import.meta.url)),
-  build: {
-    outDir: fileURLToPath(new URL('../../src/apps/', import.meta.url)),
-    emptyOutDir: false,
-    assetsInlineLimit: 100000000,
-    cssCodeSplit: false,
-  },
+  build: { write: false },
 });

@@ -22,11 +22,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { withClient, callError, assertWireValid, FIXTURE_DB, ROOT } from './helpers.js';
+import { withClient, callError, errorOf, assertWireValid, FIXTURE_DB, ROOT } from './helpers.js';
 import { openDatabase } from '../src/db.js';
 import { viewImage, outputSchema } from '../src/tools/view_image.js';
 import { getObject } from '../src/tools/get_object.js';
-import { formatErrorText } from '../src/lib/errors.js';
 
 const NAME = 'skkg_view_image';
 const OBJ = 'object/1014';
@@ -56,14 +55,7 @@ test('skkg_view_image against the fixture database', { skip: FIXTURE_DB.skip }, 
     assertWireValid(outputSchema, res.structuredContent);
     return { res, s: res.structuredContent, text: res.content[0].text };
   };
-  const refusal = (args) => {
-    try {
-      viewImage(db, meta, { lang: 'de', ...args });
-    } catch (e) {
-      return formatErrorText(e);
-    }
-    return assert.fail('expected a refusal');
-  };
+  const refusal = (args) => errorOf(() => viewImage(db, meta, { lang: 'de', ...args }));
 
   await t.test('an object id sends every published image in the order of skkg_get_object', async () => {
     const { s } = call({ id: OBJ });
@@ -196,8 +188,8 @@ test('skkg_view_image cuts the images from the one opened first', { skip: FIXTUR
   const CEILING = 4000;
   const LIMIT = CEILING * 0.9;
   await withClient('skkg-view-cut', async (client) => {
-    await t.test('the window starts at index, fits both copies, and names the cut', async () => {
-      const res = await client.callTool({ name: NAME, arguments: { id: OBJ, index: 2 } });
+    const res = await client.callTool({ name: NAME, arguments: { id: OBJ, index: 2 } });
+    await t.test('the window starts at index, fits both copies, and names the cut', () => {
       assert.ok(!res.isError, res.content?.[0]?.text);
       const s = assertWireValid(outputSchema, res.structuredContent);
       assert.ok(sentSize(res) <= LIMIT, `${sentSize(res)} > ${LIMIT}`);
@@ -211,8 +203,7 @@ test('skkg_view_image cuts the images from the one opened first', { skip: FIXTUR
       assert.ok(res.content[0].text.includes(`Warning: ${cut}`));
     });
 
-    await t.test('after a cut, the rights sets are those of the images sent', async () => {
-      const res = await client.callTool({ name: NAME, arguments: { id: OBJ, index: 2 } });
+    await t.test('after a cut, the rights sets are those of the images sent', () => {
       const s = res.structuredContent;
       assert.deepEqual([...new Set(s.images.map((i) => i.rights_set))].sort(), s.image_rights.map((_, i) => i + 1));
     });

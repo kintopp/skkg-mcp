@@ -6,15 +6,12 @@ import {
   parseResult, errorText, isAllowedService, infoUrl, startPosition, step, caption,
   creditLine, objectName, viewingContext,
 } from './model.js';
-import { SAMPLE } from './sample.js';
-
-const PREVIEW = typeof window !== 'undefined' && window.parent === window;
+const PREVIEW = window.parent === window;
 const root = document.getElementById('root');
 
 const app = PREVIEW ? null : new App(
   { name: 'skkg-image-viewer', version: '0.1.0' },
   { availableDisplayModes: ['inline', 'fullscreen'] },
-  { autoResize: true },
 );
 
 let result = null;
@@ -48,6 +45,7 @@ function destroyViewer() {
 
 function showStatus(text, isError = false) {
   destroyViewer();
+  result = null;
   nodes = null;
   root.replaceChildren(el('p', { id: 'status', role: 'status', class: isError ? 'error' : '' }, text));
   reportSize();
@@ -80,11 +78,13 @@ function createViewer(element) {
     gestureSettingsMouse: { clickToZoom: false, dblClickToZoom: true },
   });
   syncGestures();
-  osd.addHandler('open-failed', () => {
-    nodes?.message.replaceChildren('SKKG\'s image server did not deliver this image.');
-    if (nodes) nodes.message.hidden = false;
-  });
+  osd.addHandler('open-failed', () => { if (nodes) showMessage('SKKG\'s image server did not deliver this image.'); });
   osd.addHandler('open', () => { if (nodes) nodes.message.hidden = true; });
+}
+
+function showMessage(text) {
+  nodes.message.replaceChildren(text);
+  nodes.message.hidden = false;
 }
 
 function showImage(next, notify) {
@@ -100,15 +100,19 @@ function showImage(next, notify) {
     osd.open(infoUrl(m.iiif_service));
   } else {
     osd.close();
-    nodes.message.replaceChildren('This image cannot be shown here.');
-    nodes.message.hidden = false;
+    showMessage('This image cannot be shown here.');
   }
   if (notify && app) app.updateModelContext({ content: [{ type: 'text', text: viewingContext(result, pos) }] }).catch(() => {});
   reportSize();
 }
 
+// Only an actual turn reloads the image and tells the model.
+function turn(delta) {
+  const next = step(pos, delta, result.images.length);
+  if (next !== null) showImage(next, true);
+}
+
 function toggleFullscreen() {
-  if (!app) return;
   const mode = displayMode === 'fullscreen' ? 'inline' : 'fullscreen';
   app.requestDisplayMode({ mode }).then((r) => { displayMode = r?.mode ?? displayMode; applyMode(); }).catch(() => {});
 }
@@ -130,12 +134,12 @@ function render(s) {
   const title = s.type === 'object' ? objectName(main) : (main ? `Image of ${objectName(main)}` : s.id);
   const several = s.images.length > 1;
 
-  const prev = el('button', { type: 'button', title: 'Previous image (p)', onclick: () => showImage(step(pos, -1, s.images.length), true) }, '‹');
-  const next = el('button', { type: 'button', title: 'Next image (n)', onclick: () => showImage(step(pos, 1, s.images.length), true) }, '›');
+  const prev = el('button', { type: 'button', title: 'Previous image (p)', onclick: () => turn(-1) }, '‹');
+  const next = el('button', { type: 'button', title: 'Next image (n)', onclick: () => turn(1) }, '›');
   const counter = el('span', { class: 'counter' });
   const fullscreen = app ? el('button', { type: 'button', onclick: toggleFullscreen }, 'Fullscreen') : null;
   const toolbar = el('div', { class: 'toolbar' },
-    several ? prev : null, several ? counter : null, several ? next : null,
+    ...(several ? [prev, counter, next] : []),
     el('button', { type: 'button', title: 'Zoom in', onclick: () => zoomBy(1.5) }, '+'),
     el('button', { type: 'button', title: 'Zoom out', onclick: () => zoomBy(1 / 1.5) }, '−'),
     el('button', { type: 'button', title: 'Whole image (0)', onclick: () => osd?.viewport.goHome() }, 'Reset'),
@@ -159,9 +163,10 @@ function render(s) {
 }
 
 function onKey(ev) {
-  if (!result || ev.metaKey || ev.ctrlKey || ev.altKey) return;
-  if (ev.key === 'n') showImage(step(pos, 1, result.images.length), true);
-  else if (ev.key === 'p') showImage(step(pos, -1, result.images.length), true);
+  // A held key would load an image from SKKG's server on every repeat.
+  if (!result || ev.repeat || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if (ev.key === 'n') turn(1);
+  else if (ev.key === 'p') turn(-1);
 }
 
 function applyHost(ctx) {
@@ -180,7 +185,9 @@ document.addEventListener('keydown', onKey);
 document.addEventListener('fullscreenchange', syncGestures);
 
 if (PREVIEW) {
-  render(SAMPLE);
+  // import.meta.env.DEV is false in the build, so the sample stays out of the page.
+  if (import.meta.env.DEV) import('./sample.js').then(({ SAMPLE }) => render(SAMPLE));
+  else showStatus('This page opens inside an MCP host, from skkg_view_image.');
 } else {
   // No `tools` capability: the host's tools/list round-trip suppresses ontoolresult on Safari (odeuropa).
   app.ontoolinputpartial = () => showStatus('Loading images…');
@@ -192,7 +199,7 @@ if (PREVIEW) {
     if (parsed) render(parsed);
     else if (!nodes) showStatus('The images could not be opened.', true);
   };
-  app.onhostcontextchanged = (params) => applyHost({ ...app.getHostContext(), ...params });
+  app.onhostcontextchanged = () => applyHost(app.getHostContext());
   app.onteardown = async () => { destroyViewer(); return {}; };
   app.connect().then(() => applyHost(app.getHostContext()));
 }

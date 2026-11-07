@@ -32,17 +32,20 @@ export function startPosition(s) {
   return i < 0 ? 0 : i;
 }
 
-/** The position `delta` steps from `pos`, or `pos` itself at either end. */
-export const step = (pos, delta, count) => Math.min(count - 1, Math.max(0, pos + delta));
+/** The position `delta` steps from `pos`, or null past either end. */
+export function step(pos, delta, count) {
+  const next = pos + delta;
+  return next >= 0 && next < count ? next : null;
+}
 
 const noun = (kind) => (kind === 'document' ? 'Document' : 'Photo');
 const name = (a) => a && (a.name ?? a.id);
+const place = (s, m) => (s.type === 'object' ? ` ${m.index} of ${s.image_count}` : '');
 
 /** "Photo 3 of 12 · primary": which image is shown. */
 export function caption(s, pos) {
   const m = s.images[pos];
-  const where = s.type === 'object' ? ` ${m.index} of ${s.image_count}` : '';
-  return `${noun(m.kind)}${where}${m.is_primary ? ' · primary' : ''}`;
+  return `${noun(m.kind)}${place(s, m)}${m.is_primary ? ' · primary' : ''}`;
 }
 
 /**
@@ -71,8 +74,7 @@ export const objectName = (o) => [o.inventory_number, o.title ?? '(untitled)'].f
 /** What the model is told when the user turns to another image. */
 export function viewingContext(s, pos) {
   const m = s.images[pos];
-  const of = s.type === 'object' ? ` ${m.index} of ${s.image_count}` : '';
   const object = s.objects[0] ? `, of ${s.objects[0].id} (${objectName(s.objects[0])})` : '';
-  return `The user turned to image${of} in the SKKG image viewer: ${m.id}` +
+  return `The user turned to image${place(s, m)} in the SKKG image viewer: ${m.id}` +
     `${m.kind === 'document' ? ' (document)' : ''}${object}. skkg_inspect_image takes this id.`;
 }
