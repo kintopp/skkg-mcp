@@ -17,6 +17,10 @@ export const creatorRef = (c) => {
   return `${nameOf(c)} (${qualifiers ? `${qualifiers}; ` : ''}${c.id})`;
 };
 export const obj = (r) => r && join([r.inventory_number, r.title ?? '(untitled)', r.id], ' · ');
+/** A list line of an object of objectsWithRights: its rights and website link. */
+export const objectRightsLine = (o) => `- ${obj(o)}: ` +
+  join([`object copyright ${o.rights.object_copyright}`, o.rights.credit_line && `credit: ${o.rights.credit_line}`,
+    o.rights.redaction_status], ' · ') + (o.website_url ? ` · ${o.website_url}` : '');
 export const list = (label, items) => (items?.length ? `${label}: ${items.join(', ')}` : undefined);
 // skkg_search_objects arguments, e.g. `creator: "person/36", include_narrower: false`.
 export const searchArgs = (f) => f && Object.entries(f).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ');

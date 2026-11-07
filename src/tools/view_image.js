@@ -6,15 +6,11 @@ import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
 import { withTool } from '../lib/tool.js';
 import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
-import { resolveId } from '../lib/ids.js';
-import { stmt } from '../lib/sql.js';
 import { prune } from '../lib/prune.js';
-import { objectRef } from '../lib/labels.js';
-import { objectRights, imageRights } from '../lib/rights.js';
-import { capList } from '../lib/results.js';
+import { imageRights } from '../lib/rights.js';
 import { longestPrefix } from '../lib/fit.js';
-import { join, photoRights, obj } from '../lib/text.js';
-import { objectImages, imageObjectIds } from '../lib/images.js';
+import { join, photoRights, obj, objectRightsLine } from '../lib/text.js';
+import { publishedImages, objectsWithRights, imageObjectIds } from '../lib/images.js';
 import { objectRightsOut, imageRightsOut, langIn, str } from './schemas.js';
 import { READ_ONLY_OPEN_WORLD_ANNOTATIONS, RESULT_CHAR_LIMIT } from '../config.js';
 
@@ -67,30 +63,6 @@ export const outputSchema = z.object({
   data_as_of: str(),
 });
 
-// The images an id names: an object's published images, or one image.
-function pickImages(db, args, warnings) {
-  const { id, type } = resolveId(db, args.id, { types: ['object', 'multimedia'] });
-  if (type === 'multimedia') {
-    const m = stmt(db, 'SELECT * FROM multimedia WHERE id = ?').get(id);
-    if (!m.iiif_service) {
-      throw new ToolError(`SKKG has not published an image for ${id}.`, 'Use another image; do not look for this one elsewhere.');
-    }
-    if (args.index !== undefined) warnings.push('`index` applies to an object id; ignored for an image id.');
-    return { id, type, images: [m], start: 1, objectIds: imageObjectIds(db, id) };
-  }
-  const o = stmt(db, 'SELECT id, primary_multimedia_id FROM objects WHERE id = ?').get(id);
-  const images = objectImages(db, o).map((m) => ({ ...m, is_primary: m.id === o.primary_multimedia_id }));
-  if (!images.length) {
-    throw new ToolError(`${id} has no published image.`, 'SKKG has not published an image of it; do not look for one elsewhere.');
-  }
-  const start = args.index ?? 1;
-  if (start > images.length) {
-    throw new ToolError(`${id} has ${images.length} published image${images.length === 1 ? '' : 's'}.`,
-      `Pass index 1 to ${images.length}.`);
-  }
-  return { id, type, images, start, objectIds: [id] };
-}
-
 // The images of `window` with their rights, each distinct set of rights listed once.
 function imageList(db, window, lang) {
   const sets = [];
@@ -115,12 +87,9 @@ function imageList(db, window, lang) {
 
 export function viewImage(db, meta, args) {
   const warnings = [];
-  const { id, type, images, start, objectIds } = pickImages(db, args, warnings);
+  const { id, type, images, start } = publishedImages(db, args, warnings);
   const ctx = { warnings, totals: {} };
-  const objects = capList(objectIds, 'objects', ctx).map((oid) => {
-    const o = stmt(db, 'SELECT id, credit_line, redaction_status_id FROM objects WHERE id = ?').get(oid);
-    return { ...objectRef(db, oid), rights: objectRights(db, o, args.lang) };
-  });
+  const objects = objectsWithRights(db, type === 'object' ? [id] : imageObjectIds(db, id), args.lang, ctx);
   const stale = staleWarning(meta);
   if (stale) warnings.push(stale);
   const numbered = images.map((m, i) => ({ m, index: i + 1 }));
@@ -178,9 +147,6 @@ function renderText(s) {
     ? `Opened ${s.image_count} image${s.image_count === 1 ? '' : 's'} of ${obj(s.objects[0])} in the image viewer for the user, ` +
       `starting at image ${s.start_index}${first.is_primary ? ' (primary)' : ''}.`
     : `Opened image ${join([s.id, s.images[0].label], ' · ')} in the image viewer for the user.`;
-  const objectLine = (o) => `- ${obj(o)}: ` +
-    join([`object copyright ${o.rights.object_copyright}`, o.rights.credit_line && `credit: ${o.rights.credit_line}`,
-      o.rights.redaction_status], ' · ') + (o.website_url ? ` · ${o.website_url}` : '');
   const setLine = (r, n) => {
     const where = s.images.filter((i) => i.rights_set === n).map((i) => i.index);
     return `- ${n}: ${photoRights(r)}${s.type === 'object' ? ` (image${where.length === 1 ? '' : 's'} ${ranges(where)})` : ''}`;
@@ -189,7 +155,7 @@ function renderText(s) {
   return [
     head,
     s.objects.length ? `Object${s.object_count === 1 ? '' : 's'} (${s.object_count}):` : 'The image belongs to no object.',
-    ...s.objects.map(objectLine),
+    ...s.objects.map(objectRightsLine),
     'Image rights:',
     ...s.image_rights.map((r, i) => setLine(r, i + 1)),
     s.type === 'object' && `Images (photos unless marked): ${s.images.map(imageRef).join(', ')}`,

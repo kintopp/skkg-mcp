@@ -3,6 +3,10 @@
 
 import { stmt } from './sql.js';
 import { ToolError } from './errors.js';
+import { resolveId } from './ids.js';
+import { capList } from './results.js';
+import { objectRef } from './labels.js';
+import { objectRights } from './rights.js';
 import { fetchCapped } from './http.js';
 import {
   INVENTORY_ORDER, IIIF_IMAGE_BASE, IIIF_TIMEOUT_MS, MAX_IMAGE_BYTES,
@@ -22,6 +26,40 @@ export const objectImages = (db, o) => stmt(db, `SELECT m.*, om.seq AS om_seq FR
 export const imageObjectIds = (db, multimediaId) => stmt(db, `SELECT DISTINCT o.id FROM object_multimedia om
     JOIN objects o ON o.id = om.object_id WHERE om.multimedia_id = ? ORDER BY ${INVENTORY_ORDER}`)
   .all(multimediaId).map((r) => r.id);
+
+/**
+ * The published images `args.id` names: the image of an image id, or an object's images in the
+ * order of objectImages, each with `is_primary`. `start` is the place `args.index` asks for, 1
+ * being the primary; it applies to an object id only, and is warned and ignored for an image id.
+ */
+export function publishedImages(db, args, warnings) {
+  const { id, type } = resolveId(db, args.id, { types: ['object', 'multimedia'] });
+  if (type === 'multimedia') {
+    const m = stmt(db, 'SELECT * FROM multimedia WHERE id = ?').get(id);
+    if (!m.iiif_service) {
+      throw new ToolError(`SKKG has not published an image for ${id}.`, 'Use another image; do not look for this one elsewhere.');
+    }
+    if (args.index !== undefined) warnings.push('`index` applies to an object id; ignored for an image id.');
+    return { id, type, images: [m], start: 1 };
+  }
+  const o = stmt(db, 'SELECT id, primary_multimedia_id FROM objects WHERE id = ?').get(id);
+  const images = objectImages(db, o).map((m) => ({ ...m, is_primary: m.id === o.primary_multimedia_id }));
+  if (!images.length) {
+    throw new ToolError(`${id} has no published image.`, 'SKKG has not published an image of it; do not look for one elsewhere.');
+  }
+  const start = args.index ?? 1;
+  if (start > images.length) {
+    throw new ToolError(`${id} has ${images.length} published image${images.length === 1 ? '' : 's'}.`,
+      `Pass index 1 to ${images.length}.`);
+  }
+  return { id, type, images, start };
+}
+
+/** The objects of `ids`, capped by capList, each with its rights. */
+export const objectsWithRights = (db, ids, lang, ctx) => capList(ids, 'objects', ctx).map((oid) => {
+  const o = stmt(db, 'SELECT id, credit_line, redaction_status_id FROM objects WHERE id = ?').get(oid);
+  return { ...objectRef(db, oid), rights: objectRights(db, o, lang) };
+});
 
 /**
  * The pixel region of `pct` ([x, y, w, h] in percent) on a width×height image. Each value is

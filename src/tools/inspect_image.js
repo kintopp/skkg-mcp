@@ -5,15 +5,11 @@ import { z } from 'zod';
 import { withTool } from '../lib/tool.js';
 import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
-import { resolveId } from '../lib/ids.js';
-import { stmt } from '../lib/sql.js';
 import { prune } from '../lib/prune.js';
-import { objectRef } from '../lib/labels.js';
-import { objectRights, imageRights } from '../lib/rights.js';
-import { capList } from '../lib/results.js';
-import { join, photoRights, imageNoun } from '../lib/text.js';
+import { imageRights } from '../lib/rights.js';
+import { join, photoRights, imageNoun, objectRightsLine } from '../lib/text.js';
 import {
-  objectImages, imageObjectIds, pixelRegion, deliverySize, regionUrl, fetchImage, jpegSize, visualTokens,
+  publishedImages, objectsWithRights, imageObjectIds, pixelRegion, deliverySize, regionUrl, fetchImage, jpegSize, visualTokens,
 } from '../lib/images.js';
 import { objectRightsOut, imageRightsOut, langIn, str, int } from './schemas.js';
 import {
@@ -84,43 +80,18 @@ export const outputSchema = z.object({
   data_as_of: str(),
 });
 
-// The image an id names: an image id itself, or an object's image by `index`.
+// The image to inspect, and its objects with the requested object first.
 function pickImage(db, args, warnings) {
-  const { id, type } = resolveId(db, args.id, { types: ['object', 'multimedia'] });
-  if (type === 'multimedia') {
-    const m = stmt(db, 'SELECT * FROM multimedia WHERE id = ?').get(id);
-    if (!m.iiif_service) {
-      throw new ToolError(`SKKG has not published an image for ${id}.`, 'Use another image; do not look for this one elsewhere.');
-    }
-    if (args.index !== undefined) warnings.push('`index` applies to an object id; ignored for an image id.');
-    return { m };
-  }
-  const o = stmt(db, 'SELECT id, primary_multimedia_id FROM objects WHERE id = ?').get(id);
-  const images = objectImages(db, o);
-  if (!images.length) {
-    throw new ToolError(`${id} has no published image.`, 'SKKG has not published an image of it; do not look for one elsewhere.');
-  }
-  const index = args.index ?? 1;
-  if (index > images.length) {
-    throw new ToolError(`${id} has ${images.length} published image${images.length === 1 ? '' : 's'}.`,
-      `Pass index 1 to ${images.length}.`);
-  }
-  const m = images[index - 1];
-  return { m, objectId: id, index, count: images.length, isPrimary: m.id === o.primary_multimedia_id };
-}
-
-function objectsOf(db, m, objectId, lang, ctx) {
+  const { id, type, images, start } = publishedImages(db, args, warnings);
+  const m = images[start - 1];
   const ids = imageObjectIds(db, m.id);
-  const ordered = objectId ? [objectId, ...ids.filter((i) => i !== objectId)] : ids;
-  return capList(ordered, 'objects', ctx).map((oid) => {
-    const o = stmt(db, 'SELECT id, credit_line, redaction_status_id FROM objects WHERE id = ?').get(oid);
-    return { ...objectRef(db, oid), rights: objectRights(db, o, lang) };
-  });
+  if (type === 'multimedia') return { m, objectIds: ids };
+  return { m, objectIds: [id, ...ids.filter((i) => i !== id)], index: start, count: images.length };
 }
 
 export async function inspectImage(db, meta, args, signal) {
   const warnings = [];
-  const { m, objectId, index, count, isPrimary } = pickImage(db, args, warnings);
+  const { m, objectIds, index, count } = pickImage(db, args, warnings);
   const region = pixelRegion(args.region_pct, m.width, m.height);
   if (region.w < 1 || region.h < 1) {
     throw new ToolError(`region_pct [${args.region_pct.join(', ')}] covers less than one pixel of the ${m.width}×${m.height} image.`,
@@ -138,7 +109,7 @@ export async function inspectImage(db, meta, args, signal) {
   const width = got?.width ?? size.width;
   const height = got?.height ?? size.height;
   const ctx = { warnings, totals: {} };
-  const objects = objectsOf(db, m, objectId, args.lang, ctx);
+  const objects = objectsWithRights(db, objectIds, args.lang, ctx);
   const stale = staleWarning(meta);
   if (stale) warnings.push(stale);
 
@@ -147,7 +118,7 @@ export async function inspectImage(db, meta, args, signal) {
     label: m.label,
     index,
     image_count: count,
-    is_primary: isPrimary || undefined,
+    is_primary: m.is_primary || undefined,
     full_width: m.width,
     full_height: m.height,
     region_pct: args.region_pct,
@@ -191,16 +162,13 @@ function renderText(s) {
   const region = s.region_pct
     ? `region_pct [${s.region_pct.join(', ')}] = pixels ${s.region_px.x},${s.region_px.y},${s.region_px.w},${s.region_px.h}`
     : 'the whole image';
-  const objectLine = (o) => `- ${join([o.inventory_number, o.title ?? '(untitled)', o.id], ' · ')}: ` +
-    join([`object copyright ${o.rights.object_copyright}`, o.rights.credit_line && `credit: ${o.rights.credit_line}`,
-      o.rights.redaction_status], ' · ') + (o.website_url ? ` · ${o.website_url}` : '');
   return [
     `Image ${join([s.id, s.label], ' · ')}${where}: ${region} of ${s.full_width}×${s.full_height} px.`,
     `Received: ${s.width}×${s.height} px ${s.mime_type}, ${Math.round(s.byte_size / 1000)} KB, ${s.visual_tokens} visual tokens, ` +
       `scale ${s.scale} (set by ${s.bound_by}). ${s.note}`,
     `${imageNoun(s.image_rights.kind, true)} rights: ${photoRights(s.image_rights)}.`,
     s.objects.length ? `Objects (${s.object_count}):` : 'The image belongs to no object.',
-    ...s.objects.map(objectLine),
+    ...s.objects.map(objectRightsLine),
     `Source: ${s.image_url}`,
     `The image above is for your own analysis; to show it to the user, call skkg_view_image or link website_url. Never embed an image URL as Markdown. ${SOURCE_TEXT}`,
     ...(s.warnings ?? []).map((w) => `Warning: ${w}`),
