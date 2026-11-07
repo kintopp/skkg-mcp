@@ -24,7 +24,6 @@
     "lint": "eslint .",
     "inspector": "npx @modelcontextprotocol/inspector node src/index.js",
     "mutate": "node test/mutations.mjs",
-    "build:skill": "node scripts/build-skill.mjs",
     "build:viewer": "node scripts/build-viewer.mjs",
     "dev:viewer": "vite dev -c apps/image-viewer/vite.config.mjs"
   },
