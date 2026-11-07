@@ -24,6 +24,7 @@ The repository also holds the research behind the server:
 | Mutation check of those tests (about 10 minutes) | `uv run --with pyoxigraph --with pytest python -I scripts/tests/mutate.py` |
 | Run against the full database | `SKKG_DB_PATH=data/db/skkg-20261028.sqlite npm start` |
 | Streamable HTTP on port 3000 (`PORT`), `POST /mcp` and `GET /health` | `SKKG_DB_PATH=data/db/skkg-20261028.sqlite npm run serve` |
+| Preview the Railway configuration (`.railway/railway.ts`, read only; `docs/deploy.md`) | `railway config plan` |
 | Inspector | `SKKG_DB_PATH=… npm run inspector` |
 | Rebuild the viewer page `src/apps/image-viewer.html` (committed; `test/viewer_build.test.js` fails when it is stale) | `npm run build:viewer` |
 | Viewer preview in a browser, with a sample result | `npm run dev:viewer` |
@@ -80,6 +81,10 @@ Summarized in `notes/02-open-data-policy-and-terms.md`. Metadata is free to reus
 - Code rules are in `src/CLAUDE.md`, test rules in `test/CLAUDE.md` (adapted from the sibling servers). Never delete or weaken a failing test.
 - Log every defect a review confirms in the ledger of `notes/12-defect-history.md`, with its category and the rule that covers it.
 
+## Deployment
+
+The service `skkg-mcp` runs on Railway (`docs/deploy.md`). A push to `main` that touches `src/`, `package.json`, or `package-lock.json` redeploys it, so push only when the user asks. The database on its volume is uploaded by hand.
+
 ## Common errors
 
 - **The website is a single page app:** `curl` on `digital.skkg.ch` or `info.digital.skkg.ch` returns an empty shell. Use a browser tool or the API.
@@ -96,5 +101,7 @@ Summarized in `notes/02-open-data-policy-and-terms.md`. Metadata is free to reus
 - **Duplicate triples in the dump:** the parser counts 31.9 million triples, the store keeps 24.7 million quads. Count with SPARQL on the store when exact numbers matter.
 - **QLever-only syntax:** `FILTER KEYWORDS` only works on QLever. Wikidata and GND data (`wdt:`, `geo:`) is already in the main dump (`notes/10-schema-census.md`).
 - **`SKKG_FULL_DB` takes a path, not a flag:** `SKKG_FULL_DB=1` fails every full-database test with "database was not found at 1". Set it to `data/db/skkg-20261028.sqlite`.
+- **Railway apply and ssh are the user's:** auto mode blocks `railway config apply` and ssh to production, so the user runs them with `!`. `railway config plan` is read only; stop on any change to another service of `endearing-warmth`, a volume, or a mount. Never drop `partial` from `.railway/railway.ts`: without it the file stands for the whole project, and the apply deletes the siblings' services.
+- **`railway variable set` redeploys:** add `--skip-deploys` to set a variable without a deploy.
 - **`npm run mutate` has no `--help`:** unknown flags start the full run, and piping it into `head` kills it with a mutant left in `src/`. Write its output to a file, and check `git status` after any interrupted run.
 - **Two id schemes:** objects, multimedia, persons, literature, exhibitions and addresses have numeric (`object/2432`) or UUID ids, as separate records. Match both.
