@@ -2,6 +2,7 @@
 // per process. The path comes from SKKG_DB_PATH until the download step exists (D3, D8).
 
 import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { DB_PATH_ENV, SCHEMA_VERSION, STALE_AFTER_DAYS } from './config.js';
 import { ToolError } from './lib/errors.js';
@@ -16,7 +17,7 @@ export function openDatabase(path) {
   }
   if (!existsSync(path)) {
     // The path goes to the log only: over HTTP the message reaches anyone who calls a tool.
-    console.error(JSON.stringify({ level: 'error', msg: 'database not found', path }));
+    console.error(JSON.stringify({ level: 'error', msg: 'database not found', path: resolve(path) }));
     throw new ToolError('The SKKG database was not found.', `Check ${DB_PATH_ENV}; the server log names the path.`);
   }
   const db = new DatabaseSync(path, { readOnly: true });

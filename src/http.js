@@ -143,7 +143,9 @@ function health() {
   try {
     const { meta } = getDatabase();
     return { ...body, database: 'ok', data_as_of: meta.data_as_of, schema_version: Number(meta.schema_version) };
-  } catch {
+  } catch (err) {
+    // The reason goes to the log only; database messages carry no path.
+    log('error', `database unavailable: ${err.message}`);
     return { ...body, database: 'unavailable' };
   }
 }

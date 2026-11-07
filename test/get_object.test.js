@@ -21,7 +21,7 @@
 //   the redaction status, though it holds commas of its own
 // - the physical section returns the current location, which SKKG's API and website do not publish
 // - labels of one vocabulary that share a position (no seq) come back in the order of an index,
-//   not in the order of the dump, so a rebuild with other indexes reorders them
+//   not in the order the build inserted them, so a rebuild with other indexes reorders them
 // - results violate the output schema
 // - the text repeats structuredContent as JSON, or leaves out a requested section, its ids,
 //   the rights, or the warnings, so a host that shows the model only the text loses them
@@ -246,8 +246,8 @@ test('skkg_get_object against the fixture database', { skip: FIXTURE_DB.skip }, 
       assert.match(text, /Previous owner \(computed\)/);
     });
 
-    await t.test('labels without a position of their own keep the order of the dump', async () => {
-      // Neither material has a seq; the dump lists Glas first, the term ids would put Holz first.
+    await t.test('labels without a position of their own keep the order the build inserted them in', async () => {
+      // Neither material has a seq; the build inserted Glas first, the term ids would put Holz first.
       const { structured: r } = await callSent(client, NAME, { id: 'object/28100f59-77e0-4354-aefe-eeaf0ac3442d', include: ['physical'] }, outputSchema);
       assert.deepEqual(r.physical.materials, ['Glas', 'Holz']);
     });

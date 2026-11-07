@@ -8,7 +8,8 @@
 // - skkg_view_image sends its JSON copy over HTTP, or its size guard still counts that copy
 // - /health lacks the version, commit, data_as_of, or schema version, or fails without a
 //   database, which the first deploy starts without; it or a tool call without the database
-//   shows the database's path, or the log does not
+//   shows the database's path, or the log does not; a database that cannot be read leaves no
+//   reason in the log
 // - a foreign or malformed Origin passes, or claude.ai or Origin: null is refused; with a
 //   configured host or RAILWAY_PUBLIC_DOMAIN a foreign Host passes, or /health checks the Host
 // - GET or DELETE on /mcp is not 405; a body over 1 MiB is not 413; a compressed body is decoded
@@ -183,6 +184,16 @@ test('/health reports the version, commit, and database, and answers without a d
     assert.equal(body.data_as_of, undefined);
     const list = await modern(server, 'tools/list');
     assert.ok(list.body.result.tools.length > 0, 'the tools are listed without a database');
+  });
+});
+
+test('/health logs why a database that cannot be read is unavailable', { skip }, async () => {
+  await withServer({ SKKG_DB_PATH: join(ROOT, 'package.json') }, async (server) => {
+    const body = await (await fetch(`${server.url}/health`)).json();
+    assert.equal(body.database, 'unavailable');
+    const logged = () => server.lines().some((l) => l.level === 'error' && /database unavailable: file is not a database/.test(l.msg));
+    for (let i = 0; i < 40 && !logged(); i++) await sleep(25);
+    assert.ok(logged(), server.stderr());
   });
 });
 

@@ -77,7 +77,7 @@ const MUTATIONS = [
   ['src/tools/object_filters.js', "(oc.attribution_id IS NULL OR oc.attribution_id NOT IN", "(1 OR oc.attribution_id NOT IN", 'exclusion in the matched row'],
   ['src/tools/object_filters.js', "if (excluded && creatorParts.length) {", "if (false) {", 'exclusion scoped to matched row'],
   ['src/tools/object_filters.js', "clauses.push(`o.id IN (SELECT oc.object_id FROM object_creators oc WHERE ${creatorParts.join(' AND ')})`);", "clauses.push(`EXISTS (SELECT 1 FROM object_creators oc WHERE oc.object_id = o.id AND ${creatorParts.join(' AND ')})`);", 'creator rows read first, not per object'],
-  ['src/lib/objects.js', "facet = ? ORDER BY seq IS NULL, seq, rowid')", "facet = ? ORDER BY seq IS NULL, seq')", 'tied labels keep the dump order'],
+  ['src/lib/objects.js', "facet = ? ORDER BY seq IS NULL, seq, rowid')", "facet = ? ORDER BY seq IS NULL, seq')", 'tied labels keep the insertion order'],
   ['src/tools/collection_stats.js', "'SELECT 1 FROM terms WHERE broader_id = ? LIMIT 1'", "'SELECT 1 FROM terms WHERE broader_id || \\'\\' = ? LIMIT 1'", 'narrower lookup of stats by index'],
   ['src/tools/find_terms.js', "FROM terms t WHERE t.broader_id = ?", "FROM terms t WHERE t.broader_id || '' = ?", 'narrower list by index'],
   ['src/tools/term_filters.js', "FROM object_terms WHERE facet = '${facet}'` });", "FROM object_terms WHERE facet = '${facet}' AND COALESCE(seq, 0) = COALESCE(seq, 0)` });", 'facet pairs from a covering index'],
@@ -680,8 +680,9 @@ const MUTATIONS = [
   ["src/lib/http.js", "export const fetchCapped = (url, opts) => (cache && opts.cached\n", "export const fetchCapped = (url, opts) => (false\n", "fetchCapped uses the cache"],
   ["src/lib/http.js", "export const fetchCapped = (url, opts) => (cache && opts.cached\n", "export const fetchCapped = (url, opts) => (cache\n", "the cache only for a caller that asks"],
   ["src/lib/images.js", "  signal,\n  cached: true,\n", "  signal,\n", "image fetches use the cache"],
+  ["src/http.js", "    log('error', `database unavailable: ${err.message}`);\n", "", "health logs why the database is unavailable"],
   ["src/db.js", "    throw new ToolError('The SKKG database was not found.',", "    throw new ToolError(`The SKKG database was not found at ${path}.`,", "a missing database's path stays out of results"],
-  ["src/db.js", "    console.error(JSON.stringify({ level: 'error', msg: 'database not found', path }));\n", "", "the log names a missing database's path"],
+  ["src/db.js", "    console.error(JSON.stringify({ level: 'error', msg: 'database not found', path: resolve(path) }));\n", "", "the log names a missing database's path"],
 ];
 
 // The cache key changes with the entry, so an edited entry has no record and is selected.
