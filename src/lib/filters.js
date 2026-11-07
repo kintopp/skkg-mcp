@@ -4,7 +4,7 @@
 
 import { ToolError } from './errors.js';
 import { resolveId } from './ids.js';
-import { ftsQuery } from './fts.js';
+import { ftsQuery, searchQuery } from './fts.js';
 import { stmt, placeholders } from './sql.js';
 import { termLabel, actorRef } from './labels.js';
 import { termsByLabel } from './terms.js';
@@ -121,11 +121,11 @@ function suggestTerms(db, field, facet, value) {
 
 const ID_LIKE = /^(person|actor)\/|^https?:|^skkg:|^\d+$|^[0-9a-f]{8}-[0-9a-f]{4}-/i;
 
-/** Resolves an actor filter value (an id or a name) to { ids, byName }. */
+/** Resolves an actor filter value (an id or a name) to { ids, byName, warnings }. */
 export function resolveActors(db, field, value) {
   const v = value.trim();
-  if (ID_LIKE.test(v)) return { ids: [resolveId(db, v, { types: ['person', 'actor'] }).id], byName: false };
-  const q = ftsQuery(v);
+  if (ID_LIKE.test(v)) return { ids: [resolveId(db, v, { types: ['person', 'actor'] }).id], byName: false, warnings: [] };
+  const { fts: q, warnings } = searchQuery(v, field);
   if (!q) throw new ToolError(`\`${field}\` is empty.`, 'Pass a name or an actor id such as "person/41".');
   const rows = stmt(db, 'SELECT actor_id FROM actors_fts WHERE actors_fts MATCH ? ORDER BY rank LIMIT ?')
     .all(q, MAX_NAME_MATCHES + 1);
@@ -138,21 +138,21 @@ export function resolveActors(db, field, value) {
     throw new ToolError(`\`${field}\`: "${v}" matches more than ${MAX_NAME_MATCHES} names, e.g. ${some}.`,
       'Add a given name, or pass an actor id.');
   }
-  return { ids: rows.map((r) => r.actor_id), byName: true };
+  return { ids: rows.map((r) => r.actor_id), byName: true, warnings };
 }
 
 /**
- * An actor filter: { ids, inList, applied, warning }. `inList` is "IN (?, …)" for the ids, for the
- * caller's column; `applied` lists the actors for applied_filters; `warning` is set when a name
- * matched several actors, all of them included.
+ * An actor filter: { ids, inList, applied, warnings }. `inList` is "IN (?, …)" for the ids, for the
+ * caller's column; `applied` lists the actors for applied_filters; `warnings` say how the name was
+ * read, and that it matched several actors, all of them included.
  */
 export function actorFilter(db, field, value) {
-  const { ids, byName } = resolveActors(db, field, value);
+  const { ids, byName, warnings } = resolveActors(db, field, value);
   return {
     ids,
     inList: `IN (${placeholders(ids.length)})`,
     applied: ids.map((id) => actorRef(db, id)),
-    warning: byName && ids.length > 1 ? nameWarning(field, value, ids.length) : undefined,
+    warnings: byName && ids.length > 1 ? [...warnings, nameWarning(field, value, ids.length)] : warnings,
   };
 }
 

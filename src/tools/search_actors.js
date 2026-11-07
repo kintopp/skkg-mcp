@@ -6,7 +6,7 @@ import { withTool, toolResult } from '../lib/tool.js';
 import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
 import { perDb, placeholders, stmt } from '../lib/sql.js';
-import { ftsQuery } from '../lib/fts.js';
+import { ftsQuery, searchQuery, QUERY_SYNTAX } from '../lib/fts.js';
 import { termLabel } from '../lib/labels.js';
 import { websiteUrl } from '../lib/ids.js';
 import { ROLE_KINDS, ACTOR_ROLES, hasRole, roleCounts, lifeDates } from '../lib/actors.js';
@@ -54,8 +54,8 @@ const description =
 
 const filterShape = {
   query: z.string().min(1).max(MAX_QUERY_LEN).optional().describe(
-    'Name: every word must occur in one of the actor\'s names, e.g. "Anker", "Albert Anker"; a trailing * matches ' +
-    'a prefix ("Koll*"). Umlauts may be written ä or ae'),
+    `Name: the words must occur in one of the actor's names, e.g. "Anker", "Albert Anker", "Koll*". ${QUERY_SYNTAX}. ` +
+    'Umlauts may be written ä or ae'),
   kind: z.enum(['person', 'group']).optional().describe('person, or group (a firm, institution, or family)'),
   born_from: yearField('Earliest year of birth, or of a group\'s formation. Actors without that year never match'),
   born_to: yearField('Latest year of birth or formation; see born_from'),
@@ -165,7 +165,9 @@ function compile(db, args) {
 
   let fts;
   if (args.query !== undefined) {
-    fts = ftsQuery(args.query);
+    const query = searchQuery(args.query, 'query');
+    fts = query.fts;
+    warnings.push(...query.warnings);
     if (!fts) throw new ToolError('`query` has no word.', 'Pass a name, e.g. "Anker".');
   }
   if (args.kind !== undefined) {

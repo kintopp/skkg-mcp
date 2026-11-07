@@ -6,7 +6,7 @@ import { withTool, toolResult } from '../lib/tool.js';
 import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
 import { perDb, placeholders, stmt } from '../lib/sql.js';
-import { ftsQuery } from '../lib/fts.js';
+import { searchQuery, QUERY_SYNTAX } from '../lib/fts.js';
 import { termLabel, actorRef, objectRef } from '../lib/labels.js';
 import { resolveId } from '../lib/ids.js';
 import { words, startingWith } from '../lib/words.js';
@@ -54,7 +54,7 @@ const nameField = (what, example) => idField(`${what}: a name, e.g. ${example}, 
 const filterShape = {
   query: z.string().min(1).max(MAX_QUERY_LEN).optional().describe(
     'Words of the title, the authors, editors, and publishers, or the series, e.g. "Waffen", "Gotthelf Erzählungen". ' +
-    'Every word must occur; "a phrase" matches in order; a trailing * matches a prefix'),
+    QUERY_SYNTAX),
   author: nameField('Author or editor', '"Gotthelf" or "Will Durant"'),
   publisher: nameField('Publisher', '"Manesse" or "Orell Füssli"'),
   year_from: yearField('Earliest year of publication. A publication spanning several years matches when its span overlaps ' +
@@ -167,7 +167,7 @@ function nameHint(db, field, actorIds, fts) {
   return 'Check the spelling, try the surname alone, or use `query`, which also searches titles and series.';
 }
 
-// A name filter (author or publisher): { sql, params, applied, warning }.
+// A name filter (author or publisher): { sql, params, applied, warnings }.
 function nameFilter(db, field, value) {
   const parts = PARTS[field];
   const what = field === 'author' ? 'author or editor' : 'publisher';
@@ -177,9 +177,9 @@ function nameFilter(db, field, value) {
     if (!stmt(db, `SELECT 1 FROM literature_actors la WHERE la.actor_id = ? AND ${partsIn(parts)} LIMIT 1`).get(id)) {
       throw new ToolError(`\`${field}\`: ${id} is no ${what} of any publication.`, nameHint(db, field, [id]));
     }
-    return { sql: `l.id IN (SELECT la.literature_id FROM literature_actors la WHERE la.actor_id = ? AND ${partsIn(parts)})`, params: [id], applied: [actorRef(db, id)] };
+    return { sql: `l.id IN (SELECT la.literature_id FROM literature_actors la WHERE la.actor_id = ? AND ${partsIn(parts)})`, params: [id], applied: [actorRef(db, id)], warnings: [] };
   }
-  const q = ftsQuery(v);
+  const { fts: q, warnings } = searchQuery(v, field);
   if (!q) throw new ToolError(`\`${field}\` has no word.`, `Pass a name, e.g. "${field === 'author' ? 'Gotthelf' : 'Manesse'}".`);
   const names = stmt(db, `SELECT DISTINCT a.label FROM literature_actors la JOIN actors a ON a.id = la.actor_id
       WHERE ${partsIn(parts)} AND la.actor_id IN (SELECT actor_id FROM actors_fts WHERE actors_fts MATCH ?)
@@ -194,10 +194,10 @@ function nameFilter(db, field, value) {
         AND la.actor_id IN (SELECT actor_id FROM actors_fts WHERE actors_fts MATCH ?))`,
     params: [q],
     applied: names.length > APPLIED_NAMES ? `${shown} | … (${names.length} names)` : shown,
-    warning: names.length > 1
-      ? `\`${field}\` "${v}" matched ${names.length} different names, all of them included (see applied_filters.${field}). ` +
-        'Write more of the name, or "the name in quotes" to match it as a phrase.'
-      : undefined,
+    warnings: names.length > 1
+      ? [...warnings, `\`${field}\` "${v}" matched ${names.length} different names, all of them included (see applied_filters.${field}). ` +
+        'Write more of the name, or "the name in quotes" to match it as a phrase.']
+      : warnings,
   };
 }
 
@@ -231,7 +231,9 @@ function compile(db, args) {
 
   let fts;
   if (args.query !== undefined) {
-    fts = ftsQuery(args.query);
+    const query = searchQuery(args.query, 'query');
+    fts = query.fts;
+    warnings.push(...query.warnings);
     if (!fts) throw new ToolError('`query` has no word.', 'Pass words of a title or a name, e.g. "Waffen".');
   }
   for (const field of Object.keys(PARTS)) {
@@ -239,7 +241,7 @@ function compile(db, args) {
     const f = nameFilter(db, field, args[field]);
     add(f.sql, ...f.params);
     applied[field] = f.applied;
-    if (f.warning) warnings.push(f.warning);
+    warnings.push(...f.warnings);
   }
   if (args.year_from !== undefined) {
     add('l.year_to >= ?', args.year_from);

@@ -5,7 +5,7 @@ import { withTool, toolResult } from '../lib/tool.js';
 import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
 import { resolveId } from '../lib/ids.js';
-import { ftsQuery } from '../lib/fts.js';
+import { searchQuery, QUERY_SYNTAX } from '../lib/fts.js';
 import { stmt } from '../lib/sql.js';
 import { termLabel } from '../lib/labels.js';
 import { termsByLabel } from '../lib/terms.js';
@@ -70,7 +70,7 @@ const description =
 
 const inputSchema = z.object({
   query: z.string().min(1).max(200).optional().describe(
-    'Label words, e.g. "Radierung" or "Silber". Several words must all match; "a phrase" matches in order'),
+    `Label words, e.g. "Radierung" or "Silber"; each matches as a prefix. ${QUERY_SYNTAX}`),
   id: z.string().min(1).max(300).optional().describe(
     'A term id ("type/21087/140347") or its data.skkg.ch IRI: returns that term with its broader and narrower terms'),
   vocabulary: z.enum(['all', ...Object.keys(VOCABULARIES)]).default('all').describe(
@@ -159,13 +159,6 @@ function schemeName(db, schemeId) {
 
 const getTerm = (db, id) => stmt(db, 'SELECT * FROM terms WHERE id = ?').get(id);
 
-// Each word matches as a prefix; "phrases", starred words, and OR are kept as written.
-// A stray quote is left to ftsQuery, which drops it from the word.
-function prefixQuery(query) {
-  return ftsQuery(query.replace(/"[^"]*"|\S+/g, (m) => (m.startsWith('"') && m.endsWith('"') && m.length > 1)
-    || m === 'OR' || m.endsWith('*') ? m : `${m}*`));
-}
-
 // Terms the tool may return: none of WITHHELD_FACETS.
 const SHOWN = `(t.facet IS NULL OR t.facet NOT IN (${WITHHELD_FACETS.map((f) => `'${f}'`).join(', ')}))`;
 // use_rank counts objects with narrower terms, or for vocabularies of other records their records;
@@ -181,14 +174,14 @@ function rank(rows, first = new Set()) {
 }
 
 function search(db, args) {
-  const q = prefixQuery(args.query);
+  // Every word outside a phrase matches as a prefix.
+  const { fts: q, warnings } = searchQuery(args.query, 'query', { prefix: true });
   if (!q) throw new ToolError(`\`query\` "${args.query}" has no searchable word.`, 'Pass a German label, e.g. "Radierung".');
   const scoped = args.vocabulary !== 'all';
   const rows = stmt(db, `SELECT ${CANDIDATE} FROM terms_fts f JOIN terms t ON t.id = f.term_id
       WHERE terms_fts MATCH ? AND ${SHOWN}${scoped ? ' AND t.facet = ?' : ''}`).all(...(scoped ? [q, args.vocabulary] : [q]));
   const ids = rank(rows, new Set(termsByLabel(db, args.query.replace(/"/g, '')).map((e) => e.id)));
 
-  const warnings = [];
   if (!rows.length) {
     const elsewhere = scoped
       ? [...new Set(stmt(db, `SELECT t.facet FROM terms_fts f JOIN terms t ON t.id = f.term_id WHERE terms_fts MATCH ? AND t.facet IS NOT NULL AND ${SHOWN}`)

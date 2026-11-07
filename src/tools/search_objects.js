@@ -26,8 +26,7 @@ const ORDER = {
 const description =
   'Search SKKG objects by German keywords and filters; the main entry point. ' +
   'The data is German: translate the user\'s words ("Stillleben", not "still life"). ' +
-  'Query syntax: words are AND-ed, "a phrase" matches in order, a trailing * matches a prefix (Uhr*), ' +
-  'and OR between two words matches either. Term filters take a German label or a term id; ' +
+  'Term filters take a German label or a term id; ' +
   'an unknown label is refused, with similar labels if there are any and the skkg_find_terms call that lists them all. Each result carries its id, website_url, ' +
   'image_license (the primary image) and object_copyright (the object itself): quote both, they are separate rights. ' +
   'For the full record of one object (production, acquisition, provenance chain, images), use skkg_get_object. ' +

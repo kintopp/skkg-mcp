@@ -6,7 +6,7 @@ import { withTool, toolResult } from '../lib/tool.js';
 import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
 import { perDb, placeholders, stmt } from '../lib/sql.js';
-import { ftsQuery } from '../lib/fts.js';
+import { ftsQuery, searchQuery, QUERY_SYNTAX } from '../lib/fts.js';
 import { objectRef } from '../lib/labels.js';
 import { resolveId, websiteUrl, RECORD_TABLES } from '../lib/ids.js';
 import { withArticle } from '../lib/format.js';
@@ -60,7 +60,7 @@ const description =
 const filterShape = {
   query: z.string().min(1).max(MAX_QUERY_LEN).optional().describe(
     'Words of the title or of a venue\'s name or place, e.g. "Hodler", "Giacometti Zürich"; the venues include cancelled stations. ' +
-    'Every word must occur; "a phrase" matches in order; a trailing * matches a prefix'),
+    QUERY_SYNTAX),
   venue: idField('Venue: a name, e.g. "Kunsthaus Zürich", a place, e.g. "Winterthur", or an address id from a result. ' +
     'Each word matches the start of a word of the venue\'s name and place, ignoring case and accents. Matches the main ' +
     'venue and the other stations, but no station SKKG cancelled ("abgesagt"); applied_filters lists the venues matched'),
@@ -190,7 +190,9 @@ function compile(db, args) {
 
   let fts;
   if (args.query !== undefined) {
-    fts = ftsQuery(args.query);
+    const query = searchQuery(args.query, 'query');
+    fts = query.fts;
+    warnings.push(...query.warnings);
     if (!fts) throw new ToolError('`query` has no word.', 'Pass words of a title or a venue, e.g. "Hodler".');
   }
   const atStation = yearConditions(args, STATION_DATES);

@@ -242,7 +242,7 @@ function compile(db, args) {
     const a = actorFilter(db, field, args[field]);
     add(LAYER_OF[field], `${column} ${a.inList}`, ...a.ids);
     applied[field] = a.applied;
-    if (a.warning) warnings.push(a.warning);
+    warnings.push(...a.warnings);
   }
   if (args.transaction_kind !== undefined) {
     add(LAYER_OF.transaction_kind, 'p.transaction_kind = ?', args.transaction_kind);

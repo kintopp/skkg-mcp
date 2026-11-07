@@ -5,7 +5,7 @@
 import { z } from 'zod';
 import { ToolError } from '../lib/errors.js';
 import { resolveId } from '../lib/ids.js';
-import { scopedFtsQuery } from '../lib/fts.js';
+import { searchQuery, scopeFts, QUERY_SYNTAX } from '../lib/fts.js';
 import { placeholders, stmt } from '../lib/sql.js';
 import { objectRef, recordLabel } from '../lib/labels.js';
 import { resolveTerms, actorFilter, assertRange } from '../lib/filters.js';
@@ -26,7 +26,7 @@ const SCOPES = {
 export function objectQueryShape() {
   return {
     query: z.string().max(MAX_QUERY_LEN).optional().describe(
-      'German keywords over titles, inscriptions, object texts, and inventory numbers. Umlauts may be written ä or ae'),
+      `German keywords over titles, inscriptions, object texts, and inventory numbers. ${QUERY_SYNTAX}. Umlauts may be written ä or ae`),
     scope: z.enum(Object.keys(SCOPES)).default('all').describe(
       'Where the query matches: all (default), title, inscription, text (descriptions), or inventory_number'),
   };
@@ -115,7 +115,7 @@ export function compileObjectFilters(db, args) {
     creatorParts.push(`oc.actor_id ${a.inList}`);
     creatorParams.push(...a.ids);
     applied.creator = a.applied;
-    if (a.warning) warnings.push(a.warning);
+    warnings.push(...a.warnings);
   }
 
   for (const [field, { facet, creatorColumn }] of Object.entries(TERM_FILTERS)) {
@@ -169,7 +169,7 @@ export function compileObjectFilters(db, args) {
     clauses.push(`o.id IN (SELECT object_id FROM acquisitions WHERE source_id ${a.inList})`);
     params.push(...a.ids);
     applied.acquired_from = a.applied;
-    if (a.warning) warnings.push(a.warning);
+    warnings.push(...a.warnings);
   }
   for (const field of ['has_image', 'has_provenance_chain']) {
     if (args[field] === undefined) continue;
@@ -216,11 +216,13 @@ export function compileObjectFilters(db, args) {
  * { from, where, params, fts, applied, warnings }, where `from` and `where` select `o.id`.
  */
 export function compileObjectQuery(db, args) {
-  const fts = args.query ? scopedFtsQuery(args.query, SCOPES[args.scope ?? 'all']) : undefined;
-  if (args.query && !fts) {
+  const query = args.query ? searchQuery(args.query, 'query') : { warnings: [] };
+  if (args.query && !query.fts) {
     throw new ToolError(`\`query\` "${args.query}" has no searchable word.`, 'Pass German keywords, e.g. "Stillleben".');
   }
+  const fts = query.fts && scopeFts(query.fts, SCOPES[args.scope ?? 'all']);
   const filters = compileObjectFilters(db, args);
+  filters.warnings.unshift(...query.warnings);
   if (!args.query && args.scope !== undefined && args.scope !== 'all') {
     filters.warnings.push(`\`scope\` "${args.scope}" says where \`query\` matches, and there is no query; it was ignored.`);
   }
