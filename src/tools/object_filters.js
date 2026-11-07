@@ -107,7 +107,7 @@ export function compileObjectFilters(db, args) {
   const warnings = [];
   const narrower = args.include_narrower !== false;
 
-  // Conditions on one creator row (object_creators oc), AND-ed inside one EXISTS.
+  // Conditions on one creator row (object_creators oc), AND-ed in one subquery.
   const creatorParts = [];
   const creatorParams = [];
   if (args.creator !== undefined) {
@@ -151,7 +151,7 @@ export function compileObjectFilters(db, args) {
     params.push(...excluded);
   }
   if (creatorParts.length) {
-    clauses.push(`EXISTS (SELECT 1 FROM object_creators oc WHERE oc.object_id = o.id AND ${creatorParts.join(' AND ')})`);
+    clauses.push(`o.id IN (SELECT oc.object_id FROM object_creators oc WHERE ${creatorParts.join(' AND ')})`);
     params.push(...creatorParams);
   }
 

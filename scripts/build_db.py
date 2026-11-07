@@ -199,12 +199,13 @@ CREATE TABLE object_group_members (group_id TEXT, object_id TEXT REFERENCES obje
 INDEXES = """
 CREATE INDEX ix_terms_scheme ON terms(scheme_id);
 CREATE INDEX ix_terms_facet ON terms(facet);
+CREATE INDEX ix_terms_broader ON terms(broader_id);
 CREATE INDEX ix_term_labels ON term_labels(label);
 CREATE INDEX ix_term_anc ON term_ancestors(ancestor_id);
 CREATE INDEX ix_objects_inv ON objects(inventory_number);
 CREATE INDEX ix_objects_parent ON objects(parent_id);
 CREATE INDEX ix_objects_date ON objects(date_from, date_to);
-CREATE INDEX ix_ot_term ON object_terms(facet, term_id);
+CREATE INDEX ix_ot_term ON object_terms(facet, term_id, object_id);
 CREATE INDEX ix_ot_obj ON object_terms(object_id);
 CREATE INDEX ix_ot_termid ON object_terms(term_id);
 CREATE INDEX ix_titles_obj ON object_titles(object_id);

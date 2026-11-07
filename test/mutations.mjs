@@ -76,6 +76,7 @@ const MUTATIONS = [
   ['src/tools/object_filters.js', "  } else if (excluded) {", "  } else if (false) {", 'exclusion without creator filter'],
   ['src/tools/object_filters.js', "(oc.attribution_id IS NULL OR oc.attribution_id NOT IN", "(1 OR oc.attribution_id NOT IN", 'exclusion in the matched row'],
   ['src/tools/object_filters.js', "if (excluded && creatorParts.length) {", "if (false) {", 'exclusion scoped to matched row'],
+  ['src/tools/object_filters.js', "clauses.push(`o.id IN (SELECT oc.object_id FROM object_creators oc WHERE ${creatorParts.join(' AND ')})`);", "clauses.push(`EXISTS (SELECT 1 FROM object_creators oc WHERE oc.object_id = o.id AND ${creatorParts.join(' AND ')})`);", 'creator rows read first, not per object'],
   ['src/lib/filters.js', "if (exclusion || !targets.length)", "if (!targets.length)", 'exclusion hint'],
   ['src/tools/object_filters.js', "narrower, exclusion: true }, v)", "narrower }, v)", 'exclude_attributions marked an exclusion'],
   ['src/lib/filters.js', "skkg_find_terms with vocabulary \"${wanted}\" lists", "skkg_find_terms with vocabulary \"${field}\" lists", 'hint names the vocabulary, not the parameter'],

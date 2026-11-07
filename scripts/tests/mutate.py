@@ -47,6 +47,8 @@ MUTATIONS = [
     ("report counts documents beside a photo", "SUM(m.kind = 'document' AND {published_image})", "SUM(m.kind = 'document')", "primary_image"),
     ("report counts fallback documents", "SUM(sk.multimedia_id IS NULL AND m.kind = 'document')", "SUM(m.kind = 'document')", "primary_image"),
     ('citizenship node not loaded', '            t = t[: -len("/citizenship")]\n            nat.append((a, t))', '            nat.append((a, t[: -len("/citizenship")]))', 'citizenship_node'),
+    ("narrower terms indexed", "CREATE INDEX ix_terms_broader ON terms(broader_id);\n", "", "narrower_terms_are_found"),
+    ("facet reads covered", "CREATE INDEX ix_ot_term ON object_terms(facet, term_id, object_id);", "CREATE INDEX ix_ot_term ON object_terms(facet, term_id);", "facet_read_needs_no"),
     ('life date year from the label', '    if y0 is None and y1 is None and lab:\n', '    if False:\n', 'life_dates_without'),
     ('label never overrides a time-span', '    if y0 is None and y1 is None and lab:\n', '    if lab:\n', 'life_dates_without'),
     ('life date label must be a plain date', 'LIFE_DATE_LABEL = re.compile(r"(?:[\\d./ ]*\\.\\s*)?(\\d{3,4})")', 'LIFE_DATE_LABEL = re.compile(r"(?:.*\\s*)?(\\d{3,4})")', 'plain_date'),

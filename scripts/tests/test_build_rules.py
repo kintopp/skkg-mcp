@@ -40,6 +40,9 @@ Ways the rules could fail, which the tests below pin:
 - a credit line is not SKKG's (the foundation, then the object's credit text, then the year of its
   acquisition in four digits, each after ", "), keeps a blank credit text as a part, takes another object's year,
   or an object without an acquisition or credit text gets no credit line.
+- the narrower terms of a term (skkg_find_terms, skkg_collection_stats) are found by scanning every
+  term, or a facet's (object, term) pairs (skkg_collection_stats, the term filters) need a table
+  lookup per row, because the index that serves them is dropped or loses a column.
 
 Run: uv run --with pyoxigraph --with pytest python -I -m pytest -q scripts/tests
 """
@@ -406,3 +409,19 @@ def test_multimedia_that_no_object_or_exhibition_links_is_dropped_and_counted():
     out = b.derive(db)["multimedia_unlinked"]
     assert sorted(i for (i,) in db.execute("SELECT id FROM multimedia")) == ["multimedia/on-exhibition", "multimedia/on-object"]
     assert out == {"records": 2, "with_iiif_image": 1}
+
+
+def _plan(sql):
+    db = sqlite3.connect(":memory:")
+    db.executescript(b.DDL + b.INDEXES)
+    return " | ".join(r[3] for r in db.execute(f"EXPLAIN QUERY PLAN {sql}"))
+
+
+def test_narrower_terms_are_found_by_an_index():
+    plan = _plan("SELECT 1 FROM terms WHERE broader_id = 'type/1' LIMIT 1")
+    assert "INDEX" in plan and "(broader_id=?)" in plan, plan
+
+
+def test_a_facet_read_needs_no_table_lookup():
+    plan = _plan("SELECT object_id AS oid, term_id AS k FROM object_terms WHERE facet = 'material'")
+    assert "COVERING INDEX" in plan and "(facet=?)" in plan, plan
