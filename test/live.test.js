@@ -17,6 +17,7 @@
 // - a 404 fails the call instead of returning the dump's record with a warning; any other failure
 //   (HTTP 503, network, timeout, HTML, invalid JSON, no node for the id, too large) fails it, or is silent
 // - the caller's abort is reported as a failed check instead of ending the call
+// - with the response cache on, a repeated check is answered from it, under a new checked_at
 // - a long list of differences is returned whole, or cut without the total
 // - the stale warning offers live: true to a call that used it, or not to one that did not
 // - the text leaves out the status, a difference, the error, or the note; the note of a failed
@@ -28,6 +29,7 @@ import assert from 'node:assert/strict';
 import { assertWireValid, withClient, makeTestDb, FIXTURE_DB } from './helpers.js';
 import { openDatabase } from '../src/db.js';
 import { getObject, outputSchema } from '../src/tools/get_object.js';
+import { useResponseCache } from '../src/lib/http.js';
 
 const OBJ = 'object/10013';
 // object/10013 has 7 multimedia records; two are published.
@@ -336,6 +338,21 @@ test('a date the dump holds in a malformed form matches the same value from the 
     }
   } finally {
     copy.cleanup();
+  }
+});
+
+test('with the response cache on, every live check asks SKKG\'s API again', { skip: FIXTURE_DB.skip }, async (t) => {
+  useResponseCache();
+  t.after(() => useResponseCache(null));
+  const { db, meta } = openDatabase(FIXTURE_DB.path);
+  try {
+    const calls = await withFetch(() => json(apiRecord(db, OBJ)), async (c) => {
+      for (let i = 0; i < 2; i++) await getObject(db, meta, { id: OBJ, include: [], lang: 'de', live: true });
+      return c;
+    });
+    assert.equal(calls.length, 2);
+  } finally {
+    db.close();
   }
 });
 

@@ -6,7 +6,7 @@ import { USER_AGENT, RESPONSE_CACHE_TTL_MS, RESPONSE_CACHE_MAX_BYTES } from '../
 
 // Off until an entry point turns it on, for both transports: the model often asks for the same
 // image or region again. Code that imports the tools without an entry point fetches every time.
-// `null` turns it off again.
+// `null` turns it off again. Only a caller that passes `cached: true` uses it.
 let cache;
 export function useResponseCache(c = new ResponseCache({ maxBytes: RESPONSE_CACHE_MAX_BYTES, ttlMs: RESPONSE_CACHE_TTL_MS })) {
   cache = c;
@@ -27,15 +27,15 @@ async function readCapped(body, max, tooLarge) {
 const cancel = (res) => res.body?.cancel().catch(() => {});
 
 /**
- * Fetches `url` and returns `{ buffer, mimeType }`, from the response cache when it is on and
- * holds the answer. The buffer may be shared with other callers: never modify it.
+ * Fetches `url` and returns `{ buffer, mimeType }`, from the response cache when `cached` is set,
+ * the cache is on, and it holds the answer. The buffer may be shared with other callers: never modify it.
  * - `server` names the server in messages ("SKKG's IIIF server").
  * - `accept` is the Accept header; `accepts(mimeType)` checks the answer, `kind` names it ("an image").
  * - `maxBytes` caps the body, `tooLarge(bytes)` builds its error.
  * - `statusHint(status)` is the hint of an HTTP error, whose error carries `status`.
  * - `signal` is the caller's: its abort is rethrown as it is, never turned into a ToolError.
  */
-export const fetchCapped = (url, opts) => (cache
+export const fetchCapped = (url, opts) => (cache && opts.cached
   ? cache.getOrFetch(`${opts.accept} ${url}`, () => fetchUncached(url, opts), (r) => r.buffer.length)
   : fetchUncached(url, opts));
 

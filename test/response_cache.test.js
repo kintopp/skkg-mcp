@@ -7,6 +7,7 @@
 // - a TTL of 0 still stores answers
 // - a failed fetch is stored, so a retry gets the error or nothing new
 // - fetchCapped serves an answer of another Accept header, or reaches SKKG again for a cached URL
+// - a caller that does not ask for the cache gets a cached answer
 // - code that imports the tools without an entry point gets a cache
 
 import { test } from 'node:test';
@@ -68,7 +69,7 @@ test('a failed fetch is not kept', async () => {
   assert.equal(n, 2);
 });
 
-test('fetchCapped fetches every time without a cache, and once per URL and Accept with one', async (t) => {
+test('fetchCapped fetches every time without a cache, and once per URL and Accept with one for a caller that asks', async (t) => {
   const original = globalThis.fetch;
   t.after(() => { globalThis.fetch = original; useResponseCache(null); });
   const calls = [];
@@ -78,7 +79,7 @@ test('fetchCapped fetches every time without a cache, and once per URL and Accep
     return new Response(`body of ${url}`, { headers: { 'content-type': 'text/plain' } });
   };
   const opts = (accept) => ({ server: 'Test', accept, accepts: () => true, kind: 'text', maxBytes: 1000,
-    tooLarge: () => new Error('too large'), timeoutMs: 1000, timeoutHint: '', statusHint: () => '' });
+    tooLarge: () => new Error('too large'), timeoutMs: 1000, timeoutHint: '', statusHint: () => '', cached: true });
 
   await fetchCapped('https://x.example/a', opts('text/plain'));
   await fetchCapped('https://x.example/a', opts('text/plain'));
@@ -94,4 +95,7 @@ test('fetchCapped fetches every time without a cache, and once per URL and Accep
   for (let i = 0; i < 2; i++) await assert.rejects(fetchCapped('https://x.example/fail', opts('text/plain')), /HTTP 503/);
   assert.deepEqual(calls, ['text/plain https://x.example/a', 'image/jpeg https://x.example/a',
     'text/plain https://x.example/b', 'text/plain https://x.example/fail', 'text/plain https://x.example/fail']);
+  calls.length = 0;
+  await fetchCapped('https://x.example/a', { ...opts('text/plain'), cached: false });
+  assert.deepEqual(calls, ['text/plain https://x.example/a'], 'a caller without cached: true fetches');
 });

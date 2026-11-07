@@ -89,8 +89,8 @@ export const API_DATA_BASE = 'https://api.digital.skkg.ch/api/v1/graphs/skkg/dat
 export const API_TIMEOUT_MS = posIntEnv('SKKG_API_TIMEOUT_MS', 30_000, { min: 1000, max: 600_000 });
 export const API_MAX_BYTES = 5_000_000;
 
-// SKKG's answers (IIIF images, RetrieveObject records), kept by URL so a repeated request does not
-// reach SKKG again. Short, since `live: true` asks for current rights; 0 turns the cache off.
+// SKKG's IIIF images, kept by URL so a repeated request does not reach SKKG again; 0 turns the
+// cache off. `live: true` never uses it, since it asks for current rights.
 export const RESPONSE_CACHE_TTL_MS = posIntEnv('SKKG_RESPONSE_CACHE_TTL_MS', 5 * 60 * 1000, { min: 0, max: 60 * 60 * 1000 });
 export const RESPONSE_CACHE_MAX_BYTES = 64 * 1024 * 1024;
 
@@ -104,6 +104,13 @@ export const HTTP_MAX_INFLIGHT = posIntEnv('SKKG_HTTP_MAX_INFLIGHT', 16, { min: 
 export const MCP_ALLOWED_ORIGINS = process.env.MCP_ALLOWED_ORIGINS;
 // Comma-separated hosts; with none (and no RAILWAY_PUBLIC_DOMAIN) the Host check is off.
 export const MCP_ALLOWED_HOSTS = process.env.MCP_ALLOWED_HOSTS;
+// Set by Railway.
+export const RAILWAY_PUBLIC_DOMAIN = process.env.RAILWAY_PUBLIC_DOMAIN;
+export const DEPLOYED_COMMIT = process.env.RAILWAY_GIT_COMMIT_SHA ?? 'unknown';
+export const HTTP_BUSY_RETRY_AFTER_S = 5;
+export const HTTP_CORS_MAX_AGE_S = 600;
+// After SIGTERM, calls in flight get this long before the process exits.
+export const HTTP_DRAIN_MS = 10_000;
 
 // openWorldHint is false for tools that only read the local database; tools that
 // call SKKG (skkg_get_object with live: true, the image tools) use the open-world set.

@@ -13,7 +13,8 @@ import { logEveryCall } from './lib/tool.js';
 import { parseAllowedOrigins, isAllowedOrigin, allowedHosts, isAllowedHost } from './lib/origin.js';
 import {
   SERVER_NAME, SERVER_VERSION, HTTP_PORT, HTTP_MAX_BODY_BYTES, HTTP_RESPONSE_TIMEOUT_MS,
-  HTTP_MAX_INFLIGHT, MCP_ALLOWED_ORIGINS, MCP_ALLOWED_HOSTS,
+  HTTP_MAX_INFLIGHT, MCP_ALLOWED_ORIGINS, MCP_ALLOWED_HOSTS, RAILWAY_PUBLIC_DOMAIN, DEPLOYED_COMMIT,
+  HTTP_BUSY_RETRY_AFTER_S, HTTP_CORS_MAX_AGE_S, HTTP_DRAIN_MS,
 } from './config.js';
 
 // An explicit level: Railway files a stderr line without one as an error.
@@ -26,7 +27,7 @@ logEveryCall();
 
 const origins = parseAllowedOrigins(MCP_ALLOWED_ORIGINS);
 // The Host check is on only when a host is configured; the Origin check is always on.
-const hosts = allowedHosts(MCP_ALLOWED_HOSTS, process.env.RAILWAY_PUBLIC_DOMAIN);
+const hosts = allowedHosts(MCP_ALLOWED_HOSTS, RAILWAY_PUBLIC_DOMAIN);
 
 const handler = createMcpHandler(() => createServer({ transport: 'http' }), {
   maxRequestBodySize: HTTP_MAX_BODY_BYTES,
@@ -60,7 +61,7 @@ function handlePreflight(req, res) {
   res.writeHead(204, {
     'Access-Control-Allow-Methods': 'POST, GET, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': req.headers['access-control-request-headers'] ?? 'Content-Type, Accept, MCP-Protocol-Version, Mcp-Method, Mcp-Name',
-    'Access-Control-Max-Age': '600',
+    'Access-Control-Max-Age': String(HTTP_CORS_MAX_AGE_S),
   });
   res.end();
 }
@@ -84,7 +85,7 @@ async function handleTransport(req, res) {
     return;
   }
   if (inflight >= HTTP_MAX_INFLIGHT) {
-    sendJson(res, 503, { error: 'Server busy' }, { 'Retry-After': '5' });
+    sendJson(res, 503, { error: 'Server busy' }, { 'Retry-After': String(HTTP_BUSY_RETRY_AFTER_S) });
     return;
   }
   inflight++;
@@ -136,14 +137,16 @@ function health() {
     status: 'ok',
     server: SERVER_NAME,
     version: SERVER_VERSION,
-    commit: process.env.RAILWAY_GIT_COMMIT_SHA ?? 'unknown',
+    commit: DEPLOYED_COMMIT,
     node: process.version,
   };
   try {
     const { meta } = getDatabase();
     return { ...body, database: 'ok', data_as_of: meta.data_as_of, schema_version: Number(meta.schema_version) };
   } catch (err) {
-    return { ...body, database: 'unavailable', database_error: err.message };
+    // The message names the database's path, which a public endpoint does not show.
+    log('error', 'database unavailable', err);
+    return { ...body, database: 'unavailable' };
   }
 }
 
@@ -177,7 +180,7 @@ log('info', `listening on http://127.0.0.1:${server.address().port}`);
 process.once('SIGTERM', () => {
   log('info', 'SIGTERM: draining');
   draining = true;
-  setTimeout(() => process.exit(0), 10_000).unref();
+  setTimeout(() => process.exit(0), HTTP_DRAIN_MS).unref();
   server.closeIdleConnections();
   server.close(async () => {
     await handler.close();

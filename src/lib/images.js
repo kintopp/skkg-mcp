@@ -126,6 +126,7 @@ export const fetchImage = (url, signal) => fetchCapped(url, {
     ? 'SKKG may have withdrawn the image; check the object\'s website_url, and do not look for the image elsewhere.'
     : 'Retry later.'),
   signal,
+  cached: true,
 });
 
 /** Width and height from a JPEG's frame header, or undefined when the bytes are no JPEG it can read. */
