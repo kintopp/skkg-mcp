@@ -15,7 +15,7 @@ Extends the root `CLAUDE.md`: the offline suite is the only continuous layer, so
 
 ## Harness
 
-- **No network, no full database in `npm test`.** Unit tests build a throwaway database with `makeTestDb` (`test/helpers.js`), holding only the tables and rows the test needs. Tool tests use the fixture database built by `scripts/build_db.py` from the partial dump, so its schema cannot drift from the real one. It stays uncommitted in `data/db/` (56 MB); `FIXTURE_DB` (`test/helpers.js`) gives the path of the newest `skkg-partial-YYYYMMDD.sqlite` there (override with `SKKG_FIXTURE_DB`) and a `skip` reason when it is missing. Rebuild it (about 40 s) with:
+- **No network, no full database in `npm test`.** Unit tests build a throwaway database with `makeTestDb` (`test/helpers.js`), holding only the tables and rows the test needs. Tool tests use the fixture database built by `scripts/build_db.py` from the partial dump, so its schema cannot drift from the real one. It stays uncommitted in `data/db/` (about 20 MB); `FIXTURE_DB` (`test/helpers.js`) gives the path of the newest `skkg-partial-YYYYMMDD.sqlite` there (override with `SKKG_FIXTURE_DB`) and a `skip` reason when it is missing. Rebuild it (about 40 s) with:
 
   ```sh
   uv run --with pyoxigraph python -I scripts/load_oxigraph.py data/raw/partial/latest-partial-dump.ttl.gz data/oxigraph/partial-20261028

@@ -4,7 +4,7 @@ Extends the root `CLAUDE.md`. Each rule answers a kind of defect that reached re
 
 ## Before writing
 
-- **Query before you assume (A, I).** Check every claim the code relies on: about the dump, the API, the website, or SQLite and FTS5. Use a query on the full database (`data/db/skkg-20261028.sqlite`), the Oxigraph store, or one page load. Claims to check include "only X has Y", "always present", "is ordered", what a kind or id prefix means, that an example value is a real label, and how `NOCASE`, `LIKE`, FTS5 operators, or row order without `ORDER BY` behave. Record the result in `notes/`, not in a comment.
+- **Query before you assume (A, I).** Check every claim the code relies on, about the dump, the API, the website, or SQLite and FTS5, with a query on the full database (`data/db/skkg-20261028.sqlite`), the Oxigraph store, or one page load. Claims to check include "only X has Y", "always present", "is ordered", what a kind or id prefix means, that an example value is a real label, and how `NOCASE`, `LIKE`, FTS5 operators, or row order without `ORDER BY` behave. Record the result in `notes/`, not in a comment.
 - **Give every heuristic a counter (A).** When the code relies on a rule that holds in today's dump only, such as a name found in a label, the build report counts the cases it misses, e.g. `authors_not_in_label`.
 - **Write the failure list first (E).** Before coding a list, pager, filter, or formatter, list its cases in the test file (test/CLAUDE.md): none, one, duplicates, several rows per key (several creators, copyrights, or vocabularies per item), an open or equal range, a null sort key, an offset past the end, and an input the call ignores. An ignored input gets a warning.
 
