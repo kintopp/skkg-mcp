@@ -143,9 +143,7 @@ function health() {
   try {
     const { meta } = getDatabase();
     return { ...body, database: 'ok', data_as_of: meta.data_as_of, schema_version: Number(meta.schema_version) };
-  } catch (err) {
-    // The message names the database's path, which a public endpoint does not show.
-    log('error', 'database unavailable', err);
+  } catch {
     return { ...body, database: 'unavailable' };
   }
 }

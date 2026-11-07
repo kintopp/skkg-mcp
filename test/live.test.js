@@ -30,6 +30,7 @@ import { assertWireValid, withClient, makeTestDb, FIXTURE_DB } from './helpers.j
 import { openDatabase } from '../src/db.js';
 import { getObject, outputSchema } from '../src/tools/get_object.js';
 import { useResponseCache } from '../src/lib/http.js';
+import { ResponseCache } from '../src/lib/response_cache.js';
 
 const OBJ = 'object/10013';
 // object/10013 has 7 multimedia records; two are published.
@@ -342,7 +343,7 @@ test('a date the dump holds in a malformed form matches the same value from the 
 });
 
 test('with the response cache on, every live check asks SKKG\'s API again', { skip: FIXTURE_DB.skip }, async (t) => {
-  useResponseCache();
+  useResponseCache(new ResponseCache({ maxBytes: 1e6, ttlMs: 60_000 }));
   t.after(() => useResponseCache(null));
   const { db, meta } = openDatabase(FIXTURE_DB.path);
   try {

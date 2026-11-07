@@ -680,7 +680,8 @@ const MUTATIONS = [
   ["src/lib/http.js", "export const fetchCapped = (url, opts) => (cache && opts.cached\n", "export const fetchCapped = (url, opts) => (false\n", "fetchCapped uses the cache"],
   ["src/lib/http.js", "export const fetchCapped = (url, opts) => (cache && opts.cached\n", "export const fetchCapped = (url, opts) => (cache\n", "the cache only for a caller that asks"],
   ["src/lib/images.js", "  signal,\n  cached: true,\n", "  signal,\n", "image fetches use the cache"],
-  ["src/http.js", "    return { ...body, database: 'unavailable' };", "    return { ...body, database: 'unavailable', database_error: err.message };", "health hides the database path"],
+  ["src/db.js", "    throw new ToolError('The SKKG database was not found.',", "    throw new ToolError(`The SKKG database was not found at ${path}.`,", "a missing database's path stays out of results"],
+  ["src/db.js", "    console.error(JSON.stringify({ level: 'error', msg: 'database not found', path }));\n", "", "the log names a missing database's path"],
 ];
 
 // The cache key changes with the entry, so an edited entry has no record and is selected.

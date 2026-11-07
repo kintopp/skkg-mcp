@@ -15,7 +15,9 @@ export function openDatabase(path) {
       `Set ${DB_PATH_ENV} to the path of the .sqlite file built by build_db.py.`);
   }
   if (!existsSync(path)) {
-    throw new ToolError(`The SKKG database was not found at ${path}.`, `Check ${DB_PATH_ENV}.`);
+    // The path goes to the log only: over HTTP the message reaches anyone who calls a tool.
+    console.error(JSON.stringify({ level: 'error', msg: 'database not found', path }));
+    throw new ToolError('The SKKG database was not found.', `Check ${DB_PATH_ENV}; the server log names the path.`);
   }
   const db = new DatabaseSync(path, { readOnly: true });
   const meta = Object.fromEntries(db.prepare('SELECT key, value FROM meta').all().map((r) => [r.key, r.value]));

@@ -7,7 +7,8 @@
 //   resources/read) carry no hint, or one other than an hour, public
 // - skkg_view_image sends its JSON copy over HTTP, or its size guard still counts that copy
 // - /health lacks the version, commit, data_as_of, or schema version, or fails without a
-//   database, which the first deploy starts without, or shows the database's path
+//   database, which the first deploy starts without; it or a tool call without the database
+//   shows the database's path, or the log does not
 // - a foreign or malformed Origin passes, or claude.ai or Origin: null is refused; with a
 //   configured host or RAILWAY_PUBLIC_DOMAIN a foreign Host passes, or /health checks the Host
 // - GET or DELETE on /mcp is not 405; a body over 1 MiB is not 413; a compressed body is decoded
@@ -171,8 +172,14 @@ test('/health reports the version, commit, and database, and answers without a d
     const body = await res.json();
     assert.equal(body.status, 'ok');
     assert.equal(body.database, 'unavailable');
-    assert.doesNotMatch(JSON.stringify(body), /missing\.sqlite|was not found/, 'the path stays in the log');
-    assert.match(server.stderr(), /was not found/);
+    assert.doesNotMatch(JSON.stringify(body), /missing\.sqlite/, 'the path stays in the log');
+    const failed = await call(server, 'skkg_get_object', { id: 'object/1014' });
+    assert.match(failed.body.result.content[0].text, /database was not found/);
+    assert.doesNotMatch(JSON.stringify(failed.body), /missing\.sqlite/);
+    // stderr is a separate pipe: the log line can arrive after the answer.
+    const logged = () => server.lines().some((l) => l.msg === 'database not found' && l.path.endsWith('missing.sqlite'));
+    for (let i = 0; i < 40 && !logged(); i++) await sleep(25);
+    assert.ok(logged(), server.stderr());
     assert.equal(body.data_as_of, undefined);
     const list = await modern(server, 'tools/list');
     assert.ok(list.body.result.tools.length > 0, 'the tools are listed without a database');
