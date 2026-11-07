@@ -89,6 +89,22 @@ export const API_DATA_BASE = 'https://api.digital.skkg.ch/api/v1/graphs/skkg/dat
 export const API_TIMEOUT_MS = posIntEnv('SKKG_API_TIMEOUT_MS', 30_000, { min: 1000, max: 600_000 });
 export const API_MAX_BYTES = 5_000_000;
 
+// SKKG's answers (IIIF images, RetrieveObject records), kept by URL so a repeated request does not
+// reach SKKG again. Short, since `live: true` asks for current rights; 0 turns the cache off.
+export const RESPONSE_CACHE_TTL_MS = posIntEnv('SKKG_RESPONSE_CACHE_TTL_MS', 5 * 60 * 1000, { min: 0, max: 60 * 60 * 1000 });
+export const RESPONSE_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+
+// Streamable HTTP entry (src/http.js). Railway sets PORT.
+export const HTTP_PORT = posIntEnv('PORT', 3000, { min: 0, max: 65535 });
+export const HTTP_MAX_BODY_BYTES = 1_048_576;
+// Wall clock per request. The slowest call waits for one IIIF or API request (30 s timeout).
+export const HTTP_RESPONSE_TIMEOUT_MS = posIntEnv('SKKG_HTTP_RESPONSE_TIMEOUT_MS', 60_000, { min: 100, max: 600_000 });
+export const HTTP_MAX_INFLIGHT = posIntEnv('SKKG_HTTP_MAX_INFLIGHT', 16, { min: 1, max: 10_000 });
+// Comma-separated origins or `*.host` globs that replace the defaults; "*" allows any.
+export const MCP_ALLOWED_ORIGINS = process.env.MCP_ALLOWED_ORIGINS;
+// Comma-separated hosts; with none (and no RAILWAY_PUBLIC_DOMAIN) the Host check is off.
+export const MCP_ALLOWED_HOSTS = process.env.MCP_ALLOWED_HOSTS;
+
 // openWorldHint is false for tools that only read the local database; tools that
 // call SKKG (skkg_get_object with live: true, the image tools) use the open-world set.
 export const READ_ONLY_ANNOTATIONS = Object.freeze({
@@ -96,9 +112,14 @@ export const READ_ONLY_ANNOTATIONS = Object.freeze({
 });
 export const READ_ONLY_OPEN_WORLD_ANNOTATIONS = Object.freeze({ ...READ_ONLY_ANNOTATIONS, openWorldHint: true });
 
+// Results that change only with a deploy. The input schemas are strict, so a client that keeps
+// an old tools/list after a schema change gets hard errors until the hint expires.
+const DEPLOY_STABLE = Object.freeze({ ttlMs: 60 * 60 * 1000, cacheScope: 'public' });
 export const CACHE_HINTS = Object.freeze({
-  'tools/list': { ttlMs: 24 * 60 * 60 * 1000, cacheScope: 'public' },
-  'server/discover': { ttlMs: 60 * 60 * 1000, cacheScope: 'public' },
+  'tools/list': DEPLOY_STABLE,
+  'server/discover': DEPLOY_STABLE,
+  'resources/list': DEPLOY_STABLE,
+  'resources/read': DEPLOY_STABLE,
 });
 
 // One paragraph; the first 512 characters must stand alone (ChatGPT may pass only those), so

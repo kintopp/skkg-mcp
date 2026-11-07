@@ -3,12 +3,12 @@
 
 import { z } from 'zod';
 import { registerAppTool } from '@modelcontextprotocol/ext-apps/server';
-import { withTool } from '../lib/tool.js';
 import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
 import { prune } from '../lib/prune.js';
 import { imageRights } from '../lib/rights.js';
-import { longestPrefix } from '../lib/fit.js';
+import { longestPrefix, sent } from '../lib/fit.js';
+import { withTool, toolResult } from '../lib/tool.js';
 import { join, photoRights, obj, objectRightsLine } from '../lib/text.js';
 import { publishedImages, objectsWithRights, imageObjectIds } from '../lib/images.js';
 import { objectRightsOut, imageRightsOut, langIn, str } from './schemas.js';
@@ -85,7 +85,11 @@ function imageList(db, window, lang) {
   return { images, image_rights: sets };
 }
 
-export function viewImage(db, meta, args) {
+/**
+ * `jsonBlock` adds a second text block holding structuredContent, for the viewer on stdio: Claude
+ * Desktop's stdio bridge drops structuredContent before the iframe. The only JSON text this server sends.
+ */
+export function viewImage(db, meta, args, { jsonBlock } = {}) {
   const warnings = [];
   const { id, type, images, start } = publishedImages(db, args, warnings);
   const ctx = { warnings, totals: {} };
@@ -112,7 +116,7 @@ export function viewImage(db, meta, args) {
     s.objects ??= [];
     return s;
   };
-  const size = (s) => { const text = renderText(s); return { s, text, size: 2 * JSON.stringify(s).length + text.length }; };
+  const size = (s) => sent(s, (x) => (jsonBlock ? [renderText(x), JSON.stringify(x)] : renderText(x)));
 
   let r = size(build(numbered));
   if (r.size > RESULT_CHAR_LIMIT) {
@@ -122,12 +126,7 @@ export function viewImage(db, meta, args) {
     if (k === 0) throw new ToolError('The result is too large for the result size limit even with one image.', 'Pass an image id.');
     r = size(build(from.slice(0, k)));
   }
-  return {
-    // The second block is for the viewer: Claude Desktop's stdio bridge drops structuredContent before
-    // the iframe, and the viewer then reads this copy. The only JSON text block this server sends.
-    content: [{ type: 'text', text: r.text }, { type: 'text', text: JSON.stringify(r.s) }],
-    structuredContent: r.s,
-  };
+  return toolResult(r);
 }
 
 // "1–3, 5": a sorted list of numbers as ranges.
@@ -165,7 +164,7 @@ function renderText(s) {
   ].filter(Boolean).join('\n');
 }
 
-export function registerViewImageTool(server) {
+export function registerViewImageTool(server, { jsonBlock }) {
   registerAppTool(
     server,
     VIEW_IMAGE_TOOL_NAME,
@@ -179,7 +178,7 @@ export function registerViewImageTool(server) {
     },
     withTool(VIEW_IMAGE_TOOL_NAME, 'Opening the image viewer failed', async (args) => {
       const { db, meta } = getDatabase();
-      return viewImage(db, meta, args);
+      return viewImage(db, meta, args, { jsonBlock });
     }),
   );
 }

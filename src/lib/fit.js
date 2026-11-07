@@ -3,10 +3,14 @@
 
 import { ToolError } from './errors.js';
 
-/** A result with its text, and the size of both together. */
+/**
+ * A result with its text, and the size of both together. `render` returns the text, or the list
+ * of text blocks the result sends, all of which count.
+ */
 export function sent(structured, render) {
   const text = render(structured);
-  return { structured, text, size: JSON.stringify(structured).length + text.length };
+  const blocks = [text].flat();
+  return { structured, text, size: JSON.stringify(structured).length + blocks.reduce((n, b) => n + b.length, 0) };
 }
 
 /** The largest k in 0..n for which fits(k) holds; fits(0) is assumed, and fits turns false once k is too large. */

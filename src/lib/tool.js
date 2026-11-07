@@ -1,6 +1,7 @@
-// Shared wrapper for every tool handler: the try/catch → isError shape and a gated
-// per-call debug line (SKKG_LOG=1, one JSON line per call on stderr, same shape as the
-// sibling servers so the same jq filters work).
+// Shared wrapper for every tool handler: the try/catch → isError shape and one JSON line per
+// call on stderr, same shape as the sibling servers so the same jq filters work. On stdio the
+// line is a debug aid (SKKG_LOG=1) with the input and the error; on HTTP every call is logged
+// without both, since they hold user content (error messages quote the input).
 //
 // The error path returns ONLY { content, isError }, never structuredContent: an error
 // object fails SDK validation against the tool's outputSchema (-32602).
@@ -10,6 +11,10 @@ import { formatErrorText } from './errors.js';
 
 const LOG_ENV = 'SKKG_LOG';
 const INPUT_LOG_MAX = 300;
+
+let everyCall = false;
+/** Called by src/http.js: log every call, without its input or error text. */
+export const logEveryCall = () => { everyCall = true; };
 
 function summariseInput(args) {
   if (!args || typeof args !== 'object' || !Object.keys(args).length) return undefined;
@@ -22,8 +27,11 @@ const textBytes = (result) => Buffer.byteLength(
 const structuredBytes = (result) =>
   result?.structuredContent === undefined ? 0 : Buffer.byteLength(JSON.stringify(result.structuredContent), 'utf8');
 
-/** The tool result of a structured object and its text rendering, from sent() or fitResult(). */
-export const toolResult = ({ structured, text }) => ({ content: [{ type: 'text', text }], structuredContent: structured });
+/** The tool result of a structured object and its text block or blocks, from sent() or fitResult(). */
+export const toolResult = ({ structured, text }) => ({
+  content: [text].flat().map((t) => ({ type: 'text', text: t })),
+  structuredContent: structured,
+});
 
 // `name` is the tool name (logged); `label` prefixes an error result, e.g. "Search failed".
 export function withTool(name, label, handler) {
@@ -37,13 +45,15 @@ export function withTool(name, label, handler) {
       error = formatErrorText(err);
       result = { content: [{ type: 'text', text: `${label}: ${error}` }], isError: true };
     }
-    if (process.env[LOG_ENV] === '1') {
-      const input = summariseInput(callArgs[0]);
+    if (everyCall || process.env[LOG_ENV] === '1') {
+      const input = everyCall ? undefined : summariseInput(callArgs[0]);
+      // An explicit level: Railway files a stderr line without one as an error.
       console.error(JSON.stringify({
+        level: 'info',
         tool: name,
         ms: Math.round(performance.now() - start),
         ok: !result?.isError,
-        ...(error && { error }),
+        ...(error && !everyCall && { error }),
         ...(input && { input }),
         output_bytes: textBytes(result),
         structured_bytes: structuredBytes(result),

@@ -11,7 +11,8 @@
 // - the result lacks the object copyright, or the text leaves out an image id, a rights set, the
 //   documents, the warnings, or the purpose sentence (viewer for the user, skkg_inspect_image for the model,
 //   website_url as a plain link, never Markdown)
-// - the text block is JSON, or the viewer's JSON block differs from structuredContent
+// - the text block is JSON, or the viewer's JSON block differs from structuredContent or is
+//   missing on stdio (it is left out on HTTP: test/http.test.js)
 // - the size guard counts one copy of the JSON, so the result runs past the limit; a cut drops the
 //   image opened first, keeps rights of images it cut, or does not say how to reach the others
 // - the tool fetches anything itself (the browser loads the tiles)
@@ -169,10 +170,13 @@ test('skkg_view_image against the fixture database', { skip: FIXTURE_DB.skip }, 
     assert.match(text, /give them website_url as a plain link; never embed an image URL as Markdown\./);
   });
 
-  await t.test('the text is no JSON, and the second block is structuredContent for the viewer', () => {
-    const { res } = call({ id: OBJ });
+  await t.test('the text is no JSON, and jsonBlock adds structuredContent as a second block for the viewer', () => {
+    const plain = call({ id: OBJ }).res;
+    assert.equal(plain.content.length, 1);
+    assert.ok(!plain.content[0].text.trimStart().startsWith('{'));
+    const res = viewImage(db, meta, { lang: 'de', id: OBJ }, { jsonBlock: true });
     assert.equal(res.content.length, 2);
-    assert.ok(!res.content[0].text.trimStart().startsWith('{'));
+    assert.equal(res.content[0].text, plain.content[0].text);
     assert.deepEqual(JSON.parse(res.content[1].text), res.structuredContent);
   });
 
@@ -183,8 +187,16 @@ test('skkg_view_image against the fixture database', { skip: FIXTURE_DB.skip }, 
   });
 });
 
+test('the stdio server sends the JSON block for the viewer', { skip: FIXTURE_DB.skip }, async () => {
+  await withClient('skkg-view-stdio', async (client) => {
+    const res = await client.callTool({ name: NAME, arguments: { id: OBJ } });
+    assert.equal(res.content.length, 2);
+    assert.deepEqual(JSON.parse(res.content[1].text), res.structuredContent);
+  }, { env: { SKKG_DB_PATH: FIXTURE_DB.path } });
+});
+
 test('skkg_view_image cuts the images from the one opened first', { skip: FIXTURE_DB.skip }, async (t) => {
-  // object/1014 sends about 5,300 characters in all, so a limit of 3,600 cuts it.
+  // object/1014 sends about 3,800 characters in all on stdio, so a limit of 3,600 cuts it.
   const CEILING = 4000;
   const LIMIT = CEILING * 0.9;
   await withClient('skkg-view-cut', async (client) => {

@@ -4,8 +4,10 @@
 
 import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import { createServer } from './server.js';
+import { useResponseCache } from './lib/http.js';
 
-serveStdio(() => createServer(), {
+useResponseCache();
+serveStdio(() => createServer({ transport: 'stdio' }), {
   onerror: (err) => console.error('[skkg-mcp] transport error:', err),
 });
 

@@ -1,6 +1,6 @@
-// Builds a fresh McpServer with all tools registered. Used as the serveStdio factory,
-// invoked once per connection, so it must have no side effects beyond registration.
-// Shared state (the database handle) lives at module scope in src/db.js.
+// Builds a fresh McpServer with all tools registered: once per connection on stdio, once per
+// request on HTTP, so it must have no side effects beyond registration. Shared state (the
+// database handle) lives at module scope in src/db.js. `transport` is 'stdio' or 'http'.
 
 import { McpServer } from '@modelcontextprotocol/server';
 import { SERVER_NAME, SERVER_VERSION, SERVER_INSTRUCTIONS, CACHE_HINTS, CHANNEL_PROBE_ENV } from './config.js';
@@ -19,7 +19,7 @@ import { registerViewerResource } from './apps/viewer_resource.js';
 import { registerGuideTool } from './tools/guide.js';
 import { registerChannelProbeTool } from './tools/channel_probe.js';
 
-export function createServer() {
+export function createServer({ transport }) {
   // `listChanged` must be an explicit false: the SDK fills an absent value with `true`,
   // and this server never emits a list_changed notification.
   const server = new McpServer(
@@ -40,7 +40,8 @@ export function createServer() {
   registerFindTermsTool(server);
   registerCollectionStatsTool(server);
   registerInspectImageTool(server);
-  registerViewImageTool(server);
+  // The viewer's JSON copy is for Claude Desktop's stdio bridge, which drops structuredContent.
+  registerViewImageTool(server, { jsonBlock: transport === 'stdio' });
   registerViewerResource(server);
   registerGuideTool(server);
   if (process.env[CHANNEL_PROBE_ENV] === '1') registerChannelProbeTool(server);

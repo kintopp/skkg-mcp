@@ -42,12 +42,15 @@ export function assertWireValid(outputSchema, structured) {
 }
 
 // Spawn the real server over stdio, hand `run` a connected client, close it on every path.
-export async function withClient(name, run, { env } = {}) {
+// `stderr(chunk)`, when given, receives the server's stderr.
+export async function withClient(name, run, { env, stderr } = {}) {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [SERVER_ENTRY],
     ...(env && { env: { ...process.env, ...env } }),
+    ...(stderr && { stderr: 'pipe' }),
   });
+  if (stderr) transport.stderr.on('data', (chunk) => stderr(String(chunk)));
   const client = new Client({ name, version: '0.0.0' });
   await client.connect(transport);
   try {

@@ -2,7 +2,7 @@
 
 ## What this is
 
-A stdio MCP server over the SKKG Sammlung digital collection (Stiftung für Kunst, Kultur und Geschichte, Winterthur, `https://digital.skkg.ch`). Node 24, pure ESM, no build step; runtime dependencies are `@modelcontextprotocol/server` and `zod`. It reads one read-only SQLite database (`node:sqlite`) built by `scripts/build_db.py`. The GitHub remote, `kintopp/skkg-mcp`, is private and must stay private.
+A stdio MCP server over the SKKG Sammlung digital collection (Stiftung für Kunst, Kultur und Geschichte, Winterthur, `https://digital.skkg.ch`). Node 24, pure ESM, no build step; runtime dependencies are `@modelcontextprotocol/server`, `@modelcontextprotocol/node` (the HTTP entry), `@modelcontextprotocol/ext-apps` (the viewer), and `zod`. It reads one read-only SQLite database (`node:sqlite`) built by `scripts/build_db.py`. The GitHub remote, `kintopp/skkg-mcp`, is private and must stay private.
 
 The repository also holds the research behind the server:
 
@@ -23,6 +23,7 @@ The repository also holds the research behind the server:
 | Injection tests of the build's privacy checks (about 2 minutes; need the partial store and fixture database) | `uv run --with pyoxigraph --with pytest python -I -m pytest -q scripts/tests` |
 | Mutation check of those tests (about 10 minutes) | `uv run --with pyoxigraph --with pytest python -I scripts/tests/mutate.py` |
 | Run against the full database | `SKKG_DB_PATH=data/db/skkg-20261028.sqlite npm start` |
+| Streamable HTTP on port 3000 (`PORT`), `POST /mcp` and `GET /health` | `SKKG_DB_PATH=data/db/skkg-20261028.sqlite npm run serve` |
 | Inspector | `SKKG_DB_PATH=… npm run inspector` |
 | Rebuild the viewer page `src/apps/image-viewer.html` (committed; `test/viewer_build.test.js` fails when it is stale) | `npm run build:viewer` |
 | Viewer preview in a browser, with a sample result | `npm run dev:viewer` |
@@ -66,7 +67,7 @@ Summarized in `notes/02-open-data-policy-and-terms.md`. Metadata is free to reus
 
 - Every tool returns `content[{type:'text'}]` and `structuredContent` from one structured object. Errors are `isError: true` results without `structuredContent`, via `withTool` (`src/lib/tool.js`) and `ToolError`.
 - Hosts differ in which channel they give the model (`notes/05`, "Which channel reaches the model"), so both must stand alone. `structuredContent` is complete: every warning, paging field and note is a field there. The text is a compact rendering of the same result, never JSON, and it keeps the ids, both rights, the warnings, paging, and every section the caller asked for.
-- One exception, decided 7 November 2026: `skkg_view_image` adds a second text block holding `structuredContent` as JSON, because Claude Desktop's stdio bridge drops `structuredContent` before the viewer iframe (seen by Globalise and odeuropa) and the viewer reads that copy. Its size guard counts both copies. No other tool sends JSON text; drop the block on Streamable HTTP (phase 5).
+- One exception, decided 7 November 2026: `skkg_view_image` adds a second text block holding `structuredContent` as JSON, because Claude Desktop's stdio bridge drops `structuredContent` before the viewer iframe (seen by Globalise and odeuropa) and the viewer reads that copy. No other tool sends JSON text. Over Streamable HTTP the block is left out (`createServer({ transport })`), and the size guard counts the blocks a result sends (`sent()` in `src/lib/fit.js`).
 - The size guard counts both channels together: cut lists with `fitResult` (`src/lib/fit.js`), which measures the built result and its text, not an estimate.
 - `skkg_channel_probe` is registered only with `SKKG_CHANNEL_PROBE=1`, so it is not in `REQUIRED_PROPS`; `test/channel_probe.test.js` checks it instead.
 - Input schemas are `.strict()` and `$ref`-free; output schemas are `$ref`-free. Don't share one zod instance across fields.
