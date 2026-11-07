@@ -30,7 +30,7 @@ export const imageObjectIds = (db, multimediaId) => stmt(db, `SELECT DISTINCT o.
 /**
  * The published images `args.id` names: the image of an image id, or an object's images in the
  * order of objectImages, each with `is_primary`. `start` is the place `args.index` asks for, 1
- * being the primary; it applies to an object id only, and is warned and ignored for an image id.
+ * being the primary; for an image id, `index` is ignored with a warning.
  */
 export function publishedImages(db, args, warnings) {
   const { id, type } = resolveId(db, args.id, { types: ['object', 'multimedia'] });
