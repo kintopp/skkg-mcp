@@ -21,7 +21,7 @@ export function objectCreators(db, objectId, lang) {
 }
 
 export function objectFacetLabels(db, objectId, facet, lang) {
-  return stmt(db, 'SELECT term_id FROM object_terms WHERE object_id = ? AND facet = ? ORDER BY seq IS NULL, seq')
+  return stmt(db, 'SELECT term_id FROM object_terms WHERE object_id = ? AND facet = ? ORDER BY seq IS NULL, seq, rowid')
     .all(objectId, facet).map((r) => termLabel(db, r.term_id, lang)).filter(Boolean);
 }
 

@@ -5,7 +5,8 @@
 // Ways it could fail:
 // - the narrower terms of a term (skkg_find_terms by id, skkg_collection_stats on a hierarchical
 //   facet) are found by scanning every term, which collection_stats does once per bucket;
-// - a facet's (object, term) pairs are read with a table lookup per row;
+// - a facet's (object, term) pairs are read with a table lookup per row, for all objects or for
+//   the objects a filter selects;
 // - a creator, role, or attribution filter, also with an exclusion on the same creator row, scans
 //   every object and probes its creator rows instead of reading the matching creator rows first.
 
@@ -84,5 +85,16 @@ for (const [name, path, skip] of [['the fixture', FIXTURE_DB.path, FIXTURE_DB.sk
       assert.ok(pairs.length > 0, dimension);
       for (const [sql, plan] of pairs) assert.match(plan, /COVERING INDEX \w+ \(facet=\?/, `${sql}\n${plan}`);
     }
+  });
+
+  test(`on ${name}, a filtered facet dimension reads the selected objects' pairs from a covering index`, { skip }, () => {
+    const { db } = openDatabase(path);
+    const creator = db.prepare(`SELECT actor_id AS id FROM object_creators WHERE actor_id IS NOT NULL
+      GROUP BY 1 ORDER BY COUNT(*) DESC LIMIT 1`).get().id;
+    db.close();
+    const plans = plansOf(path, (d, meta) => collectionStats(d, meta, { ...STATS, dimension: 'material', creator }));
+    const pairs = plans.filter(([sql]) => sql.includes('FROM object_terms') && sql.includes('json_each'));
+    assert.ok(pairs.length > 0, 'no restricted read');
+    for (const [sql, plan] of pairs) assert.match(plan, /COVERING INDEX \w+ \(object_id=\?/, `${sql}\n${plan}`);
   });
 }

@@ -425,3 +425,9 @@ def test_narrower_terms_are_found_by_an_index():
 def test_a_facet_read_needs_no_table_lookup():
     plan = _plan("SELECT object_id AS oid, term_id AS k FROM object_terms WHERE facet = 'material'")
     assert "COVERING INDEX" in plan and "(facet=?)" in plan, plan
+
+
+def test_a_filtered_facet_read_needs_no_table_lookup():
+    plan = _plan("SELECT object_id AS oid, term_id AS k FROM object_terms WHERE facet = 'material'"
+                 " AND object_id IN (SELECT value FROM json_each('[\"object/1\"]'))")
+    assert "COVERING INDEX" in plan and "(object_id=? AND facet=?)" in plan, plan

@@ -48,6 +48,7 @@ MUTATIONS = [
     ("report counts fallback documents", "SUM(sk.multimedia_id IS NULL AND m.kind = 'document')", "SUM(m.kind = 'document')", "primary_image"),
     ('citizenship node not loaded', '            t = t[: -len("/citizenship")]\n            nat.append((a, t))', '            nat.append((a, t[: -len("/citizenship")]))', 'citizenship_node'),
     ("narrower terms indexed", "CREATE INDEX ix_terms_broader ON terms(broader_id);\n", "", "narrower_terms_are_found"),
+    ("filtered facet reads covered", "CREATE INDEX ix_ot_obj ON object_terms(object_id, facet, term_id);", "CREATE INDEX ix_ot_obj ON object_terms(object_id);", "filtered_facet_read"),
     ("facet reads covered", "CREATE INDEX ix_ot_term ON object_terms(facet, term_id, object_id);", "CREATE INDEX ix_ot_term ON object_terms(facet, term_id);", "facet_read_needs_no"),
     ('life date year from the label', '    if y0 is None and y1 is None and lab:\n', '    if False:\n', 'life_dates_without'),
     ('label never overrides a time-span', '    if y0 is None and y1 is None and lab:\n', '    if lab:\n', 'life_dates_without'),

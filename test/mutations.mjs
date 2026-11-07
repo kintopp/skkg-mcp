@@ -77,6 +77,7 @@ const MUTATIONS = [
   ['src/tools/object_filters.js', "(oc.attribution_id IS NULL OR oc.attribution_id NOT IN", "(1 OR oc.attribution_id NOT IN", 'exclusion in the matched row'],
   ['src/tools/object_filters.js', "if (excluded && creatorParts.length) {", "if (false) {", 'exclusion scoped to matched row'],
   ['src/tools/object_filters.js', "clauses.push(`o.id IN (SELECT oc.object_id FROM object_creators oc WHERE ${creatorParts.join(' AND ')})`);", "clauses.push(`EXISTS (SELECT 1 FROM object_creators oc WHERE oc.object_id = o.id AND ${creatorParts.join(' AND ')})`);", 'creator rows read first, not per object'],
+  ['src/lib/objects.js', "facet = ? ORDER BY seq IS NULL, seq, rowid')", "facet = ? ORDER BY seq IS NULL, seq')", 'tied labels keep the dump order'],
   ['src/tools/collection_stats.js', "'SELECT 1 FROM terms WHERE broader_id = ? LIMIT 1'", "'SELECT 1 FROM terms WHERE broader_id || \\'\\' = ? LIMIT 1'", 'narrower lookup of stats by index'],
   ['src/tools/find_terms.js', "FROM terms t WHERE t.broader_id = ?", "FROM terms t WHERE t.broader_id || '' = ?", 'narrower list by index'],
   ['src/tools/term_filters.js', "FROM object_terms WHERE facet = '${facet}'` });", "FROM object_terms WHERE facet = '${facet}' AND COALESCE(seq, 0) = COALESCE(seq, 0)` });", 'facet pairs from a covering index'],
