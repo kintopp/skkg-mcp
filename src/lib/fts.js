@@ -1,14 +1,15 @@
 // Turns a caller's keyword query into an FTS5 expression. Every word is quoted, so FTS5 syntax
-// in the input can never cause an SQL error; only OR, AND, NOT, and a leading - act as operators.
+// in the input can never cause an SQL error; only OR, AND, and NOT, in capitals, act as operators.
+// A leading - is no operator: SKKG writes German compounds so ("Gürtelhaken, -schnalle").
 
 import { ToolError } from './errors.js';
 
-const TOKEN = /(-?)"([^"]*)"|(\S+)/g;
+const TOKEN = /"([^"]*)"|(\S+)/g;
 const LOWER_OPERATORS = new Set(['or', 'and', 'not']);
 
-/** The query syntax, for the descriptions of every parameter that ftsQuery or searchQuery reads. */
+/** The query syntax, for the descriptions of the `query` parameters. */
 export const QUERY_SYNTAX = 'Every word must occur; "a phrase" matches in order; a trailing * matches a prefix; ' +
-  'OR between two words matches either; -word or NOT word excludes it';
+  'OR between two words matches either; NOT before a word excludes it';
 
 // { fts, excludedOnly, notes }: `fts` is undefined when no word is left to match. With `prefix`,
 // every word outside a phrase matches as a prefix.
@@ -20,7 +21,7 @@ function parse(input, { prefix = false } = {}) {
   let negateNext = false;
   let afterMatched = false; // the previous token was a word to match, so an OR can join it
   for (const m of String(input ?? '').matchAll(TOKEN)) {
-    const raw = m[3];
+    const raw = m[2];
     if (raw === 'OR') {
       if (afterMatched) joinNext = true;
       else notes.strayOr = true;
@@ -36,22 +37,16 @@ function parse(input, { prefix = false } = {}) {
       notes.pipe = true;
       continue;
     }
-    let negated = negateNext;
+    const negated = negateNext;
     negateNext = false;
     let term;
     if (raw === undefined) {
-      negated ||= m[1] === '-';
-      const phrase = m[2].replace(/"/g, '').trim();
+      const phrase = m[1].trim();
       if (phrase) term = `"${phrase}"`;
     } else {
       if (LOWER_OPERATORS.has(raw)) notes.lower.add(raw);
-      let word = raw;
-      if (word.startsWith('-')) {
-        negated = true;
-        word = word.slice(1);
-      }
-      const starred = word.length > 1 && word.endsWith('*');
-      const core = (starred ? word.slice(0, -1) : word).replace(/"/g, '');
+      const starred = raw.length > 1 && raw.endsWith('*');
+      const core = (starred ? raw.slice(0, -1) : raw).replace(/"/g, '');
       if (/[\p{L}\p{N}]/u.test(core)) term = starred || prefix ? `"${core}"*` : `"${core}"`;
     }
     if (!term) continue;
@@ -78,8 +73,8 @@ function parse(input, { prefix = false } = {}) {
 }
 
 /** The FTS5 expression of a query the server builds itself; undefined when no word is left to match. */
-export function ftsQuery(input, options) {
-  return parse(input, options).fts;
+export function ftsQuery(input) {
+  return parse(input).fts;
 }
 
 /**
@@ -91,13 +86,14 @@ export function searchQuery(input, field, options) {
   const { fts, excludedOnly, notes } = parse(input, options);
   if (excludedOnly) {
     throw new ToolError(`\`${field}\` "${input}" only excludes words; nothing is left to match.`,
-      'Add a word the results must contain before the excluded ones, e.g. "a -b" for a without b.');
+      'Add a word the results must contain before the excluded ones, e.g. "a NOT b" for a without b.');
   }
   const warnings = [];
   if (notes.lower.size) {
     const one = notes.lower.size === 1;
-    warnings.push(`\`${field}\`: ${[...notes.lower].map((w) => `"${w}"`).join(', ')} ${one ? 'was searched as a word' : 'were searched as words'} ` +
-      'that every result must contain. Operators are written in capitals (OR, NOT); words are AND-ed without one.');
+    warnings.push(`\`${field}\`: ${[...notes.lower].map((w) => `"${w}"`).join(', ')} ` +
+      `${one ? 'was read as a word, not as an operator' : 'were read as words, not as operators'}. ` +
+      'Operators are written in capitals (OR, NOT); words are AND-ed without one.');
   }
   if (notes.pipe) warnings.push(`\`${field}\`: "|" is no operator and was ignored. Write OR between two words to match either.`);
   if (notes.strayOr) {

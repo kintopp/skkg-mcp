@@ -174,7 +174,6 @@ function rank(rows, first = new Set()) {
 }
 
 function search(db, args) {
-  // Every word outside a phrase matches as a prefix.
   const { fts: q, warnings } = searchQuery(args.query, 'query', { prefix: true });
   if (!q) throw new ToolError(`\`query\` "${args.query}" has no searchable word.`, 'Pass a German label, e.g. "Radierung".');
   const scoped = args.vocabulary !== 'all';

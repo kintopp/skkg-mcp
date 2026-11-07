@@ -570,10 +570,9 @@ const MUTATIONS = [
   ["src/tools/object_filters.js", "const kept = narrower ? [] : TERM_FILTER_FIELDS", "const kept = narrower ? [] : ['creator']", "objects: include_narrower narrows the term filters"],
   ["src/tools/search_provenance.js", "${c.layers.includes('chain') ? ' Only", "${true ? ' Only", "provenance: chain sentence only with the chain layer"],
   // The query grammar (test/fts.test.js) and its wiring into every tool (test/query_operators.test.js).
-  ["src/lib/fts.js", "        negated = true;\n        word = word.slice(1);", "        word = word.slice(1);", "fts: -word excludes"],
-  ["src/lib/fts.js", "      negated ||= m[1] === '-';", "", "fts: -\"phrase\" excludes"],
   ["src/lib/fts.js", "    if (raw === 'NOT') {\n      negateNext = true;", "    if (raw === 'NOT') {\n      negateNext = false;", "fts: NOT word excludes"],
   ["src/lib/fts.js", "    if (raw === 'AND') continue;", "", "fts: AND is no word"],
+  ["src/lib/fts.js", "    const negated = negateNext;", "    const negated = negateNext || (raw?.length > 1 && raw.startsWith('-'));", "fts: a leading - is no operator"],
   ["src/lib/fts.js", "fts: excluded.length ? `(${matched}) NOT (${excluded.join(' OR ')})` : matched,", "fts: matched,", "fts: excluded words reach the expression"],
   ["src/lib/fts.js", "  if (excludedOnly) {", "  if (false) {", "fts: exclusion-only refused"],
   ["src/lib/fts.js", "      if (LOWER_OPERATORS.has(raw)) notes.lower.add(raw);", "", "fts: lowercase operator warning"],

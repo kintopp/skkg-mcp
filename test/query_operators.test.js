@@ -1,7 +1,9 @@
 // How the tools could fail to pass the query grammar of src/lib/fts.js on (its cases are in
 // test/fts.test.js):
-// - a tool's `query` keeps searching "-b" or "NOT b" as words, so "a -b" does not split "a"
+// - a tool's `query` keeps searching "NOT b" as words, so "a NOT b" does not split "a"
 //   into "a b" and the rest
+// - a label of SKKG's with a leading "-" ("Gürtelhaken, -schnalle", the author "Simone
+//   Schaufelberger -Breguet") is read as an exclusion, so the label or the server's own hint finds nothing
 // - a query that only excludes words is refused as having no word, or runs
 // - a warning of the grammar ("|", a lowercase "or") is computed but not returned, in a tool's
 //   query or in a name filter (`creator`, `acquired_from`, `owner`, `author`)
@@ -35,15 +37,14 @@ test('the query grammar in every tool', { skip: FIXTURE_DB.skip }, async (t) => 
       const call = (query) => callOk(client, tool, { ...extra, query }, schema);
       const n = async (query) => (await call(query))[count];
 
-      await t.test(`${tool}: "a -b" and "a b" split "a"`, async () => {
-        const [all, both, without] = [await n(a), await n(`${a} ${b}`), await n(`${a} -${b}`)];
+      await t.test(`${tool}: "a NOT b" and "a b" split "a"`, async () => {
+        const [all, both, without] = [await n(a), await n(`${a} ${b}`), await n(`${a} NOT ${b}`)];
         assert.ok(both > 0 && without > 0, `${a} and ${b} occur together and apart in the fixture`);
         assert.equal(without + both, all);
-        assert.equal(await n(`${a} NOT ${b}`), without);
       });
 
       await t.test(`${tool}: a query that only excludes words is refused`, async () => {
-        assert.match(await callError(client, tool, { ...extra, query: `-${a}` }), /`query` ".*" only excludes words/);
+        assert.match(await callError(client, tool, { ...extra, query: `NOT ${a}` }), /`query` ".*" only excludes words/);
       });
 
       await t.test(`${tool}: the grammar's warnings are returned`, async () => {
@@ -56,6 +57,21 @@ test('the query grammar in every tool', { skip: FIXTURE_DB.skip }, async (t) => 
     await t.test('skkg_find_terms: words still match as prefixes', async () => {
       const r = await callOk(client, 'skkg_find_terms', { query: 'milit' }, termsSchema);
       assert.ok(r.total > 0);
+    });
+
+    await t.test('skkg_find_terms: a label with a leading "-" finds its term', async () => {
+      const r = await callOk(client, 'skkg_find_terms', { query: 'Gürtelhaken, -schnalle' }, termsSchema);
+      assert.ok(r.results.some((x) => x.id === 'type/21087/141319'), JSON.stringify(r.results.map((x) => x.label)));
+      assert.equal(r.warnings, undefined);
+    });
+
+    await t.test('skkg_search_actors: the literature filter of a name with a leading "-" lists its publications', async () => {
+      const r = await callOk(client, 'skkg_search_actors', { query: 'Schaufelberger' }, actorsSchema);
+      const filter = [...(r.actors ?? []), ...(r.name_only?.examples ?? [])]
+        .map((x) => x.literature_filter).find((f) => f && Object.values(f)[0].includes(' -'));
+      assert.ok(filter, JSON.stringify(r));
+      const lit = await callOk(client, 'skkg_search_literature', filter, literatureSchema);
+      assert.ok(lit.total > 0);
     });
 
     // [tool, schema, args with the name filter]
@@ -71,8 +87,8 @@ test('the query grammar in every tool', { skip: FIXTURE_DB.skip }, async (t) => 
         assert.ok(r.warnings?.some((w) => w.startsWith(`\`${field}\`: "|" is no operator`)), JSON.stringify(r.warnings));
       });
       await t.test(`${tool}: a ${field} name that only excludes words is refused`, async () => {
-        const text = await callError(client, tool, { [field]: '-Hodler' });
-        assert.match(text, new RegExp(`\`${field}\` "-Hodler" only excludes words`));
+        const text = await callError(client, tool, { [field]: 'NOT Hodler' });
+        assert.match(text, new RegExp(`\`${field}\` "NOT Hodler" only excludes words`));
       });
     }
 

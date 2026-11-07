@@ -15,8 +15,7 @@ import assert from 'node:assert/strict';
 import { withClient } from './helpers.js';
 import { estimate, toApiTool } from '../scripts/footprint.mjs';
 
-// Set on 7 November 2026 about 10% above the estimate (11,743; the largest tool, skkg_collection_stats,
-// 2,272; the instructions 872 characters). Exact counts for claude-opus-5-5 were 18,342, 3,517, and 303.
+// About 10% above the estimate when set; raise one only in a commit that says why (notes/11).
 const CATALOGUE_BUDGET = 13_000;
 const TOOL_BUDGET = 2_500;
 const INSTRUCTIONS_BUDGET_CHARS = 1_000;

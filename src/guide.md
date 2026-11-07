@@ -42,8 +42,9 @@ objects and a warning, while `{query: "Stillleben"}` returns about a hundred.
 - **Translate keywords before the first call.** Search the German word, and try its
   variants: compounds (`Taschenuhr`), a prefix with `*` (`Uhr*`), and older spellings.
   Words are AND-ed, `"a phrase"` matches in order, `OR` between two words matches
-  either, and `-word` or `NOT word` excludes it. Operators are written in capitals.
-  Umlauts can be written `ä` or `ae`.
+  either, and `NOT` before a word excludes it. Operators are written in capitals and work
+  in `query` and the name filters (`creator`, `author`, `owner`, …); `venue`, `place`, and
+  `series` take plain words. Umlauts can be written `ä` or `ae`.
 - **Term filters take a German label or a term id, matched exactly except for case.** An
   unknown label is refused, with similar labels if there are any. When unsure, call
   `skkg_find_terms` first: each term lists every filter that takes it, with the count
