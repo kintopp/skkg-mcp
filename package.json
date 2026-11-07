@@ -23,9 +23,12 @@
     "lint": "eslint .",
     "inspector": "npx @modelcontextprotocol/inspector node src/index.js",
     "mutate": "node test/mutations.mjs",
-    "build:skill": "node scripts/build-skill.mjs"
+    "build:skill": "node scripts/build-skill.mjs",
+    "build:viewer": "node scripts/build-viewer.mjs",
+    "dev:viewer": "vite dev -c apps/image-viewer/vite.config.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/ext-apps": "2.0.4",
     "@modelcontextprotocol/server": "~2.4.0",
     "zod": "4.6.7"
   },
@@ -33,6 +36,9 @@
     "@eslint/js": "10.0.1",
     "@modelcontextprotocol/client": "~2.4.0",
     "eslint": "10.6.0",
-    "globals": "17.7.0"
+    "globals": "17.7.0",
+    "openseadragon": "6.1.1",
+    "vite": "8.3.6",
+    "vite-plugin-singlefile": "2.3.4"
   }
 }

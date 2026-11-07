@@ -26,7 +26,7 @@
   `skkg_search_exhibitions`. Read any record that is not an object with
   `skkg_get_record`. Count with `skkg_collection_stats` instead of paging through a
   search. Look up filter values with `skkg_find_terms`. Look at an image yourself with
-  `skkg_inspect_image`.
+  `skkg_inspect_image`; show images to the user with `skkg_view_image`.
 - **Every result says what to call next.** Ids, `website_url`, a bucket's `filter`, an
   actor's `literature_filter`, and the hints in `warnings` are ready to pass on. Read the
   warnings: they name the parameter that would work when a call matches nothing.
@@ -153,8 +153,9 @@ SKKG's anonymisation as it is.
 
 **Images.**
 
-- `skkg_inspect_image` returns the image for your own analysis. To show an image to the
-  user, link the object's `website_url`, which shows it with its rights. Never embed an
+- `skkg_inspect_image` returns the image for your own analysis. To show images to the
+  user, call `skkg_view_image`, a viewer with each image's rights; if no viewer appears,
+  link the object's `website_url`, which shows them with their rights. Never embed an
   image URL as Markdown: it would appear without its rights.
 - Some clients drop image results. If no picture arrives, say so, and describe the
   object from its metadata only.
@@ -256,9 +257,8 @@ them.
   SKKG's credit lines repeat them.
 - A few photo dates are malformed, such as "20219-12-31".
 
-**Images without an object.** Many published images, tens of thousands, belong to no
-object in the database. An image's `objects` list can be empty; do not guess its object
-from the file name.
+**Images without an object.** A few dozen published images belong to an exhibition, not
+to an object. Their `objects` list is empty; do not guess an object from the file name.
 
 Calls that work:
 

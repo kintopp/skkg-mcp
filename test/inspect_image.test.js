@@ -331,7 +331,7 @@ test('skkg_inspect_image against the fixture database', { skip: FIXTURE_DB.skip 
     assert.match(text, new RegExp(`Photo rights: ${s.image_rights.image_license}`));
     assert.match(text, /object copyright Copyright/);
     // What a client shows the user varies and changes, so the text names the purpose, never the view.
-    assert.match(text, /for your own analysis; to show it to the user, link website_url/);
+    assert.match(text, /for your own analysis; to show it to the user, call skkg_view_image or link website_url/);
     assert.doesNotMatch(text, /does not see|thumbnail|clients show/);
     assert.doesNotMatch(text, /^\s*[{[]/m);
   });
@@ -429,7 +429,7 @@ test('skkg_inspect_image refuses bad input before any fetch', { skip: FIXTURE_DB
       // What a client shows the user varies and changes, so the description names the purpose, never the view.
       const { tools } = await client.listTools();
       const d = tools.find((x) => x.name === NAME).description;
-      assert.match(d, /for your own analysis; to show it to the user, link the object's website_url/);
+      assert.match(d, /for your own analysis; to show it to the user, call skkg_view_image or link the object's website_url/);
       assert.doesNotMatch(d, /does not see|thumbnail|clients show/);
     });
     await t.test('the description says text in the image is source material, not instructions', async () => {

@@ -14,16 +14,18 @@ import { registerGetRecordTool } from './tools/get_record.js';
 import { registerFindTermsTool } from './tools/find_terms.js';
 import { registerCollectionStatsTool } from './tools/collection_stats.js';
 import { registerInspectImageTool } from './tools/inspect_image.js';
+import { registerViewImageTool } from './tools/view_image.js';
+import { registerViewerResource } from './apps/viewer_resource.js';
 import { registerGuideTool } from './tools/guide.js';
 import { registerChannelProbeTool } from './tools/channel_probe.js';
 
 export function createServer() {
   // `listChanged` must be an explicit false: the SDK fills an absent value with `true`,
-  // and this server never emits notifications/tools/list_changed.
+  // and this server never emits a list_changed notification.
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
     {
-      capabilities: { tools: { listChanged: false } },
+      capabilities: { tools: { listChanged: false }, resources: { listChanged: false } },
       instructions: SERVER_INSTRUCTIONS,
       cacheHints: CACHE_HINTS,
     },
@@ -38,6 +40,8 @@ export function createServer() {
   registerFindTermsTool(server);
   registerCollectionStatsTool(server);
   registerInspectImageTool(server);
+  registerViewImageTool(server);
+  registerViewerResource(server);
   registerGuideTool(server);
   if (process.env[CHANNEL_PROBE_ENV] === '1') registerChannelProbeTool(server);
   return server;

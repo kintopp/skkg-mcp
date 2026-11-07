@@ -482,10 +482,10 @@ const MUTATIONS = [
   ['src/tools/inspect_image.js', "    `${imageNoun(s.image_rights.kind, true)} rights: ${photoRights(s.image_rights)}.`,\n", "", 'inspect: text has the photo rights'],
   ['src/tools/inspect_image.js', "imageNoun(s.image_rights.kind, true)} rights:", "imageNoun(undefined, true)} rights:", 'inspect: text names a document'],
   ['src/tools/inspect_image.js', "    ...s.objects.map(objectLine),\n", "", 'inspect: text has the objects'],
-  ['src/tools/inspect_image.js', "for your own analysis; to show it to the user, link website_url.", "for your own analysis.", 'inspect: text sends the user to website_url'],
-  ['src/tools/inspect_image.js', "for your own analysis; to show it to the user, link website_url.", "for your own analysis; the user does not see it. Link website_url.", 'inspect: text claims no view'],
-  ['src/tools/inspect_image.js', "'The image is for your own analysis; to show it to the user, link the object\\'s website_url, ' +", "'The image is for your own analysis, ' +", 'inspect: description sends the user to website_url'],
-  ['src/tools/inspect_image.js', "'The image is for your own analysis; to show it to the user, link the object\\'s website_url, ' +", "'The image is for your own analysis; the user does not see it, so link the object\\'s website_url, ' +", 'inspect: description claims no view'],
+  ['src/tools/inspect_image.js', "for your own analysis; to show it to the user, call skkg_view_image or link website_url.", "for your own analysis.", 'inspect: text sends the user to website_url'],
+  ['src/tools/inspect_image.js', "for your own analysis; to show it to the user, call skkg_view_image or link website_url.", "for your own analysis; the user does not see it. Call skkg_view_image or link website_url.", 'inspect: text claims no view'],
+  ['src/tools/inspect_image.js', "'The image is for your own analysis; to show it to the user, call skkg_view_image or link the object\\'s website_url, ' +", "'The image is for your own analysis, ' +", 'inspect: description sends the user to website_url'],
+  ['src/tools/inspect_image.js', "'The image is for your own analysis; to show it to the user, call skkg_view_image or link the object\\'s website_url, ' +", "'The image is for your own analysis; the user does not see it, so call skkg_view_image or link the object\\'s website_url, ' +", 'inspect: description claims no view'],
   ['src/tools/inspect_image.js', "    ...(s.warnings ?? []).map((w) => `Warning: ${w}`),\n", "", 'inspect: text has the warnings'],
   ['src/tools/inspect_image.js', "{ type: 'image', data: buffer.toString('base64'), mimeType },", "{ type: 'image', data: buffer.toString('hex'), mimeType },", 'inspect: image as base64'],
   ['src/lib/rights.js', "    kind: m.kind ?? undefined,\n", "", 'image rights carry the kind'],
@@ -601,6 +601,39 @@ const MUTATIONS = [
   ["src/tools/collection_stats.js", "  'Count SKKG objects by one dimension, with the filters of skkg_search_objects. ' +", "  'Count SKKG objects by one dimension, with the filters of skkg_search_objects. ' + 'x'.repeat(1000) +", "footprint: tool budget"],
   ["src/tools/guide.js", "  'How to search SKKG well; read it before your first search, one topic at a time. ' +", "  'How to search SKKG well; read it before your first search, one topic at a time. ' + 'x '.repeat(4000) +", "footprint: catalogue budget"],
   ["scripts/guide-calls.mjs", "    calls: spans.filter((s) => /^skkg_\\w+\\(/.test(s)),", "    calls: [],", "guide examples: calls extracted"],
+  ["src/tools/view_image.js", "  const start = args.index ?? 1;", "  const start = 1;", "view_image: index opens that image first"],
+  ["src/tools/view_image.js", "  if (start > images.length) {", "  if (false) {", "view_image: index past the images refused"],
+  ["src/tools/view_image.js", "  if (!images.length) {", "  if (false) {", "view_image: object without an image refused"],
+  ["src/tools/view_image.js", "    if (!m.iiif_service) {", "    if (false) {", "view_image: unpublished image refused"],
+  ["src/tools/view_image.js", "    if (args.index !== undefined) warnings.push(", "    if (false) warnings.push(", "view_image: index with an image id warned"],
+  ["src/tools/view_image.js", "objectIds: imageObjectIds(db, id) };", "objectIds: imageObjectIds(db, id).slice(0, 1) };", "view_image: a shared image names every object"],
+  ["src/tools/view_image.js", "    if (!keys.has(key)) {", "    if (true) {", "view_image: each rights set listed once"],
+  ["src/tools/view_image.js", "rights_set: keys.get(key),", "rights_set: 1,", "view_image: image points to its own rights"],
+  ["src/tools/view_image.js", "    delete rights.kind;\n", "", "view_image: kind stays on the image"],
+  ["src/tools/view_image.js", "size: 2 * JSON.stringify(s).length + text.length", "size: JSON.stringify(s).length + text.length", "view_image: size counts the viewer's JSON block"],
+  ["src/tools/view_image.js", "    const from = numbered.slice(start - 1);", "    const from = numbered;", "view_image: a cut keeps the image opened first"],
+  ["src/tools/view_image.js", "    warnings: window.length < numbered.length", "    warnings: false", "view_image: a cut is warned"],
+  ["src/tools/view_image.js", "{ type: 'text', text: JSON.stringify(r.s) }", "{ type: 'text', text: r.text }", "view_image: the viewer's JSON block"],
+  ["src/tools/view_image.js", "const withObjects = (s) => ({ ...s, objects: s.objects ?? [] });", "const withObjects = (s) => s;", "view_image: empty object list kept"],
+  ["src/tools/view_image.js", "${i.kind === 'document' ? ' (document)' : ''}", "", "view_image text: documents marked"],
+  ["src/tools/view_image.js", "    ...s.image_rights.map((r, i) => setLine(r, i + 1)),\n", "", "view_image text: rights sets"],
+  ["src/tools/view_image.js", "    if (last && n === last[1] + 1) last[1] = n;", "    if (false) last[1] = n;", "view_image text: image ranges"],
+  ["src/tools/view_image.js", "    AFTER,\n    ...(s.warnings", "    ...(s.warnings", "view_image text: viewer for the user, inspect_image for the model"],
+  ["src/tools/view_image.js", "    ...(s.warnings ?? []).map((w) => `Warning: ${w}`),\n", "", "view_image text: warnings"],
+  ["src/apps/viewer_resource.js", "connectDomains: [IIIF_ORIGIN] }", "connectDomains: [] }", "viewer CSP lets OpenSeadragon read info.json"],
+  ["src/server.js", ", resources: { listChanged: false } },", " },", "no resource list changes announced"],
+  ["apps/image-viewer/model.js", "[A-Za-z0-9._~%-]+$/;", "[A-Za-z0-9._~%/?=-]+$/;", "viewer: only SKKG's IIIF services opened"],
+  ["apps/image-viewer/model.js", "      if (isResult(parsed)) return parsed;\n", "", "viewer: JSON block read when structuredContent is dropped"],
+  ["apps/image-viewer/model.js", "  return i < 0 ? 0 : i;", "  return 0;", "viewer: opens start_index"],
+  ["apps/image-viewer/model.js", "Math.min(count - 1, Math.max(0, pos + delta))", "Math.min(count, Math.max(0, pos + delta))", "viewer: paging stops at the last image"],
+  ["apps/image-viewer/model.js", "s.image_rights[m.rights_set - 1] ?? {}", "s.image_rights[0] ?? {}", "viewer: rights of the image shown"],
+  ["apps/image-viewer/model.js", "(kind === 'document' ? 'Document' : 'Photo')", "'Photo'", "viewer: documents named"],
+  ["apps/image-viewer/model.js", "skkg_inspect_image takes this id.`", "`", "viewer: model told the id it can inspect"],
+  ["apps/image-viewer/model.js", "!r.image_license || r.image_license === 'not recorded'", "!r.image_license", "viewer credit: missing licence said"],
+  ["apps/image-viewer/model.js", "[r.image_license, name(r.right_holder)]", "[r.image_license]", "viewer credit: holder named"],
+  ["apps/image-viewer/model.js", "m.kind === 'document' ? 'Scan' : 'Photo'", "'Photo'", "viewer credit: a document's maker is a scan"],
+  ["apps/image-viewer/model.js", "    by,\n    r.credit_line,", "    r.credit_line,", "viewer credit: photographer named"],
+  ["scripts/viewer-hash.mjs", "const BUNDLED = ['@modelcontextprotocol/ext-apps', 'openseadragon'];", "const BUNDLED = ['@modelcontextprotocol/ext-apps'];", "viewer build stale on an OpenSeadragon bump"],
 ];
 
 // The cache key changes with the entry, so an edited entry has no record and is selected.
@@ -666,11 +699,16 @@ async function runFiles(files, parallel = Math.max(1, availableParallelism() - 1
   return results;
 }
 
+// Any change under apps/image-viewer/ makes the built page stale, so test/viewer_build.test.js
+// fails on every such mutation; it may not count as their killer.
+const STAMPED_SOURCES = 'apps/image-viewer/';
+const testsFor = (m) => (m[0].startsWith(STAMPED_SOURCES) ? tests.filter((f) => f !== 'test/viewer_build.test.js') : tests);
+
 // The test file to try first: the quickest that killed the entry before, or the one named after its file.
 function firstTry(m, record) {
   if (record?.killers.length) return [...record.killers].sort((a, b) => a.ms - b.ms)[0].file;
   const guess = `test/${basename(m[0]).replace(/\.m?js$/, '')}.test.js`;
-  return tests.includes(guess) ? guess : undefined;
+  return testsFor(m).includes(guess) ? guess : undefined;
 }
 
 // Restores the mutated file on an interrupt. The runner awaits its children, so the event
@@ -722,7 +760,7 @@ for (const m of chosen) {
       cache[key] = { label, killers: [{ file: tried.file, ms: tried.ms }, ...others] };
     } else {
       // The file tried first passed, so only the others can kill it.
-      const killers = (await runFiles(tests.filter((f) => f !== tried?.file))).filter((r) => r.killed).map(({ file: f, ms }) => ({ file: f, ms }));
+      const killers = (await runFiles(testsFor(m).filter((f) => f !== tried?.file))).filter((r) => r.killed).map(({ file: f, ms }) => ({ file: f, ms }));
       killed = killers.length > 0;
       how = killed ? `suite: ${killers.map((k) => basename(k.file)).join(', ')}` : 'suite';
       if (killed) cache[key] = { label, killers };

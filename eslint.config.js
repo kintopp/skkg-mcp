@@ -20,4 +20,6 @@ export default [
       'no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     },
   },
+  // The viewer page runs in a browser iframe.
+  { files: ['apps/**/*.js'], languageOptions: { globals: { ...globals.browser } } },
 ];

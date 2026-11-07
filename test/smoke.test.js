@@ -17,6 +17,7 @@ const REQUIRED_PROPS = {
   skkg_find_terms: [],
   skkg_collection_stats: ['dimension'],
   skkg_inspect_image: ['id'],
+  skkg_view_image: ['id'],
   skkg_guide: [],
 };
 
