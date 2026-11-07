@@ -74,7 +74,7 @@ function createViewer(element) {
     constrainDuringPan: true,
     visibilityRatio: 0.5,
     minZoomImageRatio: 0.8,
-    maxZoomPixelRatio: 3,
+    maxZoomPixelRatio: 1,
     gestureSettingsMouse: { clickToZoom: false, dblClickToZoom: true },
   });
   syncGestures();
