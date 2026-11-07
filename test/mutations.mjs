@@ -596,6 +596,12 @@ const MUTATIONS = [
   ["src/tools/search_literature.js", "      ? [...warnings, `", "      ? [`", "literature: both name warnings returned"],
   ["src/tools/find_terms.js", "  const { fts: q, warnings } = searchQuery(args.query, 'query', { prefix: true });", "  const { fts: q } = searchQuery(args.query, 'query', { prefix: true });\n  const warnings = [];", "find_terms: query warnings returned"],
   ["src/tools/find_terms.js", "searchQuery(args.query, 'query', { prefix: true })", "searchQuery(args.query, 'query')", "find_terms: words match as prefixes"],
+  // The footprint budget (test/footprint.test.js) and the guide's call extractor.
+  ["scripts/footprint.mjs", "input_schema: t.inputSchema })", "input_schema: t.inputSchema, output_schema: t.outputSchema })", "footprint: output schemas not counted"],
+  ["src/server.js", "      instructions: SERVER_INSTRUCTIONS,", "      instructions: SERVER_INSTRUCTIONS.repeat(2),", "footprint: instructions budget"],
+  ["src/tools/collection_stats.js", "  'Count SKKG objects by one dimension, with the filters of skkg_search_objects. ' +", "  'Count SKKG objects by one dimension, with the filters of skkg_search_objects. ' + 'x'.repeat(1000) +", "footprint: tool budget"],
+  ["src/tools/guide.js", "  'How to search SKKG well; read it before your first search, one topic at a time. ' +", "  'How to search SKKG well; read it before your first search, one topic at a time. ' + 'x '.repeat(4000) +", "footprint: catalogue budget"],
+  ["scripts/guide-calls.mjs", "    calls: spans.filter((s) => /^skkg_\\w+\\(/.test(s)),", "    calls: [],", "guide examples: calls extracted"],
 ];
 
 // The cache key changes with the entry, so an edited entry has no record and is selected.

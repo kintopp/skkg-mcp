@@ -18,18 +18,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { AjvJsonSchemaValidator } from '@modelcontextprotocol/client/validators/ajv';
 import { withClient, ROOT } from './helpers.js';
+import { guideSpans, parseCall, toArgs } from '../scripts/guide-calls.mjs';
 
 const md = readFileSync(join(ROOT, 'src', 'guide.md'), 'utf8');
-// Code spans, with line breaks read as spaces, as Markdown reads them.
-const spans = [...md.replace(/\n\s*/g, ' ').matchAll(/`([^`]+)`/g)].map((m) => m[1]);
-// The guide writes arguments as JS object literals with bare keys and JSON values.
-const toArgs = (s) => JSON.parse(s.replace(/([{,]\s*)([A-Za-z_]\w*)\s*:/g, '$1"$2":'));
-
-const CALL = /^(skkg_\w+)\((\{.*\})\)$/;
-const calls = spans.filter((s) => /^skkg_\w+\(/.test(s));
-const objects = spans.filter((s) => /^\{.*\}$/.test(s));
-const fragments = spans.filter((s) => /^[a-z_]+: /.test(s));
-const mentions = spans.filter((s) => /^skkg_\w+$/.test(s));
+const { calls, objects, fragments, mentions } = guideSpans(md);
 
 const FULL_DB = process.env.SKKG_FULL_DB;
 const LIVE = process.env.SKKG_LIVE === '1';
@@ -45,10 +37,10 @@ test('the guide\'s examples fit the tools\' input schemas', async (t) => {
     await t.test('every call parses and its arguments pass its tool\'s schema', () => {
       assert.ok(calls.length > 0, 'no call found');
       for (const span of calls) {
-        const m = CALL.exec(span);
-        assert.ok(m, `not a call with one argument object: ${span}`);
-        assert.ok(schemas.has(m[1]), `no tool ${m[1]}: ${span}`);
-        const { valid, errorMessage } = accepts(schemas.get(m[1]), toArgs(m[2]));
+        const call = parseCall(span);
+        assert.ok(call, `not a call with one argument object: ${span}`);
+        assert.ok(schemas.has(call.tool), `no tool ${call.tool}: ${span}`);
+        const { valid, errorMessage } = accepts(schemas.get(call.tool), call.args);
         assert.ok(valid, `${span}: ${errorMessage}`);
       }
     });
@@ -71,7 +63,7 @@ test('every item of a "Calls that work" list holds a call the extractor finds', 
   const lists = [...md.matchAll(/Calls that work:\n\n((?:- .*\n(?: {2}.*\n)*)+)/g)].map((m) => m[1]);
   assert.ok(lists.length > 0, 'no "Calls that work" list found');
   for (const item of lists.flatMap((l) => l.split(/^- /m).filter(Boolean))) {
-    const found = [...item.replace(/\n\s*/g, ' ').matchAll(/`([^`]+)`/g)].some((m) => CALL.test(m[1]));
+    const found = guideSpans(item).calls.some((span) => parseCall(span));
     assert.ok(found, `no call in: ${item.trim()}`);
   }
 });
@@ -88,11 +80,10 @@ test('every call of the guide succeeds on the full database', {
       if (res.isError) failed.push(`${span}: ${res.content?.[0]?.text}`);
     };
     for (const span of calls) {
-      const [, name, json] = CALL.exec(span);
-      const args = toArgs(json);
+      const { tool, args } = parseCall(span);
       // live: true asks SKKG's API.
       if (args.live && !LIVE) continue;
-      await run(name, args, span);
+      await run(tool, args, span);
     }
     // An argument object runs with the first tool, in the order the server lists them, that takes it.
     for (const span of objects) {
