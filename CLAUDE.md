@@ -95,4 +95,5 @@ Summarized in `notes/02-open-data-policy-and-terms.md`. Metadata is free to reus
 - **Duplicate triples in the dump:** the parser counts 31.9 million triples, the store keeps 24.7 million quads. Count with SPARQL on the store when exact numbers matter.
 - **QLever-only syntax:** `FILTER KEYWORDS` only works on QLever. Wikidata and GND data (`wdt:`, `geo:`) is already in the main dump (`notes/10-schema-census.md`).
 - **`SKKG_FULL_DB` takes a path, not a flag:** `SKKG_FULL_DB=1` fails every full-database test with "database was not found at 1". Set it to `data/db/skkg-20261028.sqlite`.
+- **`npm run mutate` has no `--help`:** unknown flags start the full run, and piping it into `head` kills it with a mutant left in `src/`. Write its output to a file, and check `git status` after any interrupted run.
 - **Two id schemes:** objects, multimedia, persons, literature, exhibitions and addresses have numeric (`object/2432`) or UUID ids, as separate records. Match both.

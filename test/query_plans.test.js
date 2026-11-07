@@ -1,6 +1,6 @@
-// Query plans of the statements the tools prepare, read by EXPLAIN QUERY PLAN. A statement that
-// scans a large table passes on the fixture and is slow only on the full database, so the index
-// checks run under SKKG_FULL_DB (test/CLAUDE.md).
+// Query plans of the statements the tools prepare, read by EXPLAIN QUERY PLAN. A scan is slow only
+// on the full database, but the fixture's terms and object_terms are close to full size and give
+// the same plans, so every check runs on both (test/CLAUDE.md).
 //
 // Ways it could fail:
 // - the narrower terms of a term (skkg_find_terms by id, skkg_collection_stats on a hierarchical
@@ -8,7 +8,6 @@
 // - a facet's (object, term) pairs are read with a table lookup per row;
 // - a creator, role, or attribution filter, also with an exclusion on the same creator row, scans
 //   every object and probes its creator rows instead of reading the matching creator rows first.
-//   That is the shape of a correlated EXISTS at any size, so this check also runs on the fixture.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -60,30 +59,30 @@ for (const [name, path, skip] of [['the fixture', FIXTURE_DB.path, FIXTURE_DB.sk
       assert.ok(plans.some(([sql]) => /object_creators oc/.test(sql)), `no creator filter compiled for ${JSON.stringify(args)}`);
     }
   });
+
+  test(`on ${name}, narrower terms are looked up by index, by skkg_find_terms and skkg_collection_stats`, { skip }, () => {
+    const { db } = openDatabase(path);
+    const broad = db.prepare(`SELECT t.id FROM terms t WHERE t.facet = 'material'
+      AND EXISTS (SELECT 1 FROM terms n WHERE n.broader_id = t.id) LIMIT 1`).get().id;
+    db.close();
+    const runs = {
+      find_terms: plansOf(path, (d, meta) => findTerms(d, meta, { id: broad, vocabulary: 'all', limit: 20, offset: 0, lang: 'de' })),
+      collection_stats: plansOf(path, (d, meta) => collectionStats(d, meta, { ...STATS, dimension: 'material' })),
+    };
+    for (const [tool, plans] of Object.entries(runs)) {
+      const narrower = plans.filter(([sql]) => /broader_id = \?/.test(sql));
+      assert.ok(narrower.length > 0, `${tool} looked up no narrower terms`);
+      for (const [sql, plan] of narrower) assert.match(plan, /INDEX \w+ \(broader_id=\?\)/, `${tool}: ${sql}\n${plan}`);
+      assert.deepEqual(plans.filter(([, plan]) => /\bSCAN (terms|t)\b/.test(plan)), [], tool);
+    }
+  });
+
+  test(`on ${name}, a facet dimension reads its (object, term) pairs from a covering index`, { skip }, () => {
+    for (const dimension of ['material', 'object_type']) {
+      const plans = plansOf(path, (d, meta) => collectionStats(d, meta, { ...STATS, dimension }));
+      const pairs = plans.filter(([sql]) => sql.includes(`FROM object_terms WHERE facet = '${dimension}'`));
+      assert.ok(pairs.length > 0, dimension);
+      for (const [sql, plan] of pairs) assert.match(plan, /COVERING INDEX \w+ \(facet=\?/, `${sql}\n${plan}`);
+    }
+  });
 }
-
-test('on the full database, narrower terms are looked up by index, by skkg_find_terms and skkg_collection_stats', { skip: FULL_SKIP }, () => {
-  const { db } = openDatabase(FULL_DB);
-  const broad = db.prepare(`SELECT t.id FROM terms t WHERE t.facet = 'material'
-    AND EXISTS (SELECT 1 FROM terms n WHERE n.broader_id = t.id) LIMIT 1`).get().id;
-  db.close();
-  const runs = {
-    find_terms: plansOf(FULL_DB, (d, meta) => findTerms(d, meta, { id: broad, vocabulary: 'all', limit: 20, offset: 0, lang: 'de' })),
-    collection_stats: plansOf(FULL_DB, (d, meta) => collectionStats(d, meta, { ...STATS, dimension: 'material' })),
-  };
-  for (const [tool, plans] of Object.entries(runs)) {
-    const narrower = plans.filter(([sql]) => /broader_id = \?/.test(sql));
-    assert.ok(narrower.length > 0, `${tool} looked up no narrower terms`);
-    for (const [sql, plan] of narrower) assert.match(plan, /INDEX \w+ \(broader_id=\?\)/, `${tool}: ${sql}\n${plan}`);
-    assert.deepEqual(plans.filter(([, plan]) => /\bSCAN (terms|t)\b/.test(plan)), [], tool);
-  }
-});
-
-test('on the full database, a facet dimension reads its (object, term) pairs from a covering index', { skip: FULL_SKIP }, () => {
-  for (const dimension of ['material', 'object_type']) {
-    const plans = plansOf(FULL_DB, (d, meta) => collectionStats(d, meta, { ...STATS, dimension }));
-    const pairs = plans.filter(([sql]) => sql.includes(`FROM object_terms WHERE facet = '${dimension}'`));
-    assert.ok(pairs.length > 0, dimension);
-    for (const [sql, plan] of pairs) assert.match(plan, /COVERING INDEX \w+ \(facet=\?/, `${sql}\n${plan}`);
-  }
-});
