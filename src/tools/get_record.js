@@ -12,7 +12,7 @@ import { asStr, withArticle } from '../lib/format.js';
 import { termLabel, actorRef, recordLabel } from '../lib/labels.js';
 import { imageRights } from '../lib/rights.js';
 import { objectRow, RELATION } from '../lib/objects.js';
-import { ROLE_KINDS, roleCounts, lifeDates, literatureFilter } from '../lib/actors.js';
+import { ROLE_KINDS, roleCounts, lifeDates, literatureFilters } from '../lib/actors.js';
 import { period, periodRef } from '../lib/provenance.js';
 import { exhibitionFields } from '../lib/exhibitions.js';
 import { capList, emptySectionWarnings, paging, pastEnd } from '../lib/results.js';
@@ -314,15 +314,15 @@ function getActor(db, id, want, args, ctx) {
   } else if (a.kind === 'stub') {
     const parts = roles.filter((r) => LITERATURE_KINDS.includes(r.as)).map((r) => r.as);
     kind = STUB_KINDS.find((k) => parts.includes(k)) ?? 'actor';
-    // The filter skkg_search_actors hands out as literature_filter.
-    const filter = literatureFilter(db, id, a.label);
+    // The calls skkg_search_actors hands out as literature_filters.
+    const filters = literatureFilters(db, id, a.label);
     let call = '';
-    if (filter) {
-      const [[key, value]] = Object.entries(filter);
+    if (filters) {
+      const [first, second] = filters.map((f) => Object.keys(f)[0]);
+      const value = filters[0][first];
       const name = value === a.label ? 'this name' : `the value \`${value}\``;
-      call = `: ${SEARCH_LITERATURE_TOOL_NAME} with \`${key}\` and ${name} lists ` +
-        (key === 'author' || parts.every((p) => p === 'publisher') ? 'all their publications'
-          : 'those it published, with `author` those it wrote or edited');
+      call = `: ${SEARCH_LITERATURE_TOOL_NAME} with \`${first}\` and ${name} lists ` +
+        (second ? `those it published, with \`${second}\` those it wrote or edited` : 'all their publications');
     }
     note = parts.length
       ? `SKKG records only the name of this ${parts.join(' and ')}, from its literature, often as one record per publication${call}.`

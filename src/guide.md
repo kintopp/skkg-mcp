@@ -28,7 +28,7 @@
   search. Look up filter values with `skkg_find_terms`. Look at an image yourself with
   `skkg_inspect_image`; show images to the user with `skkg_view_image`.
 - **Every result says what to call next.** Ids, `website_url`, a bucket's `filter`, an
-  actor's `literature_filter`, and the hints in `warnings` are ready to pass on. Read the
+  actor's `literature_filters`, and the hints in `warnings` are ready to pass on. Read the
   warnings: they name the parameter that would work when a call matches nothing.
 - **What is not there.** SKKG records no subjects or iconography, no places of
   production, and the server withholds current locations. Do not promise searches by

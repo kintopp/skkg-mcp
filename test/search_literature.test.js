@@ -34,7 +34,7 @@
 // - sort relevance without a query runs silently; year_asc puts undated publications first;
 //   paging repeats or skips a publication; an offset past the end is silent
 // - the text drops ids, warnings, or paging; results violate the output schema
-// - the name_only examples of skkg_search_actors offer a literature_filter that does not list the
+// - the name_only examples of skkg_search_actors offer literature_filters that do not list the
 //   example's publication
 // The term counts of skkg_find_terms against literature_type are checked in find_terms.test.js.
 

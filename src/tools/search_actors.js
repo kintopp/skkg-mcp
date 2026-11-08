@@ -9,7 +9,7 @@ import { perDb, placeholders, stmt } from '../lib/sql.js';
 import { searchQuery, QUERY_SYNTAX } from '../lib/fts.js';
 import { termLabel } from '../lib/labels.js';
 import { websiteUrl } from '../lib/ids.js';
-import { ROLE_KINDS, ACTOR_ROLES, hasRole, roleCounts, lifeDates, literatureFilter } from '../lib/actors.js';
+import { ROLE_KINDS, ACTOR_ROLES, hasRole, roleCounts, lifeDates, literatureFilters } from '../lib/actors.js';
 import { words, startingWith } from '../lib/words.js';
 import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
@@ -47,8 +47,8 @@ const description =
   'Each result lists its roles with their counts. SKKG\'s anonymisation ("Privatperson", "Unbekannte:r Eigentümer:in") ' +
   'is never a result: never try to identify those persons. Actors SKKG records only by name, most of them authors, ' +
   'editors, and publishers of literature, are not listed; name_only counts those that match and names a few, each with ' +
-  `the ${SEARCH_LITERATURE_TOOL_NAME} arguments that list their publications ` +
-  '(for a publisher, those it published; `author` with the same name lists what it wrote or edited). ' +
+  `the ${SEARCH_LITERATURE_TOOL_NAME} calls that list their publications ` +
+  '(`publisher` for what it published, `author` for what it wrote or edited; one call each). ' +
   'For one actor\'s full record, with their objects and literature, use skkg_get_record with its id; for the objects ' +
   'of a creator, skkg_search_objects with `creator`; for labels of gender and the country codes, skkg_find_terms.';
 
@@ -121,13 +121,13 @@ export const outputSchema = z.object({
     examples: z.array(z.object({
       id: z.string(),
       name: str(),
-      literature_filter: z.object({ author: str(), publisher: str() }).optional()
-        .describe(`${SEARCH_LITERATURE_TOOL_NAME} arguments that list the publications under this name; ` +
-          '`publisher` lists only those it published, so pass the same name as `author` for what it wrote or edited'),
+      literature_filters: z.array(z.object({ author: str(), publisher: str() })).optional()
+        .describe(`The arguments of the ${SEARCH_LITERATURE_TOOL_NAME} calls that list the publications under this name, ` +
+          'one call each: `publisher` for those it published, `author` for those it wrote or edited'),
     })),
   }).optional().describe('Actors SKKG records only by name that meet the same filters; they are not listed. ' +
     `examples gives up to five distinct names, each with one id for skkg_get_record and, for authors, editors, and publishers, ` +
-    'its literature_filter'),
+    'its literature_filters'),
   applied_filters: appliedOut().optional(),
   warnings: z.array(z.string()).optional(),
   data_as_of: z.string().optional(),
@@ -252,7 +252,7 @@ export function searchActors(db, meta, args) {
     const examples = [];
     for (const r of db.prepare(`SELECT a.id, a.label ${n.sql} ORDER BY ${c.fts ? ORDER.relevance : BY_NAME}`).iterate(...n.params)) {
       if (!examples.some((e) => e.name === r.label)) {
-        examples.push(prune({ id: r.id, name: r.label ?? undefined, literature_filter: literatureFilter(db, r.id, r.label) }));
+        examples.push(prune({ id: r.id, name: r.label ?? undefined, literature_filters: literatureFilters(db, r.id, r.label) }));
       }
       if (examples.length === NAME_ONLY_EXAMPLES) break;
     }
@@ -263,8 +263,8 @@ export function searchActors(db, meta, args) {
   if (total === 0) {
     warnings.push(nameOnly
       ? 'No person or group with a record of its own matches; see name_only for the actors SKKG records only by name' +
-        (nameOnly.examples.some((e) => e.literature_filter)
-          ? `, and ${SEARCH_LITERATURE_TOOL_NAME} with an example's literature_filter for their publications.` : '.')
+        (nameOnly.examples.some((e) => e.literature_filters)
+          ? `, and ${SEARCH_LITERATURE_TOOL_NAME} with each of an example's literature_filters for their publications.` : '.')
       : noMatchWarning('person or group', c.given));
   }
   const past = pastEnd(args.offset, total, 'actors');
@@ -309,9 +309,10 @@ function actorLines(r, n) {
 function renderText(s) {
   const head = `${s.total} persons and groups${showing(s, s.total)} (sorted by ${s.sort}).`;
   const lines = s.results.flatMap((r, i) => actorLines(r, s.offset + i + 1));
-  const filterText = (f) => f && `; ${SEARCH_LITERATURE_TOOL_NAME} ${Object.entries(f).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')}`;
+  const filterText = (fs) => fs && `; ${SEARCH_LITERATURE_TOOL_NAME} ` +
+    fs.map((f) => Object.entries(f).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')).join(', then ');
   const nameOnly = s.name_only && `Also ${s.name_only.total} actors SKKG records only by name (not listed), e.g. ` +
-    `${s.name_only.examples.map((e) => `${e.name} (${e.id}${filterText(e.literature_filter) ?? ''})`).join(', ')}.`;
+    `${s.name_only.examples.map((e) => `${e.name} (${e.id}${filterText(e.literature_filters) ?? ''})`).join(', ')}.`;
   return [head, ...lines, nameOnly, ...tailLines(s)].filter(Boolean).join('\n');
 }
 
