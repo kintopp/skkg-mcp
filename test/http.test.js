@@ -12,6 +12,8 @@
 //   reason in the log
 // - a foreign or malformed Origin passes, or claude.ai or Origin: null is refused; with a
 //   configured host or RAILWAY_PUBLIC_DOMAIN a foreign Host passes, or /health checks the Host
+// - a bad allowlist entry starts a server that refuses every request, instead of exiting with its name
+// - the wall-clock guard cuts a call before a raised IIIF or API timeout ends it
 // - GET or DELETE on /mcp is not 405; a body over 1 MiB is not 413; a compressed body is decoded
 // - a slow call is not cut at the wall-clock guard, or the request over the in-flight limit is not 503;
 //   a 2025 SSE answer holds back its headers until the tool is done
@@ -21,7 +23,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { request } from 'node:http';
 import { join } from 'node:path';
@@ -228,6 +230,36 @@ test('Host: a configured host or RAILWAY_PUBLIC_DOMAIN turns the check on, and /
       assert.equal(await statusWithHost(server, 'MCP.example.org:8443'), 200, JSON.stringify(env));
       assert.equal((await fetch(`${server.url}/health`)).status, 200);
     });
+  }
+});
+
+test('a bad allowlist entry stops the server at startup, naming the entry', { skip }, async () => {
+  for (const [name, entry] of [['MCP_ALLOWED_HOSTS', 'mcp.example.org:port'], ['MCP_ALLOWED_ORIGINS', 'foo*.example']]) {
+    const child = spawn(process.execPath, [HTTP_ENTRY], {
+      cwd: ROOT,
+      env: { ...process.env, PORT: '0', SKKG_DB_PATH: FIXTURE_DB.path, NODE_OPTIONS: STUB, [name]: entry },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
+    let stderr = '';
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    // A server that starts anyway is killed, so the test fails instead of hanging.
+    const timer = setTimeout(() => child.kill('SIGKILL'), 10_000);
+    const [code] = await once(child, 'exit');
+    clearTimeout(timer);
+    assert.equal(code, 1, stderr);
+    assert.doesNotMatch(stderr, /listening on/);
+    const line = stderr.split('\n').filter((l) => l.startsWith('{')).map((l) => JSON.parse(l)).find((l) => l.level === 'error');
+    assert.ok(line?.msg.startsWith(`${name}: "${entry}" is not a hostname`), stderr);
+  }
+});
+
+test('the wall-clock guard outlasts a raised IIIF or API timeout', () => {
+  for (const name of ['SKKG_IIIF_TIMEOUT_MS', 'SKKG_API_TIMEOUT_MS']) {
+    const out = spawnSync(process.execPath,
+      ['--input-type=module', '-e', "console.log((await import('./src/config.js')).HTTP_RESPONSE_TIMEOUT_MS)"],
+      { cwd: ROOT, env: { ...process.env, SKKG_HTTP_RESPONSE_TIMEOUT_MS: '', [name]: '400000' }, encoding: 'utf8' });
+    assert.equal(out.status, 0, out.stderr);
+    assert.ok(Number(out.stdout) > 400_000, `${name}: ${out.stdout}`);
   }
 });
 

@@ -8,6 +8,9 @@
 // - MCP_ALLOWED_ORIGINS adds to the defaults instead of replacing them, or a blank value empties them
 // - a host that is configured fails with a port or another case; a lookalike or a missing Host
 //   passes; RAILWAY_PUBLIC_DOMAIN alone leaves the check off, or loopback is refused once it is on
+// - an entry written with a scheme, port, or path is not read as its hostname, so it matches nothing
+// - an entry that is no hostname (a "*" inside it, a space, a glob among the hosts) is taken, or
+//   breaks without naming the variable and the entry
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -89,4 +92,28 @@ test('Host: a configured host or the Railway domain turns it on, with loopback a
     assert.equal(isAllowedHost('xmcp.example.org', hosts), false);
     assert.equal(isAllowedHost(undefined, hosts), false);
   }
+});
+
+test('an entry with a scheme, port, or path is read as its hostname', () => {
+  const origins = parseAllowedOrigins('https://foo.example:8443/, bar.example:3000, https://*.baz.example');
+  assert.equal(isAllowedOrigin('https://foo.example', origins), true);
+  assert.equal(isAllowedOrigin('https://bar.example', origins), true);
+  assert.equal(isAllowedOrigin('https://api.baz.example', origins), true);
+  assert.equal(isAllowedOrigin('https://baz.example', origins), false, 'a glob does not match the apex');
+  const hosts = allowedHosts('https://mcp.example.org:443/mcp, Other.Example:8080', undefined);
+  assert.equal(isAllowedHost('mcp.example.org', hosts), true);
+  assert.equal(isAllowedHost('other.example:8080', hosts), true);
+  assert.equal(isAllowedHost('example.org', hosts), false);
+});
+
+test('an entry that is no hostname is refused, naming the variable and the entry', () => {
+  for (const entry of ['foo*.example', 'a.*.example', '*', 'foo bar', 'https://', '.example']) {
+    assert.throws(() => parseAllowedOrigins(`claude.ai, ${entry}`),
+      (err) => err.message.startsWith(`MCP_ALLOWED_ORIGINS: "${entry}" is not a hostname or a *.host glob.`), entry);
+  }
+  for (const entry of ['*.example.org', 'foo bar', 'mcp.example.org:port']) {
+    assert.throws(() => allowedHosts(`mcp.example.org, ${entry}`, undefined),
+      (err) => err.message.startsWith(`MCP_ALLOWED_HOSTS: "${entry}" is not a hostname.`), entry);
+  }
+  assert.throws(() => allowedHosts(undefined, 'bad host'), /^Error: RAILWAY_PUBLIC_DOMAIN: "bad host"/);
 });

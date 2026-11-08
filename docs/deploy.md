@@ -21,9 +21,9 @@ Point the inspector at `http://localhost:3000/mcp` with `npx @modelcontextprotoc
 |---|---|---|
 | `SKKG_DB_PATH` | unset | Path of the database. On Railway `/data/skkg-YYYYMMDD.sqlite`. |
 | `PORT` | `3000` | Listen port (Railway sets it). `0` picks a free port. |
-| `MCP_ALLOWED_ORIGINS` | claude.ai, claude.com, chatgpt.com and their subdomains | Comma-separated bare hostnames or `*.host` globs. **Replaces** the defaults, so list them again to add one. `*` turns the check off. A mismatch is 403. Write no scheme, port, or other `*`: such an entry matches nothing or stops the server at startup. |
-| `MCP_ALLOWED_HOSTS` | unset | Comma-separated bare hostnames the `Host` header must match. `RAILWAY_PUBLIC_DOMAIN` and localhost are added. With neither set, the Host check is off. Write no port or scheme. |
-| `SKKG_HTTP_RESPONSE_TIMEOUT_MS` | `60000` | Wall-clock limit per request to `/mcp`, then 504. Keep it above the IIIF and API timeouts. |
+| `MCP_ALLOWED_ORIGINS` | claude.ai, claude.com, chatgpt.com and their subdomains | Comma-separated hostnames or `*.host` globs; a scheme, port, or path is dropped. **Replaces** the defaults, so list them again to add one. `*` alone turns the check off. A mismatch is 403. An entry that is no hostname (another `*`, a space) stops the server at startup with a log line naming it, so the deploy fails and the previous one keeps serving. |
+| `MCP_ALLOWED_HOSTS` | unset | Comma-separated hostnames the `Host` header must match; a scheme, port, or path is dropped. `RAILWAY_PUBLIC_DOMAIN` and localhost are added. With neither set, the Host check is off. An entry that is no hostname, a glob included, stops the server at startup as above. |
+| `SKKG_HTTP_RESPONSE_TIMEOUT_MS` | 30 s more than the slower of `SKKG_IIIF_TIMEOUT_MS` and `SKKG_API_TIMEOUT_MS` (`60000`) | Wall-clock limit per request to `/mcp`, then 504. If you set it, keep it above both timeouts. |
 | `SKKG_HTTP_MAX_INFLIGHT` | `16` | Concurrent requests to `/mcp`. More get 503 with `Retry-After: 5`. |
 | `SKKG_IIIF_TIMEOUT_MS`, `SKKG_API_TIMEOUT_MS` | `30000` | Timeouts of one request to SKKG's IIIF server and API. |
 | `SKKG_RESPONSE_CACHE_TTL_MS` | `300000` | How long IIIF images are kept in memory (64 MiB at most). `0` turns the cache off. `live: true` is never cached. |

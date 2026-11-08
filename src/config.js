@@ -97,8 +97,9 @@ export const RESPONSE_CACHE_MAX_BYTES = 64 * 1024 * 1024;
 // Streamable HTTP entry (src/http.js). Railway sets PORT.
 export const HTTP_PORT = posIntEnv('PORT', 3000, { min: 0, max: 65535 });
 export const HTTP_MAX_BODY_BYTES = 1_048_576;
-// Wall clock per request. The slowest call waits for one IIIF or API request (30 s timeout).
-export const HTTP_RESPONSE_TIMEOUT_MS = posIntEnv('SKKG_HTTP_RESPONSE_TIMEOUT_MS', 60_000, { min: 100, max: 600_000 });
+// Wall clock per request. The slowest call waits for one IIIF or API request; the margin is for its own work.
+export const HTTP_RESPONSE_TIMEOUT_MS = posIntEnv('SKKG_HTTP_RESPONSE_TIMEOUT_MS',
+  Math.max(IIIF_TIMEOUT_MS, API_TIMEOUT_MS) + 30_000, { min: 100, max: 1_200_000 });
 export const HTTP_MAX_INFLIGHT = posIntEnv('SKKG_HTTP_MAX_INFLIGHT', 16, { min: 1, max: 10_000 });
 // Comma-separated origins or `*.host` globs that replace the defaults; "*" allows any.
 export const MCP_ALLOWED_ORIGINS = process.env.MCP_ALLOWED_ORIGINS;

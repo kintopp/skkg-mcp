@@ -25,9 +25,16 @@ const log = (level, msg, err) => console.error(JSON.stringify({
 useResponseCache();
 logEveryCall();
 
-const origins = parseAllowedOrigins(MCP_ALLOWED_ORIGINS);
-// The Host check is on only when a host is configured; the Origin check is always on.
-const hosts = allowedHosts(MCP_ALLOWED_HOSTS, RAILWAY_PUBLIC_DOMAIN);
+let origins, hosts;
+try {
+  origins = parseAllowedOrigins(MCP_ALLOWED_ORIGINS);
+  // The Host check is on only when a host is configured; the Origin check is always on.
+  hosts = allowedHosts(MCP_ALLOWED_HOSTS, RAILWAY_PUBLIC_DOMAIN);
+} catch (err) {
+  // Exiting fails the deploy's health check, so Railway keeps the previous deployment serving.
+  log('error', err.message);
+  process.exit(1);
+}
 
 const handler = createMcpHandler(() => createServer({ transport: 'http' }), {
   maxRequestBodySize: HTTP_MAX_BODY_BYTES,
