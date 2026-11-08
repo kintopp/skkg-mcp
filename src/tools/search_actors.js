@@ -6,10 +6,10 @@ import { withTool, toolResult } from '../lib/tool.js';
 import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
 import { perDb, placeholders, stmt } from '../lib/sql.js';
-import { ftsQuery, nameValue, searchQuery, QUERY_SYNTAX } from '../lib/fts.js';
+import { searchQuery, QUERY_SYNTAX } from '../lib/fts.js';
 import { termLabel } from '../lib/labels.js';
 import { websiteUrl } from '../lib/ids.js';
-import { ROLE_KINDS, ACTOR_ROLES, hasRole, roleCounts, lifeDates } from '../lib/actors.js';
+import { ROLE_KINDS, ACTOR_ROLES, hasRole, roleCounts, lifeDates, literatureFilter } from '../lib/actors.js';
 import { words, startingWith } from '../lib/words.js';
 import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
@@ -214,17 +214,6 @@ function compile(db, args) {
 function fromSql(c, kinds) {
   const join = c.fts ? 'JOIN (SELECT actor_id, rank FROM actors_fts WHERE actors_fts MATCH ?) h ON h.actor_id = a.id' : '';
   return { sql: `FROM actors a ${join} WHERE ${[kinds, ...c.where].join(' AND ')}`, params: [...(c.fts ? [c.fts] : []), ...c.params] };
-}
-
-// The skkg_search_literature arguments that list a name-only actor's publications under its name:
-// `publisher` for a publisher (also one that writes or edits, whose other publications `author`
-// lists, as the descriptions and skkg_get_record say), `author` for an author or editor; none for
-// the few that no publication names, or a name without a word.
-function literatureFilter(db, id, name) {
-  if (!name || !ftsQuery(name)) return undefined;
-  const parts = stmt(db, 'SELECT DISTINCT kind FROM literature_actors WHERE actor_id = ?').all(id).map((r) => r.kind);
-  if (!parts.length) return undefined;
-  return parts.includes('publisher') ? { publisher: nameValue(name) } : { author: nameValue(name) };
 }
 
 function actorRow(db, id, lang) {

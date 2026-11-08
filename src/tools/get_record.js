@@ -10,10 +10,9 @@ import { stmt } from '../lib/sql.js';
 import { prune } from '../lib/prune.js';
 import { asStr, withArticle } from '../lib/format.js';
 import { termLabel, actorRef, recordLabel } from '../lib/labels.js';
-import { nameValue } from '../lib/fts.js';
 import { imageRights } from '../lib/rights.js';
 import { objectRow, RELATION } from '../lib/objects.js';
-import { ROLE_KINDS, roleCounts, lifeDates } from '../lib/actors.js';
+import { ROLE_KINDS, roleCounts, lifeDates, literatureFilter } from '../lib/actors.js';
 import { period, periodRef } from '../lib/provenance.js';
 import { exhibitionFields } from '../lib/exhibitions.js';
 import { capList, emptySectionWarnings, paging, pastEnd } from '../lib/results.js';
@@ -315,15 +314,18 @@ function getActor(db, id, want, args, ctx) {
   } else if (a.kind === 'stub') {
     const parts = roles.filter((r) => LITERATURE_KINDS.includes(r.as)).map((r) => r.as);
     kind = STUB_KINDS.find((k) => parts.includes(k)) ?? 'actor';
-    // The value skkg_search_actors hands out as literature_filter, quoted where the name holds an operator word.
-    const value = nameValue(a.label ?? '');
-    const name = value === a.label ? 'this name' : `the value \`${value}\``;
-    const lists = !parts.includes('publisher') ? `\`author\` and ${name} lists all their publications`
-      : parts.every((p) => p === 'publisher') ? `\`publisher\` and ${name} lists all their publications`
-        : `\`publisher\` and ${name} lists those it published, with \`author\` those it wrote or edited`;
+    // The filter skkg_search_actors hands out as literature_filter.
+    const filter = literatureFilter(db, id, a.label);
+    let call = '';
+    if (filter) {
+      const [[key, value]] = Object.entries(filter);
+      const name = value === a.label ? 'this name' : `the value \`${value}\``;
+      call = `: ${SEARCH_LITERATURE_TOOL_NAME} with \`${key}\` and ${name} lists ` +
+        (key === 'author' || parts.every((p) => p === 'publisher') ? 'all their publications'
+          : 'those it published, with `author` those it wrote or edited');
+    }
     note = parts.length
-      ? `SKKG records only the name of this ${parts.join(' and ')}, from its literature, often as one record per publication: ` +
-        `${SEARCH_LITERATURE_TOOL_NAME} with ${lists}.`
+      ? `SKKG records only the name of this ${parts.join(' and ')}, from its literature, often as one record per publication${call}.`
       : 'SKKG records only the name of this actor.';
   }
   const out = {

@@ -5,6 +5,7 @@
 import { stmt } from './sql.js';
 import { RELATION } from './objects.js';
 import { termLabel } from './labels.js';
+import { ftsQuery, nameValue } from './fts.js';
 
 /** An actor's (a row of `actors`) birth and death, or a group's formation and dissolution, keyed so. */
 export function lifeDates(db, a, lang) {
@@ -49,4 +50,15 @@ export function roleCounts(db, id) {
     const { of, count, rows } = ACTOR_ROLES[as];
     return { as, count: stmt(db, `SELECT ${count} AS n FROM ${rows} = ?`).get(id).n, count_of: of };
   }).filter((r) => r.count > 0);
+}
+
+// The skkg_search_literature arguments that list a name-only actor's publications under its name:
+// `publisher` for a publisher (also one that writes or edits, whose other publications `author`
+// lists, as the descriptions and skkg_get_record say), `author` for an author or editor; none for
+// the few that no publication names, or a name without a word.
+export function literatureFilter(db, id, name) {
+  if (!name || !ftsQuery(name)) return undefined;
+  const parts = stmt(db, 'SELECT DISTINCT kind FROM literature_actors WHERE actor_id = ?').all(id).map((r) => r.kind);
+  if (!parts.length) return undefined;
+  return parts.includes('publisher') ? { publisher: nameValue(name) } : { author: nameValue(name) };
 }
