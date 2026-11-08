@@ -4,7 +4,7 @@
 // - sections that were not requested come back, "all" leaves one out, or a section the type
 //   does not have is dropped without a warning
 // - a requested section that is empty vanishes without a warning, or one not requested, or not
-//   empty, gets that warning
+//   empty, gets that warning; the description promises a warning for an empty objects page
 // - the counts of the summary disagree with the sections they announce
 // - SKKG's anonymisation is replaced, or the lowercase "unbekannte:r Eigentümer:in" is not marked as one
 // - a private address returns more than its "Privatperson, {place}" label: coordinates, an organisation, a region
@@ -14,7 +14,8 @@
 // - the filter given for a list or a role lists other objects than the tool counted, or a role
 //   that has an exact filter gets none
 // - an actor SKKG knows only from literature is called by the wrong part (an editor a "publisher"),
-//   or its note says `publisher` lists all its publications when it also wrote or edited some
+//   or its note says `publisher` lists all its publications when it also wrote or edited some,
+//   or gives a name with "and" unquoted, so following it gets the operator warning
 // - a publication's authors are listed out of citation order
 // - SKKG's placeholder address "Privatperson" is not flagged as a private person
 // - counts.external leaves out the links or GND rows that the section lists
@@ -40,6 +41,7 @@ import assert from 'node:assert/strict';
 import { withClient, callOk, callSent, callError, makeTestDb, FIXTURE_DB } from './helpers.js';
 import { outputSchema, SECTIONS_OF } from '../src/tools/get_record.js';
 import { outputSchema as searchSchema } from '../src/tools/search_objects.js';
+import { outputSchema as literatureSchema } from '../src/tools/search_literature.js';
 
 const NAME = 'skkg_get_record';
 const ANON_OWNER = 'person/9fd0bc02-113e-4806-8723-f3b6744f1411';
@@ -128,6 +130,29 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
       assert.equal(r.summary.kind, 'publisher');
       assert.equal(r.summary.note, 'SKKG records only the name of this publisher, from its literature, often as one record ' +
         'per publication: skkg_search_literature with `publisher` and this name lists all their publications.');
+    });
+
+    await t.test('a name-only actor whose name holds "and" is sent with the quoted value, which matches without an operator warning', async () => {
+      // actor/30EF21BD… is the publisher "Weinfeld and Nicolson", actor/2E8C8C17… the editor "Hodder and Stoughton".
+      for (const [id, filter, name] of [['actor/30EF21BD-1B05-311D-AE89-8EF659FDB893', 'publisher', 'Weinfeld and Nicolson'],
+        ['actor/2E8C8C17-69D2-3274-A276-D7E52211E72C', 'author', 'Hodder and Stoughton']]) {
+        const { note } = (await get({ id })).summary;
+        assert.ok(note.includes(`with \`${filter}\` and the value ${JSON.stringify(`"${name}"`)} lists all their publications.`), note);
+        const lit = await callOk(client, 'skkg_search_literature', { [filter]: `"${name}"`, limit: 50 }, literatureSchema);
+        assert.ok(lit.total > 0, name);
+        assert.doesNotMatch((lit.warnings ?? []).join(' '), /operator/, name);
+      }
+    });
+
+    await t.test('the include description says an empty objects page stays, with total 0', async () => {
+      const { tools } = await client.listTools();
+      const d = tools.find((x) => x.name === NAME).inputSchema.properties.include.description;
+      assert.match(d, /or one that is empty, is left out with a warning; `objects` stays, with total 0/);
+      // exhibition/055e22f3… shows no object of the fixture.
+      const r = await get({ id: 'exhibition/055e22f3-69f7-4a9e-bf60-5cf8f36f1000', include: ['objects'] });
+      assert.equal(r.summary.counts.objects, 0);
+      assert.equal(r.objects.total, 0);
+      assert.doesNotMatch((r.warnings ?? []).join(' '), /`objects` is empty/);
     });
 
     await t.test('counts.external counts every row of the external section', async () => {

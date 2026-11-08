@@ -75,10 +75,11 @@ function parse(input, { prefix = false } = {}) {
 /**
  * A name as a value the server hands out for a name filter: as a phrase when one of its words is
  * an operator in either case, or "|", so following the hint matches the name without a warning.
+ * A phrase cannot hold a double quote, and the tokenizer splits words at one, so the name's own go.
  */
 export function nameValue(name) {
-  if (name.includes('"')) return name;
-  return name.split(/\s+/).some((w) => LOWER_OPERATORS.has(w.toLowerCase()) || /^\|+$/.test(w)) ? `"${name}"` : name;
+  const operator = name.split(/\s+/).some((w) => LOWER_OPERATORS.has(w.toLowerCase()) || /^\|+$/.test(w));
+  return operator ? `"${name.replace(/"/g, '')}"` : name;
 }
 
 /** The FTS5 expression of a query the server builds itself; undefined when no word is left to match. */

@@ -457,11 +457,13 @@ test('the hint for an unpublished image names a record it belongs to, and follow
       const hint = await callError(client, 'skkg_get_record', { id });
       const refusal = await callError(client, NAME, { id });
       assert.match(refusal, /SKKG has not published an image for .*Do not look for it elsewhere\./, id);
-      const m = /It belongs to (\S+?)(?: and (\d+) more (?:objects|exhibitions))?(: (skkg_get_object|skkg_get_record) with id "([^"]+)" and include \["images"\] lists|; SKKG publishes no image of (?:it|them)\.)/.exec(hint);
+      const m = /It belongs to (\S+?)(?: and (\d+) more (?:objects?|exhibitions?))?(: (skkg_get_object|skkg_get_record) with id "([^"]+)" and include \["images"\] lists|; SKKG publishes no image of (?:it|them)\.)/.exec(hint);
       const objects = rows('SELECT object_id AS id FROM object_multimedia WHERE multimedia_id = ?', id).map((r) => r.id);
       const exhibitions = rows('SELECT exhibition_id AS id FROM exhibition_multimedia WHERE multimedia_id = ?', id).map((r) => r.id);
-      const [owners, link, key, tool] = objects.length ? [objects, 'object_multimedia', 'object_id', 'skkg_get_object']
-        : [exhibitions, 'exhibition_multimedia', 'exhibition_id', 'skkg_get_record'];
+      // A kind with a published image is named first, objects before exhibitions.
+      const kinds = [[objects, 'object_multimedia', 'object_id', 'skkg_get_object'],
+        [exhibitions, 'exhibition_multimedia', 'exhibition_id', 'skkg_get_record']].filter(([o]) => o.length);
+      const [owners, link, key, tool] = kinds.find(([o, l, k]) => o.some((x) => published(l, k, x))) ?? kinds[0] ?? [[]];
       if (!owners.length) {
         assert.equal(m, null, `${id}: ${hint}`);
         seen.none++;
@@ -482,7 +484,7 @@ test('the hint for an unpublished image names a record it belongs to, and follow
       } else {
         seen.without_published++;
       }
-      seen[objects.length ? 'object' : 'exhibition']++;
+      seen[tool === 'skkg_get_object' ? 'object' : 'exhibition']++;
     }
   }, { env: { SKKG_DB_PATH: FIXTURE_DB.path } });
   db.close();

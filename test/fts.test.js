@@ -15,7 +15,8 @@
 // - a scope restricts only the matched words, so an excluded word in another column drops the row
 // - a name the server hands out for a name filter ("Rock and Roll", "Rock OR Roll") is read as
 //   operators or warned about when followed, a name without one is quoted, a word holding an
-//   operator ("Andersen") counts as one, or a name with its own quotes is quoted again
+//   operator ("Andersen") counts as one, or a name with its own quotes and an operator word is
+//   handed as it is, so the operator runs
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -134,6 +135,10 @@ test('a name handed out for a name filter matches as the name, without a warning
   }
   assert.deepEqual(hits(nameValue('Rock and Roll')), [7]);
   assert.deepEqual(hits(nameValue('Stillleben or Blumen')), [8], 'not the rows with either word');
-  // A phrase cannot hold a double quote, so such a name stays as it is, with its warning.
-  for (const name of ['Rock Roll', 'Andersen', 'Nothing Ordinary', 'Verlag der "Roten Fahne"', 'Rock and "Roll"']) assert.equal(nameValue(name), name);
+  for (const name of ['Rock Roll', 'Andersen', 'Nothing Ordinary', 'Verlag der "Roten Fahne"']) assert.equal(nameValue(name), name);
+  // A phrase cannot hold a double quote: the name's own are dropped, and the phrase still matches.
+  assert.equal(nameValue('Rock and "Roll"'), '"Rock and Roll"');
+  assert.deepEqual(hits(nameValue('Rock and "Roll"')), [7]);
+  assert.equal(nameValue('Stillleben "mit" NOT Blumen'), '"Stillleben mit NOT Blumen"');
+  assert.deepEqual(warningsOf(nameValue('Stillleben "mit" NOT Blumen')), []);
 });

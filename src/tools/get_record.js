@@ -10,6 +10,7 @@ import { stmt } from '../lib/sql.js';
 import { prune } from '../lib/prune.js';
 import { asStr, withArticle } from '../lib/format.js';
 import { termLabel, actorRef, recordLabel } from '../lib/labels.js';
+import { nameValue } from '../lib/fts.js';
 import { imageRights } from '../lib/rights.js';
 import { objectRow, RELATION } from '../lib/objects.js';
 import { ROLE_KINDS, roleCounts, lifeDates } from '../lib/actors.js';
@@ -60,7 +61,7 @@ const inputSchema = z.object({
     'A bare number or UUID that several record types share is refused; pass the prefixed id then'),
   include: z.array(z.enum([...ALL_SECTIONS, 'all'])).max(ALL_SECTIONS.length + 1).default([]).describe(
     'Sections besides the summary; which exist depends on the record type (see the description), or all. ' +
-    'A section the type does not have, or one that is empty, is left out with a warning. Default: none'),
+    'A section the type does not have, or one that is empty, is left out with a warning; `objects` stays, with total 0. Default: none'),
   limit: z.number().int().min(1).max(SEARCH_MAX_LIMIT).optional().describe(`Objects per page of the \`objects\` section. Default ${SEARCH_DEFAULT_LIMIT}`),
   offset: z.number().int().min(0).max(100_000).optional().describe('First object of the `objects` page. Default 0'),
   lang: langIn(),
@@ -314,9 +315,12 @@ function getActor(db, id, want, args, ctx) {
   } else if (a.kind === 'stub') {
     const parts = roles.filter((r) => LITERATURE_KINDS.includes(r.as)).map((r) => r.as);
     kind = STUB_KINDS.find((k) => parts.includes(k)) ?? 'actor';
-    const lists = !parts.includes('publisher') ? '`author` and this name lists all their publications'
-      : parts.every((p) => p === 'publisher') ? '`publisher` and this name lists all their publications'
-        : '`publisher` and this name lists those it published, with `author` those it wrote or edited';
+    // The value skkg_search_actors hands out as literature_filter, quoted where the name holds an operator word.
+    const value = nameValue(a.label ?? '');
+    const name = value === a.label ? 'this name' : `the value ${JSON.stringify(value)}`;
+    const lists = !parts.includes('publisher') ? `\`author\` and ${name} lists all their publications`
+      : parts.every((p) => p === 'publisher') ? `\`publisher\` and ${name} lists all their publications`
+        : `\`publisher\` and ${name} lists those it published, with \`author\` those it wrote or edited`;
     note = parts.length
       ? `SKKG records only the name of this ${parts.join(' and ')}, from its literature, often as one record per publication: ` +
         `${SEARCH_LITERATURE_TOOL_NAME} with ${lists}.`

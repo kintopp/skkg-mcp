@@ -101,24 +101,25 @@ export function resolveId(db, input, { types = Object.keys(RECORD_TABLES) } = {}
 const PUBLISHED = (link, key) => `EXISTS (SELECT 1 FROM ${link} p JOIN multimedia pm ON pm.id = p.multimedia_id
     WHERE p.${key} = l.${key} AND pm.iiif_service IS NOT NULL)`;
 
+const OWNERS = [
+  { noun: 'object', call: 'skkg_get_object', sql: `SELECT l.object_id AS id, ${PUBLISHED('object_multimedia', 'object_id')} AS published,
+      COUNT(*) OVER () AS n FROM object_multimedia l JOIN objects o ON o.id = l.object_id WHERE l.multimedia_id = ?
+      ORDER BY published DESC, ${INVENTORY_ORDER} LIMIT 1` },
+  { noun: 'exhibition', call: 'skkg_get_record', sql: `SELECT l.exhibition_id AS id, ${PUBLISHED('exhibition_multimedia', 'exhibition_id')} AS published,
+      COUNT(*) OVER () AS n FROM exhibition_multimedia l JOIN exhibitions e ON e.id = l.exhibition_id WHERE l.multimedia_id = ?
+      ORDER BY published DESC, l.exhibition_id LIMIT 1` },
+];
+
 /**
  * For an image SKKG did not publish: the object or exhibition it belongs to, one with a published
  * image first, and the call that lists those; undefined when it belongs to neither.
  */
 export function unpublishedImageRoute(db, id) {
-  let r = stmt(db, `SELECT l.object_id AS id, ${PUBLISHED('object_multimedia', 'object_id')} AS published, COUNT(*) OVER () AS n
-      FROM object_multimedia l JOIN objects o ON o.id = l.object_id WHERE l.multimedia_id = ?
-      ORDER BY published DESC, ${INVENTORY_ORDER} LIMIT 1`).get(id);
-  let call = 'skkg_get_object';
-  if (!r) {
-    r = stmt(db, `SELECT l.exhibition_id AS id, ${PUBLISHED('exhibition_multimedia', 'exhibition_id')} AS published, COUNT(*) OVER () AS n
-        FROM exhibition_multimedia l JOIN exhibitions e ON e.id = l.exhibition_id WHERE l.multimedia_id = ?
-        ORDER BY published DESC, l.exhibition_id LIMIT 1`).get(id);
-    call = 'skkg_get_record';
-  }
+  const found = OWNERS.map((o) => ({ ...o, r: stmt(db, o.sql).get(id) })).filter((o) => o.r);
+  const { noun, call, r } = found.find((o) => o.r.published) ?? found[0] ?? {};
   if (!r) return undefined;
-  const noun = r.id.startsWith('object/') ? 'object' : 'exhibition';
-  const owner = `It belongs to ${r.id}${r.n > 1 ? ` and ${r.n - 1} more ${noun}s` : ''}`;
+  const more = r.n - 1;
+  const owner = `It belongs to ${r.id}${more ? ` and ${more} more ${noun}${more > 1 ? 's' : ''}` : ''}`;
   if (!r.published) return `${owner}; SKKG publishes no image of ${r.n > 1 ? 'them' : 'it'}.`;
   return `${owner}: ${call} with id "${r.id}" and include ["images"] lists the images SKKG publishes of it.`;
 }
