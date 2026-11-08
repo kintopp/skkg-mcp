@@ -25,8 +25,9 @@
 // - a row drops a cancelled station or its status, or the dates of another venue
 // - an organiser that is a private address comes out other than as the build stores it ("Privatperson")
 // - sort relevance without a query runs silently; date_asc or date_desc puts undated first or
-//   sorts the wrong way; paging repeats or skips an exhibition; an offset past the end is silent;
-//   an empty result is silent
+//   sorts the wrong way; relevance does not put the best match first; paging repeats or skips an
+//   exhibition; an offset past the end is silent; an empty result is silent
+// - a row's other venues are not in the order of their dates, or its organisers not in SKKG's sequence
 // - applied_filters does not name the object of includes_object
 // - an empty result of one filter says "these filters together"
 // - the text drops ids, venues, a station's status, the organisers, the counts, filters, warnings, or paging;
@@ -289,6 +290,37 @@ test('skkg_search_exhibitions against the fixture database', { skip: FIXTURE_DB.
       }
       const titles = (await all({ sort: 'title', venue: 'Bern' })).rows.map((r) => r.title.toLowerCase());
       assert.deepEqual(titles, [...titles].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)));
+    });
+
+    await t.test('relevance puts the best match first', async () => {
+      // FTS5's rank is bm25, lower for a better match; "Hodler" matches titles and venues with many different ranks.
+      const rank = new Map(db.prepare('SELECT exhibition_id, rank FROM exhibitions_fts WHERE exhibitions_fts MATCH \'"Hodler"\'').all()
+        .map((r) => [r.exhibition_id, r.rank]));
+      const ranks = (await all({ query: 'Hodler' })).rows.map((r) => rank.get(r.id));
+      assert.equal(ranks.length, rank.size);
+      assert.ok(new Set(ranks).size > 10, 'the query has many different ranks');
+      assert.deepEqual(ranks, [...ranks].sort((a, b) => a - b));
+    });
+
+    await t.test('a row lists its other venues in the order of their dates', async () => {
+      const rows = (await all({})).rows.filter((r) => new Set((r.other_venues ?? []).map((v) => v.date_from)).size > 1);
+      assert.ok(rows.length > 5, 'the fixture has exhibitions with other venues of different dates');
+      for (const r of rows) {
+        const dates = r.other_venues.map((v) => v.date_from).filter((d) => d != null);
+        assert.deepEqual(dates, [...dates].sort(), r.id);
+      }
+    });
+
+    await t.test('a row lists its organisers in SKKG\'s sequence', async () => {
+      const several = column('SELECT exhibition_id FROM exhibition_organisers GROUP BY 1 HAVING COUNT(*) > 1');
+      assert.ok(several.length > 0, 'the fixture has exhibitions with several organisers');
+      const rows = (await all({})).rows.filter((r) => several.includes(r.id));
+      assert.equal(rows.length, several.length);
+      for (const r of rows) {
+        const expected = db.prepare('SELECT address_id, seq FROM exhibition_organisers WHERE exhibition_id = ?').all(r.id)
+          .sort((a, b) => a.seq - b.seq).map((o) => o.address_id);
+        assert.deepEqual(r.organisers.map((o) => o.id), expected, r.id);
+      }
     });
 
     await t.test('an offset past the end warns, and an empty result says so', async () => {

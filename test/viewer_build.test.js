@@ -1,5 +1,6 @@
 // The built page is a committed artefact. How it could fail:
-// - the viewer sources, OpenSeadragon, or ext-apps change without a rebuild
+// - the viewer sources, the build scripts, a licence text, OpenSeadragon, ext-apps, or vite change without a rebuild
+// - the stamp leaves out a bundled package, so a bump of it goes unseen
 // - an external script or stylesheet makes the page depend on a CSP the host does not grant
 // - zod's `new Function("")` probe survives and hangs the viewer in ChatGPT (odeuropa)
 // - the protocol code is not bundled, so the page never completes the handshake
@@ -8,14 +9,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, statSync } from 'node:fs';
-import { viewerSourceHash, VIEWER_HTML, STAMP_RE } from '../scripts/viewer-hash.mjs';
+import { viewerSourceHash, VIEWER_HTML, readStamp } from '../scripts/viewer-hash.mjs';
 
 const html = readFileSync(VIEWER_HTML, 'utf8');
 
 test('the built page matches its sources', () => {
-  const stamped = STAMP_RE.exec(html)?.[1];
+  const stamped = readStamp(html);
   assert.ok(stamped, 'src/apps/image-viewer.html has no source-hash stamp');
-  assert.equal(stamped, viewerSourceHash(), 'src/apps/image-viewer.html is stale: run npm run build:viewer and commit the result');
+  assert.equal(stamped.hash, viewerSourceHash(stamped.bundled), 'src/apps/image-viewer.html is stale: run npm run build:viewer and commit the result');
+});
+
+test('the stamp names the packages the page bundles', () => {
+  const { bundled } = readStamp(html);
+  for (const name of ['@modelcontextprotocol/ext-apps', 'openseadragon']) assert.ok(bundled.includes(name), name);
 });
 
 test('the page is self-contained', () => {

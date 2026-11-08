@@ -1,46 +1,26 @@
 // Builds apps/image-viewer/ into the committed, stamped src/apps/image-viewer.html.
 
-import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { build } from 'vite';
-import { viewerSourceHash, stamp, ROOT, VIEWER_SRC_DIR, VIEWER_HTML } from './viewer-hash.mjs';
+import { viewerSourceHash, stamp, VIEWER_SRC_DIR, VIEWER_HTML } from './viewer-hash.mjs';
+import { licenceNotices } from './viewer-licences.mjs';
 
-// The minifier drops licence headers, so the notices of every bundled package go into the page as a comment.
-// ext-apps/app-with-deps ships these already inlined, so the module graph never shows them; recheck on an ext-apps bump.
-// content-type is not installed; its licence text is kept in scripts/licences/.
-const INLINED_BY_EXT_APPS = ['@modelcontextprotocol/client', '@modelcontextprotocol/core', 'content-type', 'zod'];
-
-const bundled = new Set();
+const seen = new Set();
 const collectPackages = {
   name: 'skkg:collect-packages',
   buildEnd() {
     for (const id of this.getModuleIds()) {
       const pkg = id.match(/node_modules\/((?:@[^/]+\/)?[^/]+)\//)?.[1];
-      if (pkg) bundled.add(pkg);
+      if (pkg) seen.add(pkg);
     }
   },
 };
 
-function licenceText(name) {
-  const dir = join(ROOT, 'node_modules', name);
-  const file = existsSync(dir) && readdirSync(dir).find((f) => /^licen[cs]e/i.test(f));
-  const path = file ? join(dir, file) : join(ROOT, 'scripts', 'licences', `${name.replace('/', '__')}.txt`);
-  if (!existsSync(path)) throw new Error(`no licence text for ${name}`);
-  return readFileSync(path, 'utf8').trim().replaceAll('--', '- -');
-}
-
-function licenceNotices() {
-  const direct = [...bundled].sort().map((name) => {
-    const { version, license } = JSON.parse(readFileSync(join(ROOT, 'node_modules', name, 'package.json'), 'utf8'));
-    return `${name}@${version} (${license})\n\n${licenceText(name)}`;
-  });
-  const inlined = INLINED_BY_EXT_APPS.map((name) => `${name}, inlined in @modelcontextprotocol/ext-apps\n\n${licenceText(name)}`);
-  return [...direct, ...inlined].join('\n\n----\n\n');
-}
-
 const { output } = await build({ configFile: join(VIEWER_SRC_DIR, 'vite.config.mjs'), logLevel: 'warn', plugins: [collectPackages] });
 
+const bundled = [...seen].sort();
 const html = String(output.find((f) => f.fileName === 'index.html').source);
-const notices = `<!--\nThird-party software bundled in this page:\n\n${licenceNotices()}\n-->`;
-writeFileSync(VIEWER_HTML, `${stamp(viewerSourceHash())}\n${notices}\n${html}`);
+const notices = `<!--\nThird-party software bundled in this page:\n\n${licenceNotices(bundled)}\n-->`;
+writeFileSync(VIEWER_HTML, `${stamp(bundled, viewerSourceHash(bundled))}\n${notices}\n${html}`);
 console.error(`wrote ${VIEWER_HTML} (${Math.round(html.length / 1024)} KB)`);
