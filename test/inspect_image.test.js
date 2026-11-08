@@ -451,19 +451,21 @@ test('the hint for an unpublished image names a record it belongs to, and follow
   const published = (link, key, id) => rows(`SELECT 1 FROM ${link} l JOIN multimedia m ON m.id = l.multimedia_id
       WHERE l.${key} = ? AND m.iiif_service IS NOT NULL LIMIT 1`, id).length > 0;
   const images = rows('SELECT id FROM multimedia WHERE iiif_service IS NULL ORDER BY id').map((r) => r.id);
-  const seen = { object: 0, exhibition: 0, none: 0, without_published: 0 };
+  const seen = { object: 0, exhibition: 0, none: 0, without_published: 0, both_kinds: 0 };
   await withClient('inspect-image-unpublished', async (client) => {
     for (const id of images) {
       const hint = await callError(client, 'skkg_get_record', { id });
       const refusal = await callError(client, NAME, { id });
       assert.match(refusal, /SKKG has not published an image for .*Do not look for it elsewhere\./, id);
-      const m = /It belongs to (\S+?)(?: and (\d+) more (?:objects?|exhibitions?))?(: (skkg_get_object|skkg_get_record) with id "([^"]+)" and include \["images"\] lists|; SKKG publishes no image of (?:it|them)\.)/.exec(hint);
+      const m = /It belongs to (\S+?)(?: and (\d+) more (objects?|exhibitions?))?((?:, and to \d+ (?:objects?|exhibitions?))*)(: (skkg_get_object|skkg_get_record) with id "([^"]+)" and include \["images"\] lists|; SKKG publishes no image of (?:it|them)\.)/.exec(hint);
       const objects = rows('SELECT object_id AS id FROM object_multimedia WHERE multimedia_id = ?', id).map((r) => r.id);
       const exhibitions = rows('SELECT exhibition_id AS id FROM exhibition_multimedia WHERE multimedia_id = ?', id).map((r) => r.id);
       // A kind with a published image is named first, objects before exhibitions.
       const kinds = [[objects, 'object_multimedia', 'object_id', 'skkg_get_object'],
         [exhibitions, 'exhibition_multimedia', 'exhibition_id', 'skkg_get_record']].filter(([o]) => o.length);
       const [owners, link, key, tool] = kinds.find(([o, l, k]) => o.some((x) => published(l, k, x))) ?? kinds[0] ?? [[]];
+      const nounOf = (k) => (k === 'object_multimedia' ? 'object' : 'exhibition');
+      const records = (n, what) => `${n} ${what}${n > 1 ? 's' : ''}`;
       if (!owners.length) {
         assert.equal(m, null, `${id}: ${hint}`);
         seen.none++;
@@ -471,9 +473,12 @@ test('the hint for an unpublished image names a record it belongs to, and follow
       }
       assert.ok(m, `${id}: ${hint}`);
       assert.ok(refusal.includes(m[0]), `${id}: the refusal names the same route`);
-      const [, owner, more, followable, named, namedId] = m;
+      const [, owner, more, moreNoun, others, followable, named, namedId] = m;
       assert.ok(owners.includes(owner), `${id} belongs to ${owner}`);
       assert.equal(Number(more ?? 0) + 1, owners.length, `${id}: ${hint}`);
+      if (more) assert.equal(`${more} ${moreNoun}`, records(Number(more), nounOf(link)), `${id}: ${hint}`);
+      // The records of the other kind are counted too.
+      assert.equal(others, kinds.filter(([o]) => o !== owners).map(([o, l]) => `, and to ${records(o.length, nounOf(l))}`).join(''), `${id}: ${hint}`);
       const anyPublished = owners.some((o) => published(link, key, o));
       assert.equal(followable.startsWith(':'), anyPublished, `${id}: ${hint}`);
       if (anyPublished) {
@@ -485,10 +490,11 @@ test('the hint for an unpublished image names a record it belongs to, and follow
         seen.without_published++;
       }
       seen[tool === 'skkg_get_object' ? 'object' : 'exhibition']++;
+      if (kinds.length > 1) seen.both_kinds++;
     }
   }, { env: { SKKG_DB_PATH: FIXTURE_DB.path } });
   db.close();
-  assert.ok(seen.object > 0 && seen.exhibition > 0 && seen.without_published > 0, JSON.stringify(seen));
+  assert.ok(seen.object > 0 && seen.exhibition > 0 && seen.without_published > 0 && seen.both_kinds > 0, JSON.stringify(seen));
 });
 
 // Calls SKKG's IIIF server once: the delivered size must be the size asked for.

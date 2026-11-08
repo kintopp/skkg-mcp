@@ -137,7 +137,8 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
       for (const [id, filter, name] of [['actor/30EF21BD-1B05-311D-AE89-8EF659FDB893', 'publisher', 'Weinfeld and Nicolson'],
         ['actor/2E8C8C17-69D2-3274-A276-D7E52211E72C', 'author', 'Hodder and Stoughton']]) {
         const { note } = (await get({ id })).summary;
-        assert.ok(note.includes(`with \`${filter}\` and the value ${JSON.stringify(`"${name}"`)} lists all their publications.`), note);
+        assert.ok(note.includes(`with \`${filter}\` and the value \`"${name}"\` lists all their publications.`), note);
+        assert.doesNotMatch(note, /\\/, 'no escaped quotes');
         const lit = await callOk(client, 'skkg_search_literature', { [filter]: `"${name}"`, limit: 50 }, literatureSchema);
         assert.ok(lit.total > 0, name);
         assert.doesNotMatch((lit.warnings ?? []).join(' '), /operator/, name);

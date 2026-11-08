@@ -139,6 +139,8 @@ test('a name handed out for a name filter matches as the name, without a warning
   // A phrase cannot hold a double quote: the name's own are dropped, and the phrase still matches.
   assert.equal(nameValue('Rock and "Roll"'), '"Rock and Roll"');
   assert.deepEqual(hits(nameValue('Rock and "Roll"')), [7]);
+  // A quote between two words without a space separates them, as the tokenizer does.
+  assert.equal(nameValue('Verlag "Rote"Fahne and Co'), '"Verlag Rote Fahne and Co"');
   assert.equal(nameValue('Stillleben "mit" NOT Blumen'), '"Stillleben mit NOT Blumen"');
   assert.deepEqual(warningsOf(nameValue('Stillleben "mit" NOT Blumen')), []);
 });

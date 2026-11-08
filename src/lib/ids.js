@@ -116,11 +116,14 @@ const OWNERS = [
  */
 export function unpublishedImageRoute(db, id) {
   const found = OWNERS.map((o) => ({ ...o, r: stmt(db, o.sql).get(id) })).filter((o) => o.r);
-  const { noun, call, r } = found.find((o) => o.r.published) ?? found[0] ?? {};
-  if (!r) return undefined;
-  const more = r.n - 1;
-  const owner = `It belongs to ${r.id}${more ? ` and ${more} more ${noun}${more > 1 ? 's' : ''}` : ''}`;
-  if (!r.published) return `${owner}; SKKG publishes no image of ${r.n > 1 ? 'them' : 'it'}.`;
+  const named = found.find((o) => o.r.published) ?? found[0];
+  if (!named) return undefined;
+  const { noun, call, r } = named;
+  const records = (n, what) => `${n} ${what}${n > 1 ? 's' : ''}`;
+  const others = found.filter((o) => o !== named).map((o) => `, and to ${records(o.r.n, o.noun)}`).join('');
+  const owner = `It belongs to ${r.id}${r.n > 1 ? ` and ${records(r.n - 1, `more ${noun}`)}` : ''}${others}`;
+  const total = found.reduce((n, o) => n + o.r.n, 0);
+  if (!r.published) return `${owner}; SKKG publishes no image of ${total > 1 ? 'them' : 'it'}.`;
   return `${owner}: ${call} with id "${r.id}" and include ["images"] lists the images SKKG publishes of it.`;
 }
 

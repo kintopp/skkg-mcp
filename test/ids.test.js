@@ -124,18 +124,20 @@ test('the hint for an unpublished image names a record with a published image be
       exhibitions: { rows: [{ id: 'exhibition/a' }, { id: 'exhibition/b' }] },
       multimedia: {
         columns: ['iiif_service'],
-        rows: [{ id: 'multimedia/u1' }, { id: 'multimedia/u2' }, { id: 'multimedia/u3' },
+        rows: [{ id: 'multimedia/u1' }, { id: 'multimedia/u2' }, { id: 'multimedia/u3' }, { id: 'multimedia/u4' },
           { id: 'multimedia/p1', iiif_service: 'x' }, { id: 'multimedia/p2', iiif_service: 'x' }],
       },
       object_multimedia: {
         columns: ['object_id', 'multimedia_id'],
         rows: [{ id: '1', object_id: 'object/1', multimedia_id: 'multimedia/u1' }, { id: '2', object_id: 'object/2', multimedia_id: 'multimedia/u1' },
-          { id: '3', object_id: 'object/2', multimedia_id: 'multimedia/p1' }, { id: '4', object_id: 'object/1', multimedia_id: 'multimedia/u3' }],
+          { id: '3', object_id: 'object/2', multimedia_id: 'multimedia/p1' }, { id: '4', object_id: 'object/1', multimedia_id: 'multimedia/u3' },
+          { id: '5', object_id: 'object/1', multimedia_id: 'multimedia/u4' }],
       },
       exhibition_multimedia: {
         columns: ['exhibition_id', 'multimedia_id'],
         rows: [{ id: '1', exhibition_id: 'exhibition/a', multimedia_id: 'multimedia/u2' }, { id: '2', exhibition_id: 'exhibition/b', multimedia_id: 'multimedia/u2' },
-          { id: '3', exhibition_id: 'exhibition/b', multimedia_id: 'multimedia/p2' }, { id: '4', exhibition_id: 'exhibition/b', multimedia_id: 'multimedia/u3' }],
+          { id: '3', exhibition_id: 'exhibition/b', multimedia_id: 'multimedia/p2' }, { id: '4', exhibition_id: 'exhibition/b', multimedia_id: 'multimedia/u3' },
+          { id: '5', exhibition_id: 'exhibition/a', multimedia_id: 'multimedia/u4' }],
       },
     },
   });
@@ -144,7 +146,9 @@ test('the hint for an unpublished image names a record with a published image be
     assert.match(hint('multimedia/u1'), /It belongs to object\/2 and 1 more object: skkg_get_object with id "object\/2" and include \["images"\]/);
     assert.match(hint('multimedia/u2'), /It belongs to exhibition\/b and 1 more exhibition: skkg_get_record with id "exhibition\/b" and include \["images"\]/);
     // Its object has no published image, its exhibition has one.
-    assert.match(hint('multimedia/u3'), /It belongs to exhibition\/b: skkg_get_record with id "exhibition\/b" and include \["images"\]/);
+    assert.match(hint('multimedia/u3'), /It belongs to exhibition\/b, and to 1 object: skkg_get_record with id "exhibition\/b" and include \["images"\]/);
+    // Neither of its two records, one of each kind, has a published image.
+    assert.match(hint('multimedia/u4'), /It belongs to object\/1, and to 1 exhibition; SKKG publishes no image of them\./);
   } finally {
     d.cleanup();
   }

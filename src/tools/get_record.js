@@ -317,7 +317,7 @@ function getActor(db, id, want, args, ctx) {
     kind = STUB_KINDS.find((k) => parts.includes(k)) ?? 'actor';
     // The value skkg_search_actors hands out as literature_filter, quoted where the name holds an operator word.
     const value = nameValue(a.label ?? '');
-    const name = value === a.label ? 'this name' : `the value ${JSON.stringify(value)}`;
+    const name = value === a.label ? 'this name' : `the value \`${value}\``;
     const lists = !parts.includes('publisher') ? `\`author\` and ${name} lists all their publications`
       : parts.every((p) => p === 'publisher') ? `\`publisher\` and ${name} lists all their publications`
         : `\`publisher\` and ${name} lists those it published, with \`author\` those it wrote or edited`;
