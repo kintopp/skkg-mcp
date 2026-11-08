@@ -248,7 +248,8 @@ Calls that work:
   with its own dates and status. `venue` never matches a cancelled station
   ("abgesagt"). Stations "geplant" with past dates were not updated by SKKG.
 - `internal_external: "intern"` does not mean that SKKG organised the exhibition.
-- An exhibition with only a start date matches only its start year.
+- An exhibition with only a start date matches only its start year, also a current one.
+  For what is on now, filter by `status: "aktuell"`, not by a year.
 
 **Wrong values SKKG publishes.** The server reproduces them. Flag them when you quote
 them.

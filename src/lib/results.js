@@ -1,6 +1,15 @@
 // Fields and text lines that every list result shares.
 
 import { SECTION_LIMIT } from '../config.js';
+import { prune } from './prune.js';
+
+/**
+ * A warning for each of `sections` that `want` asked for and `out` holds empty, since pruning
+ * drops it and the caller cannot tell it from one not sent. `messages` replaces the default of a section.
+ */
+export const emptySectionWarnings = (sections, want, out, noun, messages = {}) => sections
+  .filter((k) => want.has(k) && prune(out[k]) === undefined)
+  .map((k) => messages[k] ?? `\`${k}\` is empty for this ${noun}.`);
 
 /**
  * Cuts a section's list to SECTION_LIMIT, with a warning that gives its total. `ctx` holds

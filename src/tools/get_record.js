@@ -15,7 +15,7 @@ import { objectRow, RELATION } from '../lib/objects.js';
 import { ROLE_KINDS, roleCounts, lifeDates } from '../lib/actors.js';
 import { period, periodRef } from '../lib/provenance.js';
 import { exhibitionFields } from '../lib/exhibitions.js';
-import { capList, paging, pastEnd } from '../lib/results.js';
+import { capList, emptySectionWarnings, paging, pastEnd } from '../lib/results.js';
 import { fitLists } from '../lib/fit.js';
 import { renderRecordText } from './record_text.js';
 import { actorOut, imageRightsOut, objectRowShape, periodShape, periodRefShape, langIn, str, int } from './schemas.js';
@@ -60,7 +60,7 @@ const inputSchema = z.object({
     'A bare number or UUID that several record types share is refused; pass the prefixed id then'),
   include: z.array(z.enum([...ALL_SECTIONS, 'all'])).max(ALL_SECTIONS.length + 1).default([]).describe(
     'Sections besides the summary; which exist depends on the record type (see the description), or all. ' +
-    'A section the type does not have is skipped with a warning. Default: none'),
+    'A section the type does not have, or one that is empty, is left out with a warning. Default: none'),
   limit: z.number().int().min(1).max(SEARCH_MAX_LIMIT).optional().describe(`Objects per page of the \`objects\` section. Default ${SEARCH_DEFAULT_LIMIT}`),
   offset: z.number().int().min(0).max(100_000).optional().describe('First object of the `objects` page. Default 0'),
   lang: langIn(),
@@ -596,6 +596,7 @@ export function getRecord(db, meta, input) {
   }
   const ctx = { warnings, totals: {} };
   const body = GETTERS[type](db, resolved.id, want, args, ctx);
+  warnings.push(...emptySectionWarnings(sections, want, body, 'record'));
   const past = body.objects && pastEnd(args.offset, body.objects.total, 'objects');
   if (past) warnings.push(past);
   const stale = staleWarning(meta);

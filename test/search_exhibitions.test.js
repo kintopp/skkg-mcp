@@ -81,7 +81,7 @@ test('skkg_search_exhibitions against the fixture database', { skip: FIXTURE_DB.
       assert.match(tool.description, /Without a filter, lists every exhibition/);
       const p = tool.inputSchema.properties;
       assert.match(p.venue.description, /but no station SKKG cancelled \("abgesagt"\)/);
-      assert.match(p.year_from.description, /One with only a start date matches its start year; undated ones never match/);
+      assert.match(p.year_from.description, /One with only a start date matches its start year only, also a current one \(status "aktuell"\); undated ones never match/);
       assert.match(p.year_from.description, /; one without a venue, by its own dates/);
       assert.match(p.query.description, /the venues include cancelled stations/);
       assert.match(tools.find((x) => x.name === 'skkg_find_terms').description,

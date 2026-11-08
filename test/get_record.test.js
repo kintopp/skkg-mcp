@@ -3,6 +3,8 @@
 // - a bare number that several record types share resolves to one of them
 // - sections that were not requested come back, "all" leaves one out, or a section the type
 //   does not have is dropped without a warning
+// - a requested section that is empty vanishes without a warning, or one not requested, or not
+//   empty, gets that warning
 // - the counts of the summary disagree with the sections they announce
 // - SKKG's anonymisation is replaced, or the lowercase "unbekannte:r Eigentümer:in" is not marked as one
 // - a private address returns more than its "Privatperson, {place}" label: coordinates, an organisation, a region
@@ -36,7 +38,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { withClient, callOk, callSent, callError, makeTestDb, FIXTURE_DB } from './helpers.js';
-import { outputSchema } from '../src/tools/get_record.js';
+import { outputSchema, SECTIONS_OF } from '../src/tools/get_record.js';
 import { outputSchema as searchSchema } from '../src/tools/search_objects.js';
 
 const NAME = 'skkg_get_record';
@@ -175,6 +177,31 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
       assert.equal(r.images, undefined);
       assert.ok(r.warnings.some((w) => /^"images" is not a section of an actor record; its sections are names, events, biography, relations, external, literature, objects\.$/.test(w)),
         r.warnings.join(' | '));
+    });
+
+    await t.test('each requested section that is empty says so, in both channels, and no other does', async () => {
+      const records = ['person/107', 'person/522', 'person/afeca648-febc-454d-a449-6bf2e1211631',
+        'literature/00ac6bea-24f3-4a9e-9633-b48b18f161e4', 'literature/0b06e65c-4ac8-4e8d-b6d5-8bf29df53fc1',
+        'exhibition/00144588-1607-4f35-9795-a5213b52b443', 'exhibition/02850bb4-23de-4270-bc35-1ce479ec4e28',
+        PROVENANCE_1014, 'provenance/0065eb79-df8c-4142-8d78-5067e33debec',
+        'objectgroup/07115c7c-a3db-4c70-828d-2a3699416254', 'address/93420839-eb43-4bb6-a7fb-cf94a828abc1'];
+      let empty = 0;
+      let full = 0;
+      for (const id of records) {
+        const { structured: r, text } = await callSent(client, NAME, { id, include: ['all'] }, outputSchema);
+        for (const s of SECTIONS_OF[r.type]) {
+          const w = `\`${s}\` is empty for this record.`;
+          // An objects page keeps its total, 0 included, so it is never pruned away.
+          const missing = r[s] === undefined;
+          assert.equal(r.warnings?.includes(w) ?? false, missing, `${id} ${s}`);
+          assert.equal(text.includes(w), missing, `${id} ${s} (text)`);
+          if (missing) empty++;
+          else full++;
+        }
+        const bare = await get({ id });
+        assert.doesNotMatch((bare.warnings ?? []).join(' '), /is empty/, id);
+      }
+      assert.ok(empty >= 5 && full >= 5, `${empty} empty and ${full} filled sections checked`);
     });
 
     await t.test('the lowercase "unbekannte:r Eigentümer:in" is marked as SKKG\'s anonymisation', async () => {

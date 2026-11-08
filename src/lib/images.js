@@ -3,7 +3,7 @@
 
 import { stmt } from './sql.js';
 import { ToolError } from './errors.js';
-import { resolveId } from './ids.js';
+import { resolveId, unpublishedImageRoute } from './ids.js';
 import { capList } from './results.js';
 import { objectRef } from './labels.js';
 import { objectRights } from './rights.js';
@@ -37,7 +37,7 @@ export function publishedImages(db, args, warnings) {
   if (type === 'multimedia') {
     const m = stmt(db, 'SELECT * FROM multimedia WHERE id = ?').get(id);
     if (!m.iiif_service) {
-      throw new ToolError(`SKKG has not published an image for ${id}.`, 'Use another image; do not look for this one elsewhere.');
+      throw new ToolError(`SKKG has not published an image for ${id}.`, ['Do not look for it elsewhere.', unpublishedImageRoute(db, id)].filter(Boolean).join(' '));
     }
     if (args.index !== undefined) warnings.push('`index` applies to an object id; ignored for an image id.');
     return { id, type, images: [m], start: 1 };

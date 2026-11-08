@@ -72,6 +72,15 @@ function parse(input, { prefix = false } = {}) {
   return { fts: excluded.length ? `(${matched}) NOT (${excluded.join(' OR ')})` : matched, excludedOnly: false, notes };
 }
 
+/**
+ * A name as a value the server hands out for a name filter: as a phrase when one of its words is
+ * an operator in either case, or "|", so following the hint matches the name without a warning.
+ */
+export function nameValue(name) {
+  if (name.includes('"')) return name;
+  return name.split(/\s+/).some((w) => LOWER_OPERATORS.has(w.toLowerCase()) || /^\|+$/.test(w)) ? `"${name}"` : name;
+}
+
 /** The FTS5 expression of a query the server builds itself; undefined when no word is left to match. */
 export function ftsQuery(input) {
   return parse(input).fts;

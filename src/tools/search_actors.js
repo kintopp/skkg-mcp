@@ -6,7 +6,7 @@ import { withTool, toolResult } from '../lib/tool.js';
 import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
 import { perDb, placeholders, stmt } from '../lib/sql.js';
-import { ftsQuery, searchQuery, QUERY_SYNTAX } from '../lib/fts.js';
+import { ftsQuery, nameValue, searchQuery, QUERY_SYNTAX } from '../lib/fts.js';
 import { termLabel } from '../lib/labels.js';
 import { websiteUrl } from '../lib/ids.js';
 import { ROLE_KINDS, ACTOR_ROLES, hasRole, roleCounts, lifeDates } from '../lib/actors.js';
@@ -54,7 +54,7 @@ const description =
 
 const filterShape = {
   query: z.string().min(1).max(MAX_QUERY_LEN).optional().describe(
-    `Name: the words must occur in one of the actor's names, e.g. "Anker", "Albert Anker", "Koll*". ${QUERY_SYNTAX}. ` +
+    `Name: matched against all of the actor's names at once, so the words may come from different ones, e.g. "Anker", "Albert Anker", "Koll*". ${QUERY_SYNTAX}. ` +
     'Umlauts may be written ä or ae'),
   kind: z.enum(['person', 'group']).optional().describe('person, or group (a firm, institution, or family)'),
   born_from: yearField('Earliest year of birth, or of a group\'s formation. Actors without that year never match'),
@@ -224,7 +224,7 @@ function literatureFilter(db, id, name) {
   if (!name || !ftsQuery(name)) return undefined;
   const parts = stmt(db, 'SELECT DISTINCT kind FROM literature_actors WHERE actor_id = ?').all(id).map((r) => r.kind);
   if (!parts.length) return undefined;
-  return parts.includes('publisher') ? { publisher: name } : { author: name };
+  return parts.includes('publisher') ? { publisher: nameValue(name) } : { author: nameValue(name) };
 }
 
 function actorRow(db, id, lang) {

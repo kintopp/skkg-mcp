@@ -15,7 +15,7 @@ import { objectCreators, objectFacetLabels } from '../lib/objects.js';
 import { objectImages } from '../lib/images.js';
 import { liveCheck } from '../lib/live.js';
 import { period, acquisition, chainRows } from '../lib/provenance.js';
-import { capList } from '../lib/results.js';
+import { capList, emptySectionWarnings } from '../lib/results.js';
 import { fitLists } from '../lib/fit.js';
 import { renderObjectText, SECTIONS } from './object_text.js';
 import {
@@ -320,10 +320,7 @@ export async function getObject(db, meta, args, signal) {
     related: want.has('related') ? related(db, o, lang, ctx) : undefined,
     images: want.has('images') ? images(db, o, lang, ctx) : undefined,
   };
-  // A requested section that is empty is pruned away, so say so, or the caller cannot tell it from one not sent.
-  for (const k of SECTIONS) {
-    if (want.has(k) && prune(out[k]) === undefined) warnings.push(EMPTY_SECTION[k] ?? `\`${k}\` is empty for this object.`);
-  }
+  warnings.push(...emptySectionWarnings(SECTIONS, want, out, 'object', EMPTY_SECTION));
   if (args.live) out.live = await liveCheck(db, o, ctx, signal);
   const stale = staleWarning(meta);
   if (stale) warnings.push(args.live ? stale : `${stale} To check this object's rights, call again with live: true.`);

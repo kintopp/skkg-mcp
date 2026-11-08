@@ -2,7 +2,9 @@
 // - an object id without `index` returns another image than the primary, or `index` counts in
 //   another order than skkg_get_object's images (primary first, then SKKG's sequence)
 // - an `index` past the object's images, or an object without a published image, fetches anything
-// - a multimedia without a published IIIF image is fetched, or reached by building a URL
+// - a multimedia without a published IIIF image is fetched, or reached by building a URL; its
+//   refusal or hint names no object or exhibition it belongs to, or names one whose images, when
+//   asked for, are none
 // - `index` with a multimedia id is ignored without a warning
 // - a number that is a multimedia id and an object id resolves to either one
 // - the requested size exceeds the visual-token budget (4,784) or max_long_edge, or enlarges
@@ -406,7 +408,7 @@ test('skkg_inspect_image refuses bad input before any fetch', { skip: FIXTURE_DB
     });
     await t.test('an unpublished or missing image id is not sent to this tool', async () => {
       const unpublished = await callError(client, 'skkg_get_record', { id: UNPUBLISHED });
-      assert.match(unpublished, /SKKG has not published an image for it/);
+      assert.match(unpublished, /SKKG has not published this image; do not look for it elsewhere\./);
       assert.doesNotMatch(unpublished, /skkg_inspect_image/);
       const missing = await callError(client, 'skkg_get_record', { id: 'multimedia/does-not-exist' });
       assert.match(missing, /No such multimedia record/);
@@ -441,6 +443,50 @@ test('skkg_inspect_image refuses bad input before any fetch', { skip: FIXTURE_DB
       assert.match(await callError(client, NAME, { id: 'person/107' }), /object, multimedia ids/);
     });
   }, { env: { SKKG_DB_PATH: FIXTURE_DB.path } });
+});
+
+test('the hint for an unpublished image names a record it belongs to, and following it does what it says', { skip: FIXTURE_DB.skip }, async () => {
+  const { db } = openDatabase(FIXTURE_DB.path);
+  const rows = (sql, ...p) => db.prepare(sql).all(...p);
+  const published = (link, key, id) => rows(`SELECT 1 FROM ${link} l JOIN multimedia m ON m.id = l.multimedia_id
+      WHERE l.${key} = ? AND m.iiif_service IS NOT NULL LIMIT 1`, id).length > 0;
+  const images = rows('SELECT id FROM multimedia WHERE iiif_service IS NULL ORDER BY id').map((r) => r.id);
+  const seen = { object: 0, exhibition: 0, none: 0, without_published: 0 };
+  await withClient('inspect-image-unpublished', async (client) => {
+    for (const id of images) {
+      const hint = await callError(client, 'skkg_get_record', { id });
+      const refusal = await callError(client, NAME, { id });
+      assert.match(refusal, /SKKG has not published an image for .*Do not look for it elsewhere\./, id);
+      const m = /It belongs to (\S+?)(?: and (\d+) more (?:objects|exhibitions))?(: (skkg_get_object|skkg_get_record) with id "([^"]+)" and include \["images"\] lists|; SKKG publishes no image of (?:it|them)\.)/.exec(hint);
+      const objects = rows('SELECT object_id AS id FROM object_multimedia WHERE multimedia_id = ?', id).map((r) => r.id);
+      const exhibitions = rows('SELECT exhibition_id AS id FROM exhibition_multimedia WHERE multimedia_id = ?', id).map((r) => r.id);
+      const [owners, link, key, tool] = objects.length ? [objects, 'object_multimedia', 'object_id', 'skkg_get_object']
+        : [exhibitions, 'exhibition_multimedia', 'exhibition_id', 'skkg_get_record'];
+      if (!owners.length) {
+        assert.equal(m, null, `${id}: ${hint}`);
+        seen.none++;
+        continue;
+      }
+      assert.ok(m, `${id}: ${hint}`);
+      assert.ok(refusal.includes(m[0]), `${id}: the refusal names the same route`);
+      const [, owner, more, followable, named, namedId] = m;
+      assert.ok(owners.includes(owner), `${id} belongs to ${owner}`);
+      assert.equal(Number(more ?? 0) + 1, owners.length, `${id}: ${hint}`);
+      const anyPublished = owners.some((o) => published(link, key, o));
+      assert.equal(followable.startsWith(':'), anyPublished, `${id}: ${hint}`);
+      if (anyPublished) {
+        assert.equal(named, tool);
+        assert.equal(namedId, owner);
+        const res = await client.callTool({ name: named, arguments: { id: owner, include: ['images'] } });
+        assert.ok(!res.isError && res.structuredContent.images?.length, `${id}: following the hint lists no image of ${owner}`);
+      } else {
+        seen.without_published++;
+      }
+      seen[objects.length ? 'object' : 'exhibition']++;
+    }
+  }, { env: { SKKG_DB_PATH: FIXTURE_DB.path } });
+  db.close();
+  assert.ok(seen.object > 0 && seen.exhibition > 0 && seen.without_published > 0, JSON.stringify(seen));
 });
 
 // Calls SKKG's IIIF server once: the delivered size must be the size asked for.

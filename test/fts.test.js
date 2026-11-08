@@ -13,11 +13,14 @@
 // - an excluded prefix ("NOT Stillleb*") excludes only the whole word
 // - with `prefix`, the operators become prefix words ("AND*")
 // - a scope restricts only the matched words, so an excluded word in another column drops the row
+// - a name the server hands out for a name filter ("Rock and Roll", "Rock OR Roll") is read as
+//   operators or warned about when followed, a name without one is quoted, a word holding an
+//   operator ("Andersen") counts as one, or a name with its own quotes is quoted again
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { ftsQuery, searchQuery, scopeFts } from '../src/lib/fts.js';
+import { ftsQuery, nameValue, searchQuery, scopeFts } from '../src/lib/fts.js';
 import { errorOf } from './helpers.js';
 
 const ROWS = {
@@ -121,4 +124,16 @@ test('with prefix, every word matches as a prefix and the operators stay operato
 test('a scope restricts the excluded words too', () => {
   const scoped = (input) => ids(scopeFts(ftsQuery(input), ['title']));
   assert.deepEqual(scoped('Stillleben NOT Blumen'), [2, 4], 'row 4 has Blumen only outside the title');
+});
+
+test('a name handed out for a name filter matches as the name, without a warning', () => {
+  for (const name of ['Rock and Roll', 'Rock AND Roll', 'Rock or Roll', 'Rock OR Roll', 'Rock | Roll']) {
+    const v = nameValue(name);
+    assert.equal(v, `"${name}"`, name);
+    assert.deepEqual(warningsOf(v), [], name);
+  }
+  assert.deepEqual(hits(nameValue('Rock and Roll')), [7]);
+  assert.deepEqual(hits(nameValue('Stillleben or Blumen')), [8], 'not the rows with either word');
+  // A phrase cannot hold a double quote, so such a name stays as it is, with its warning.
+  for (const name of ['Rock Roll', 'Andersen', 'Nothing Ordinary', 'Verlag der "Roten Fahne"', 'Rock and "Roll"']) assert.equal(nameValue(name), name);
 });

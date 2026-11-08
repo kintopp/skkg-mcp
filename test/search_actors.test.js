@@ -10,7 +10,8 @@
 //   an example's literature_filter does not list its publications, or names `author` for a publisher;
 //   the descriptions say `publisher` lists all of a publisher's publications when `author` must list
 //   what it wrote or edited, or `author` does not; an empty result points to a literature_filter
-//   that no example has
+//   that no example has; a literature_filter of a name with "and" gets an operator warning when followed
+// - the `query` description says the words must occur in one name, while they match across names
 // - a year range misses an actor born in its first or last year (an equal range included), an
 //   open range is closed, an actor without the year matches, or a reversed range runs; a year
 //   SKKG gives only in the label ("14.12.1879") is missed; a group's formation is not its start
@@ -64,6 +65,16 @@ test('skkg_search_actors against the fixture database', { skip: FIXTURE_DB.skip 
       assert.ok(alt, 'the fixture has an alternative name absent from its label');
       const { rows } = await all({ query: `"${alt.name}"` });
       assert.ok(ids(rows).includes(alt.id), `${alt.id} by "${alt.name}"`);
+    });
+
+    await t.test('the words of a name may come from different names, as the description says', async () => {
+      // "Leibundgut" is only in an alternative name, "Brüschweiler" only in the label.
+      const { rows } = await all({ query: 'Leibundgut Brüschweiler' });
+      assert.ok(ids(rows).includes('person/afeca648-febc-454d-a449-6bf2e1211631'));
+      const { tools } = await client.listTools();
+      const q = tools.find((x) => x.name === NAME).inputSchema.properties.query.description;
+      assert.match(q, /all of the actor's names at once, so the words may come from different ones/);
+      assert.doesNotMatch(q, /in one of the actor's names/);
     });
 
     await t.test('addresses and the anonymisation are never results, by name or by any filter', async () => {
@@ -122,10 +133,35 @@ test('skkg_search_actors against the fixture database', { skip: FIXTURE_DB.skip 
         }
         const { text } = await callSent(client, NAME, { query }, outputSchema);
         for (const e of r.name_only?.examples ?? []) {
-          if (e.literature_filter) assert.ok(text.includes(`skkg_search_literature ${Object.keys(e.literature_filter)[0]}: ${JSON.stringify(e.name)}`), e.id);
+          if (e.literature_filter) {
+            const [[k, v]] = Object.entries(e.literature_filter);
+            assert.ok(text.includes(`skkg_search_literature ${k}: ${JSON.stringify(v)}`), e.id);
+          }
         }
       }
       assert.ok(checked >= 5, `${checked} examples checked`);
+    });
+
+    await t.test('a literature_filter of a name with "and" matches it as a phrase, without an operator warning', async () => {
+      const lit = (args) => callOk(client, 'skkg_search_literature', { ...args, limit: 50 }, literatureSchema);
+      let quoted = 0;
+      for (const query of ['Routledge', 'Hodder', 'Weinfeld', 'Verlag', 'Durant']) {
+        for (const e of (await search({ query })).name_only?.examples ?? []) {
+          if (!e.literature_filter) continue;
+          const [[k, v]] = Object.entries(e.literature_filter);
+          const operatorWord = e.name.split(/\s+/).some((w) => ['and', 'or', 'not'].includes(w.toLowerCase()));
+          assert.equal(v, operatorWord ? `"${e.name}"` : e.name, e.id);
+          if (operatorWord) quoted++;
+          const { first, rows } = await allPages(lit, { [k]: v }, { limit: 50 });
+          assert.doesNotMatch((first.warnings ?? []).join(' '), /operator/, `${e.name}: ${first.warnings}`);
+          const listed = new Set(rows.map((x) => x.id));
+          for (const l of column('SELECT literature_id FROM literature_actors WHERE actor_id = ? AND kind IN (?, ?)', e.id,
+            ...(k === 'publisher' ? ['publisher', 'publisher'] : ['author', 'editor']))) {
+            assert.ok(listed.has(l), `${e.name} (${e.id}): ${l}`);
+          }
+        }
+      }
+      assert.ok(quoted >= 2, `${quoted} names with an operator word checked`);
     });
 
     await t.test('a name-only actor that no publication names gets no literature_filter', async () => {

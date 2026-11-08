@@ -65,7 +65,7 @@ const filterShape = {
     'Each word matches the start of a word of the venue\'s name and place, ignoring case and accents. Matches the main ' +
     'venue and the other stations, but no station SKKG cancelled ("abgesagt"); applied_filters lists the venues matched'),
   year_from: yearField('Earliest year: an exhibition matches when the dates of one of its stations overlap the range ' +
-    '(with venue, those of the station at that venue); one without a venue, by its own dates. One with only a start date matches its start year; undated ones never match'),
+    '(with venue, those of the station at that venue); one without a venue, by its own dates. One with only a start date matches its start year only, also a current one (status "aktuell"); undated ones never match'),
   year_to: yearField('Latest year; see year_from'),
   exhibition_type: termField('Kind of exhibition, e.g. "Einzelausstellung", "Wechselausstellung", "Wanderausstellung", "Dauerausstellung"'),
   status: termField('SKKG\'s status of the exhibition, e.g. "aktuell", "abgeschlossen", "historisch"'),

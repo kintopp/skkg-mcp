@@ -8,6 +8,8 @@
 // - uppercase UUIDs (actor/…) are lowercased and miss
 // - a link naming two records resolves to one of them
 // - a link naming the same record twice is refused as if it named two
+// - the hint for an unpublished image names, of the records it belongs to, one without a
+//   published image while another has one, so following it finds no image
 
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -110,4 +112,35 @@ test('a website link that names two records is refused, not resolved to the last
 test('a website link that names one record twice resolves to it', () => {
   const link = 'https://digital.skkg.ch/de/filter;actor;skkg%3Aperson%2F77;actor;skkg%3Aperson%2F77';
   assert.equal(resolveId(t.db, link).id, 'person/77');
+});
+
+test('the hint for an unpublished image names a record with a published image before one without', () => {
+  // object/1 comes first in inventory order and exhibition/a by id, but only the others have a published image.
+  const d = makeTestDb({
+    tables: {
+      objects: { columns: ['inventory_number'], rows: [{ id: 'object/1', inventory_number: '1' }, { id: 'object/2', inventory_number: '2' }] },
+      exhibitions: { rows: [{ id: 'exhibition/a' }, { id: 'exhibition/b' }] },
+      multimedia: {
+        columns: ['iiif_service'],
+        rows: [{ id: 'multimedia/u1' }, { id: 'multimedia/u2' }, { id: 'multimedia/p1', iiif_service: 'x' }, { id: 'multimedia/p2', iiif_service: 'x' }],
+      },
+      object_multimedia: {
+        columns: ['object_id', 'multimedia_id'],
+        rows: [{ id: '1', object_id: 'object/1', multimedia_id: 'multimedia/u1' }, { id: '2', object_id: 'object/2', multimedia_id: 'multimedia/u1' },
+          { id: '3', object_id: 'object/2', multimedia_id: 'multimedia/p1' }],
+      },
+      exhibition_multimedia: {
+        columns: ['exhibition_id', 'multimedia_id'],
+        rows: [{ id: '1', exhibition_id: 'exhibition/a', multimedia_id: 'multimedia/u2' }, { id: '2', exhibition_id: 'exhibition/b', multimedia_id: 'multimedia/u2' },
+          { id: '3', exhibition_id: 'exhibition/b', multimedia_id: 'multimedia/p2' }],
+      },
+    },
+  });
+  try {
+    const hint = (id) => errorOf(() => resolveId(d.db, id, { types: ['person'] }));
+    assert.match(hint('multimedia/u1'), /It belongs to object\/2 and 1 more objects: skkg_get_object with id "object\/2" and include \["images"\]/);
+    assert.match(hint('multimedia/u2'), /It belongs to exhibition\/b and 1 more exhibitions: skkg_get_record with id "exhibition\/b" and include \["images"\]/);
+  } finally {
+    d.cleanup();
+  }
 });
