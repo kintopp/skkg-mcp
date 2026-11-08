@@ -46,3 +46,5 @@ data/
 *.sqlite
 *.sqlite-*
 *.sqlite.tmp
+
+plugin/
