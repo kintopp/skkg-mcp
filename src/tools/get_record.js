@@ -318,8 +318,8 @@ function getActor(db, id, want, args, ctx) {
     const filters = literatureFilters(db, id, a.label);
     let call = '';
     if (filters) {
-      const [first, second] = filters.map((f) => Object.keys(f)[0]);
-      const value = filters[0][first];
+      const [[first, value]] = Object.entries(filters[0]);
+      const second = filters[1] && Object.keys(filters[1])[0];
       const name = value === a.label ? 'this name' : `the value \`${value}\``;
       call = `: ${SEARCH_LITERATURE_TOOL_NAME} with \`${first}\` and ${name} lists ` +
         (second ? `those it published, with \`${second}\` those it wrote or edited` : 'all their publications');

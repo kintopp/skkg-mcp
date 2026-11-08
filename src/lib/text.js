@@ -22,7 +22,7 @@ export const objectRightsLine = (o) => `- ${obj(o)}: ` +
   join([`object copyright ${o.rights.object_copyright}`, o.rights.credit_line && `credit: ${o.rights.credit_line}`,
     o.rights.redaction_status], ' · ') + (o.website_url ? ` · ${o.website_url}` : '');
 export const list = (label, items) => (items?.length ? `${label}: ${items.join(', ')}` : undefined);
-// skkg_search_objects arguments, e.g. `creator: "person/36", include_narrower: false`.
+// A tool's arguments, e.g. `creator: "person/36", include_narrower: false`.
 export const searchArgs = (f) => f && Object.entries(f).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ');
 
 export function priceText(p) {

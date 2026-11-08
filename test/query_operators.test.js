@@ -67,7 +67,7 @@ test('the query grammar in every tool', { skip: FIXTURE_DB.skip }, async (t) => 
 
     await t.test('skkg_search_actors: the literature filter of a name with a leading "-" lists its publications', async () => {
       const r = await callOk(client, 'skkg_search_actors', { query: 'Schaufelberger' }, actorsSchema);
-      const filter = [...(r.actors ?? []), ...(r.name_only?.examples ?? [])]
+      const filter = (r.name_only?.examples ?? [])
         .flatMap((x) => x.literature_filters ?? []).find((f) => Object.values(f)[0].includes(' -'));
       assert.ok(filter, JSON.stringify(r));
       const lit = await callOk(client, 'skkg_search_literature', filter, literatureSchema);

@@ -52,17 +52,20 @@ export function roleCounts(db, id) {
   }).filter((r) => r.count > 0);
 }
 
+// The parts of literature_actors each name filter of skkg_search_literature matches; an editor counts
+// as an author, as in citations. Its key order is the order of that tool's applied filters and warnings.
+export const LITERATURE_FILTER_PARTS = Object.freeze({ author: ['author', 'editor'], publisher: ['publisher'] });
+
 // The skkg_search_literature calls that list a name-only actor's publications under its name, one
 // argument object per call, since that tool AND-s its name filters: `publisher` for what it published,
-// then `author` for what it wrote or edited (`author` covers editors); none for the few that no
-// publication names, or a name without a word.
+// then `author` for what it wrote or edited; none for the few that no publication names, or a name
+// without a word.
 export function literatureFilters(db, id, name) {
   if (!name || !ftsQuery(name)) return undefined;
   const parts = new Set(stmt(db, 'SELECT DISTINCT kind FROM literature_actors WHERE actor_id = ?').all(id).map((r) => r.kind));
   const value = nameValue(name);
-  const filters = [
-    ...(parts.has('publisher') ? [{ publisher: value }] : []),
-    ...(parts.has('author') || parts.has('editor') ? [{ author: value }] : []),
-  ];
+  const filters = ['publisher', 'author']
+    .filter((key) => LITERATURE_FILTER_PARTS[key].some((p) => parts.has(p)))
+    .map((key) => ({ [key]: value }));
   return filters.length ? filters : undefined;
 }

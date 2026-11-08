@@ -2,6 +2,7 @@
 // year, type, series, ISBN, and the objects they refer to.
 
 import { z } from 'zod';
+import { LITERATURE_FILTER_PARTS as PARTS } from '../lib/actors.js';
 import { withTool, toolResult } from '../lib/tool.js';
 import { ToolError } from '../lib/errors.js';
 import { getDatabase, staleWarning } from '../db.js';
@@ -22,8 +23,6 @@ import {
 } from '../config.js';
 
 const TERM_FILTERS = TERM_FILTERS_OF[SEARCH_LITERATURE_TOOL_NAME];
-// The parts of literature_actors each name filter matches; an editor counts as an author, as in citations.
-const PARTS = Object.freeze({ author: ['author', 'editor'], publisher: ['publisher'] });
 // Names listed in applied_filters for one name filter; the rest are counted.
 const APPLIED_NAMES = 10;
 

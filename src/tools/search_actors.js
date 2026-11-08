@@ -14,6 +14,7 @@ import { words, startingWith } from '../lib/words.js';
 import { prune } from '../lib/prune.js';
 import { fitResult } from '../lib/fit.js';
 import { paging, showing, pastEnd, tailLines, noMatchWarning } from '../lib/results.js';
+import { searchArgs } from '../lib/text.js';
 import { resolveTerms, assertRange } from '../lib/filters.js';
 import { TERM_FILTERS as TERM_FILTERS_OF, LIFE_PLACES } from './term_filters.js';
 import { appliedOut, langIn, termField, yearField, int, str } from './schemas.js';
@@ -309,8 +310,8 @@ function actorLines(r, n) {
 function renderText(s) {
   const head = `${s.total} persons and groups${showing(s, s.total)} (sorted by ${s.sort}).`;
   const lines = s.results.flatMap((r, i) => actorLines(r, s.offset + i + 1));
-  const filterText = (fs) => fs && `; ${SEARCH_LITERATURE_TOOL_NAME} ` +
-    fs.map((f) => Object.entries(f).map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ')).join(', then ');
+  const filterText = (fs) => fs && `; ${SEARCH_LITERATURE_TOOL_NAME}${fs.length > 1 ? ', one call each:' : ''} ` +
+    fs.map(searchArgs).join('; ');
   const nameOnly = s.name_only && `Also ${s.name_only.total} actors SKKG records only by name (not listed), e.g. ` +
     `${s.name_only.examples.map((e) => `${e.name} (${e.id}${filterText(e.literature_filters) ?? ''})`).join(', ')}.`;
   return [head, ...lines, nameOnly, ...tailLines(s)].filter(Boolean).join('\n');
