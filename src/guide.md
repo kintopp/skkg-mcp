@@ -287,3 +287,10 @@ Calls that work:
   `include: ["external"]`). Use them to link to other collections and to biographical
   data.
 - SKKG has no subject data, so an Iconclass server has nothing to match here.
+- SKKG serves its knowledge graph from a public SPARQL endpoint,
+  `https://sparql.digital.skkg.ch/`, with a query editor and examples at
+  `https://qlever.digital.skkg.ch/` and documentation in the wiki of
+  `swiss-art-research-net/skkg-pipeline`. For a question these tools cannot answer, such
+  as a custom aggregate or a federated GND query, write a query for the user to run
+  there; this server cannot run it. Never write one that reads address records or
+  identifies an anonymised owner.
