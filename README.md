@@ -24,13 +24,7 @@ https://skkg-mcp-production.up.railway.app/mcp
 
 Anthropic's [instructions](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp) give more details.
 
-Other clients that support remote MCP servers use the same URL:
-
-- **Claude Code:** `claude mcp add --transport http skkg https://skkg-mcp-production.up.railway.app/mcp`
-- **ChatGPT desktop app and Codex:** add a `[mcp_servers.skkg]` table with `url = "https://skkg-mcp-production.up.railway.app/mcp"` to `~/.codex/config.toml`.
-- **ChatGPT chats:** currently (November 2026), ChatGPT connects a custom MCP server in a chat only through a plugin. See OpenAI's documentation.
-
-For other clients, see their documentation. The image viewer of `skkg_view_image` appears only in clients that support MCP Apps. In other clients, the model links to the object's page on SKKG's website instead.
+For other LLM clients, please see their respective documentation. The image viewer of `skkg_view_image` appears only in clients that support [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview). Where this feature is not supported, the model links to the object's page on SKKG's website instead.
 
 The hosted server needs no account. Searches and counts run on the server's own database, and only the image tools and `live: true` fetch data from SKKG's servers. To host your own instance, see [docs/deploy.md](docs/deploy.md).
 
@@ -66,7 +60,7 @@ To check the install without a client, run `npm test`, which uses a small test d
 
 ### Skill
 
-The model's guidance is part of the server, which serves it with `skkg_guide` one topic at a time, so the guidance always matches the tools. The skill in [skill/skkg/](skill/skkg/) is a short file that sends the model to `skkg_guide` and leaves room for your own notes. Installing it is optional. To install it in Claude, zip the `skkg` folder and follow [these instructions](https://claude.com/resources/tutorials/teach-claude-your-way-of-working-using-skills). For other clients, see their documentation.
+The model's guidance is part of the server, which serves it with `skkg_guide` one topic at a time, so the guidance always matches the tools. The skill in [skill/skkg/](skill/skkg/) is a short file that sends the model to `skkg_guide` and leaves room for your own notes. Installing it is optional. To install it in Claude, zip the `skkg` folder and follow [these instructions](https://claude.com/resources/tutorials/teach-claude-your-way-of-working-using-skills). For other clients, please see their respective documentation.
 
 ## Tools
 
