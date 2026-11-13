@@ -33,7 +33,7 @@ Every tool call writes one JSON line to stderr, with the tool, the latency, and 
 
 ## Railway
 
-The service `skkg-mcp` in the project `endearing-warmth` runs `node src/http.js` with `/health` as its health check, one replica in `europe-west4-drams3a`, a 1 GB memory limit, and the 5 GB volume `skkg-mcp-volume` at `/data`. Its configuration is `.railway/railway.ts`, which declares the partial `skkg-mcp`, so it never touches the other services of the project.
+The service `skkg-mcp`, in a Railway project shared with other services, runs `node src/http.js` with `/health` as its health check, one replica in `europe-west4-drams3a`, a 1 GB memory limit, and the 5 GB volume `skkg-mcp-volume` at `/data`. Its configuration is `.railway/railway.ts`, which declares the partial `skkg-mcp`, so it never touches the other services of the project.
 
 - `railway config plan` is read only. Stop on any change to another service, a volume, or a mount.
 - `railway config apply --yes` applies it and starts a deployment from `main` at once. Claude's auto mode blocks it, so run it yourself (`! railway config apply --yes` in Claude Code).

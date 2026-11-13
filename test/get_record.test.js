@@ -74,7 +74,7 @@ test('skkg_get_record against the fixture database', { skip: FIXTURE_DB.skip }, 
       assert.equal(r.summary.birth.date, '28.03.1868');
       assert.equal(r.summary.birth.place, 'Solothurn');
       for (const s of ['names', 'events', 'biography', 'relations', 'external', 'literature', 'objects']) assert.equal(r[s], undefined, s);
-      // A creator's page lists their works (the website's own link form, notes/08).
+      // A creator's page lists their works (the website's own link form).
       assert.equal(r.website_url, 'https://digital.skkg.ch/de/filter;actor;skkg%3Aperson%2F107?skkgapi:produced_by=skkg:person/107');
       assert.deepEqual((await get({ id: r.website_url })).id, 'person/107');
       const creator = r.summary.roles.find((x) => x.as === 'creator' && !x.role);

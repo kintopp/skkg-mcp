@@ -1,6 +1,6 @@
 // Properties every tool must keep, checked over a spread of records and calls instead of
-// hand-picked cases, so that a field or section added later is covered too (notes/12, "Checks
-// that would have caught many of these"). How the tools could break them:
+// hand-picked cases, so that a field or section added later is covered too. How the tools could
+// break them:
 // - an id in structuredContent (a record, term, actor, or applied filter) is missing from the
 //   text, so a host that shows the model only the text cannot follow it up
 // - a `filter` offered next to a count lists another number of objects; skkg_collection_stats

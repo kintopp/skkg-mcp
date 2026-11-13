@@ -234,7 +234,7 @@ def test_every_dated_acquisition_gets_the_year_of_its_date_and_a_sort_key():
     rows = db.execute("SELECT date, year, sort_key FROM acquisitions WHERE date IS NOT NULL").fetchall()
     assert rows
     for date, y, key in rows:
-        assert y == int(date[:4]) and key is not None, date  # every acquisition date of the dump is YYYY-MM-DD (notes/11)
+        assert y == int(date[:4]) and key is not None, date  # every acquisition date of the dump is YYYY-MM-DD
     assert [d for d, _, _ in sorted(rows, key=lambda r: r[2])] == sorted(d for d, _, _ in rows)
 
 

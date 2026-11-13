@@ -240,7 +240,7 @@ const MUTATIONS = [
   ['src/tools/record_text.js', "const line = (parts, sep) => join(parts, sep) || undefined;", "const line = (parts, sep) => join(parts, sep);", 'record text no empty lines'],
   ['src/tools/record_text.js', "`   ${join([photoRights(m.rights), m.rights.iiif_service], ' · ')}`)],", "`   ${photoRights(m.rights)}`)],", 'record text image rights'],
   ['src/lib/ids.js', "type: (s) => `For a vocabulary term, use skkg_find_terms with id \"${s}\".`,", "", 'term id hint'],
-  // website links (notes/08)
+  // website links
   ['src/lib/ids.js', "${works ? `?skkgapi:produced_by=skkg:${id}` : ''}", "", 'website creator filter'],
   ['src/lib/ids.js', "if (id.startsWith('exhibition/')) return", "if (false) return", 'website exhibition link'],
   ['src/lib/ids.js', ".split('/').pop().split(';').map(decode);", ".split('/').pop().split('#').map(decode);", 'website panel link resolves'],

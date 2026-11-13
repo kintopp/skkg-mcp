@@ -1,4 +1,4 @@
-// Resolves every id form a caller may pass (notes/11 "Ids") to one database record:
+// Resolves every id form a caller may pass to one database record:
 // a plain number or UUID, a prefixed id (object/2432), a data.skkg.ch IRI, a website
 // link (…/skkg%3Aobject%2F2432), and for objects an inventory number (GB-0171.1).
 
@@ -141,7 +141,7 @@ const TOOL_HINTS = {
 };
 const toolHint = (type, s, db) => TOOL_HINTS[type]?.(s, db) ?? `Use skkg_get_record with id "${s}".`;
 
-// Website page of a record, in the forms the site itself links (notes/08). A person's panel
+// Website page of a record, in the forms the site itself links. A person's panel
 // lists the collection's objects under it, so `works` filters them to the objects the person made
 // or is an influence on.
 // Literature has no page; provenance periods, object groups, addresses, and `actor/` ids are

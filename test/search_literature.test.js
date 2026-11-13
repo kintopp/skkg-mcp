@@ -415,7 +415,7 @@ test('on the full database, an ISBN-13 SKKG recorded with a wrong check digit fi
   skip: FULL_DB ? false : 'set SKKG_FULL_DB to the path of the full database to run it',
 }, async () => {
   await withClient('search-literature-check-digit', async (client) => {
-    // SKKG recorded this ISBN-13 with a wrong check digit (notes/11, tool 6).
+    // SKKG recorded this ISBN-13 with a wrong check digit.
     const r = await callOk(client, NAME, { isbn: '978-3-905875-63-9' }, outputSchema);
     assert.ok(r.total > 0);
     assert.doesNotMatch((r.warnings ?? []).join(' '), /check digit/);

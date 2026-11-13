@@ -57,8 +57,8 @@ async function withFetch(respond, run) {
 
 const json = (body, headers = {}) => new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json', ...headers } });
 
-// SKKG's RetrieveObject answer for an object, built from the fixture with the field names of
-// notes/08, so it matches the dump. `edit(main, sidecars, graph)` changes it.
+// SKKG's RetrieveObject answer for an object, built from the fixture with the API's field
+// names, so it matches the dump. `edit(main, sidecars, graph)` changes it.
 function apiRecord(db, id, edit = () => {}) {
   const o = db.prepare('SELECT * FROM objects WHERE id = ?').get(id);
   const mms = db.prepare(`SELECT m.* FROM object_multimedia om JOIN multimedia m ON m.id = om.multimedia_id

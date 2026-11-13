@@ -85,7 +85,7 @@ test('unknown, empty, and malformed input give a ToolError, never another except
   }
 });
 
-// The forms the website itself links (notes/08).
+// The forms the website itself links.
 test('websiteUrl links objects, persons, and exhibitions in the website\'s own forms', () => {
   assert.equal(websiteUrl('object/2432'), 'https://digital.skkg.ch/de/intro/skkg%3Aobject%2F2432');
   assert.equal(websiteUrl('person/77'), 'https://digital.skkg.ch/de/filter;actor;skkg%3Aperson%2F77');

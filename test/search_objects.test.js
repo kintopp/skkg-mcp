@@ -30,7 +30,7 @@
 // - a photo without a recorded licence comes back without image_license, read as unrestricted
 // - a row whose primary image is a scanned document does not say so, in either channel
 // - a current location is accepted as a filter, by name or as a term id of another filter,
-//   although SKKG's API and website publish none (notes/08)
+//   although SKKG's API and website publish none
 // - an empty result of one filter says "these filters together", or one of several filters does not
 // - an unknown label with no similar one is told the vocabulary is German, without the call that lists its terms
 // - results violate the output schema

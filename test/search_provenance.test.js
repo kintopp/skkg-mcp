@@ -305,7 +305,7 @@ test('skkg_search_provenance against the fixture database', { skip: FIXTURE_DB.s
     });
 
     await t.test('sorting by date follows the year filter and keeps its order across pages', async () => {
-      // The spec (notes/11): with one date, a period is open at its end when SKKG bounds the end at
+      // With one date, a period is open at its end when SKKG bounds the end at
       // 9999 ("o. D.") or the begin says "seit", open at its start when the begin is bounded at 0001
       // or the end says "bis". An open start sorts before every date, an open end after every date,
       // and periods open on the same side sort by the date they record. An object's key is that of

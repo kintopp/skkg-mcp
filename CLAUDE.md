@@ -2,13 +2,13 @@
 
 ## What this is
 
-An MCP server, over stdio and Streamable HTTP, for the SKKG Sammlung digital collection (Stiftung für Kunst, Kultur und Geschichte, Winterthur, `https://digital.skkg.ch`). Node 24, pure ESM, no build step; runtime dependencies are `@modelcontextprotocol/server`, `@modelcontextprotocol/node` (HTTP), `@modelcontextprotocol/ext-apps` (the viewer), and `zod`. It reads one read-only SQLite database (`node:sqlite`) built by `scripts/build_db.py`. The GitHub remote, `kintopp/skkg-mcp`, is private and must stay private; before it ever goes public, `notes/` must be removed from the whole history (the notes are not for publication).
+An MCP server, over stdio and Streamable HTTP, for the SKKG Sammlung digital collection (Stiftung für Kunst, Kultur und Geschichte, Winterthur, `https://digital.skkg.ch`). Node 24, pure ESM, no build step; runtime dependencies are `@modelcontextprotocol/server`, `@modelcontextprotocol/node` (HTTP), `@modelcontextprotocol/ext-apps` (the viewer), and `zod`. It reads one read-only SQLite database (`node:sqlite`) built by `scripts/build_db.py`. The repository is public. `notes/` is local only: it is gitignored, and the notes are not for publication, so never commit them or quote them in commit messages.
 
 Layout: `src/index.js` (stdio) and `src/http.js` (HTTP) both call `createServer` in `src/server.js`; tools are in `src/tools/` with their shared schemas and text renderers, helpers in `src/lib/`, and the built viewer page in `src/apps/` (source in `apps/image-viewer/`). Environment variables are listed in `README.md`, the HTTP ones in `docs/deploy.md`.
 
-The repository also holds the research behind the server:
+The working tree also holds the research behind the server:
 
-- `notes/`: findings about the data, the API and the terms. Read `notes/README.md` first and `notes/05-open-questions.md` for what is still unchecked. `notes/11-mcp-tool-list.md` is the tool spec. The notes are the source of truth for findings: update them when one changes. Never quote the names of private address records in them.
+- `notes/` (local only, gitignored): findings about the data, the API and the terms. Read `notes/README.md` first and `notes/05-open-questions.md` for what is still unchecked. `notes/11-mcp-tool-list.md` is the tool spec. The notes are the source of truth for findings: update them when one changes. Never quote the names of private address records in them.
 - `scripts/`: the Python data pipeline (`load_oxigraph.py`, `build_db.py`) and one-off analyses in `scripts/analysis/`. Use `uv`.
 - `data/` (gitignored, never committed): `raw/` dumps, `oxigraph/` store, `db/` built databases, `derived/` census files, `reference/` (`skkg-app/fieldDefinitions.yml`).
 
@@ -51,7 +51,7 @@ Scripts that take `STORE_DIR` open the store with `Store.read_only`, which is mu
 ## Data sources
 
 - REST API, public and read only for our purposes: `https://api.digital.skkg.ch/api/v1`. JSON-LD on CIDOC-CRM and Linked Art. OpenAPI specs at `/graphs/skkg/configuration/doc/data/` and `/graphs/cms/configuration/doc/data/`. Endpoint URLs follow `/graphs/{graph}/data/{endpointId}/{recordId}/`, e.g., `skkgapi:RetrieveObject`.
-- Full RDF dump (Turtle, 187 MB gzip, updated by SKKG): `latest-dump.ttl.gz`. `latest-partial-dump.ttl.gz` (33 MB) is a development sample, not a public subset. Local copies in `data/raw/full/` and `data/raw/partial/`, each with a `headers.txt` holding the ETag. Treat them as untrusted input: run Python with `-I` and keep scripts outside `data/raw/`.
+- Full RDF dump (Turtle, 187 MB gzip, updated by SKKG): `latest-dump.ttl.gz`, at the source configured in `skkg-pipeline`; SKKG does not advertise its URL, so never write it into the repository. `latest-partial-dump.ttl.gz` (33 MB) is a development sample, not a public subset. Local copies in `data/raw/full/` and `data/raw/partial/`, each with a `headers.txt` holding the ETag. Treat them as untrusted input: run Python with `-I` and keep scripts outside `data/raw/`.
 - IIIF Image API 3: `https://iiif.digital.skkg.ch/iiif/3/`.
 - Reference code: `swiss-art-research-net/skkg-pipeline` (no license, so read it but don't copy it) and `swiss-art-research-net/skkg-app` (MIT; `src/fieldDefinitions.yml` holds about 100 SPARQL query patterns).
 
@@ -102,11 +102,11 @@ The service `skkg-mcp` runs on Railway (`docs/deploy.md`). A push to `main` that
 - **`UNION` inside a join is very slow in Oxigraph:** run one query per branch.
 - **`BIND` inside `OPTIONAL` or a `UNION` branch** can't see outer variables; it silently yields nothing or scans the whole store. Use `FILTER EXISTS` or `BIND(IF(BOUND(?x), ...))` outside the group.
 - **No slash in a prefixed name:** `d:type/invnr` is a syntax error. Write `<https://data.skkg.ch/type/invnr>`.
-- **Labels in several languages:** grouping by `rdfs:label` repeats rows; filter on `LANG(?label)`. Some parts are typed by Getty AAT URIs, e.g., address name parts.
+- **Labels in several languages:** grouping by `rdfs:label` repeats rows; filter on `LANG(?label)`. Some parts, e.g., the parts of address names, are typed by Getty AAT URIs.
 - **Duplicate triples in the dump:** the parser counts 31.9 million triples, the store keeps 24.7 million quads. Count with SPARQL on the store when exact numbers matter.
 - **QLever-only syntax:** `FILTER KEYWORDS` only works on QLever. Wikidata and GND data (`wdt:`, `geo:`) is already in the main dump (`notes/10-schema-census.md`).
 - **`SKKG_FULL_DB` takes a path, not a flag:** `SKKG_FULL_DB=1` fails every full-database test with "database was not found at 1". Set it to `data/db/skkg-20261028.sqlite`.
-- **Railway apply and ssh are the user's:** auto mode blocks `railway config apply` and ssh to production; the user runs them with `!`. `railway config plan` is read only; stop if it changes another service of `endearing-warmth`, a volume, or a mount. Never drop `partial` from `.railway/railway.ts`: without it the file stands for the whole project, and the apply deletes the siblings' services.
+- **Railway apply and ssh are the user's:** auto mode blocks `railway config apply` and ssh to production; the user runs them with `!`. `railway config plan` is read only; stop if it changes another service of the Railway project, a volume, or a mount. Never drop `partial` from `.railway/railway.ts`: without it the file stands for the whole project, and the apply deletes the siblings' services.
 - **`railway variable set` redeploys:** add `--skip-deploys` to set a variable without a deploy.
 - **`npm run mutate` has no `--help`:** unknown flags start the full run, and piping it into `head` kills it with a mutant left in `src/`. Write its output to a file, and check `git status` after any interrupted run.
 - **Two id schemes:** objects, multimedia, persons, literature, exhibitions and addresses have numeric (`object/2432`) or UUID ids, as separate records. Match both.

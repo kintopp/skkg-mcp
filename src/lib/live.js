@@ -1,5 +1,5 @@
 // `live: true` of skkg_get_object: SKKG's current record from RetrieveObject, compared field by
-// field with the dump (notes/08, "Rights in RetrieveObject"). The API's records embed the names
+// field with the dump. The API's records embed the names
 // of persons, which no build check has seen, so only ids, dates, and licence labels are read
 // from them, and the API's credit line is compared but never quoted.
 

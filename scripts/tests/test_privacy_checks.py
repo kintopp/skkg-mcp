@@ -1,6 +1,5 @@
 """Each test injects one leak into a copy of the fixture database and expects the privacy check
-that covers it to fail; the clean copy passes them all. The cases follow the injections of
-notes/reviews/2026-11-05-privacy-checks-claude.md and …-fix-commits-and-privacy-gpt.md.
+that covers it to fail; the clean copy passes them all.
 
 Ways the checks could fail, which the tests below pin:
 - a check trusts the loader's own output (the private flag, the organisation column) instead of

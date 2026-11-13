@@ -11,7 +11,7 @@ never replaces a good database. Run from the project root, e.g.:
       data/db/skkg-20261028.sqlite --headers data/raw/full/headers.txt \
       --census data/derived/shape_census-20261028.json
 
-Privacy rules (notes/06, notes/09) are enforced here, not in the server: the given names,
+Privacy rules are enforced here, not in the server: the given names,
 surnames and alternative names of address records are never written. An address that has
 them gets a label built from its organisation (or "Privatperson") and place, and loses its
 coordinates and website. The full names of those persons that no SKKG person record carries
@@ -53,7 +53,7 @@ PREFIX aat: <http://vocab.getty.edu/aat/>
 PREFIX d: <https://data.skkg.ch/>
 """
 
-# Scheme ids that tools expose as facets (notes/11). Other schemes keep their SKKG name.
+# Scheme ids that tools expose as facets. Other schemes keep their SKKG name.
 FACETS = {
     "21087": "object_type", "42156": "material", "22086": "material", "42157": "technique",
     "40088": "epoch", "21118": "production_role", "21117": "attribution",
@@ -80,7 +80,7 @@ AAT_CREDIT = AAT + "300026687"
 AAT_EDITION = AAT + "300435435"
 AAT_MATERIAL_STATEMENT = AAT + "300435429"
 # SKKG's published credit line (the API's skkgapi:credit_line) joins this, the object's credit
-# text, and the year of its acquisition in four digits ("0996"); the dump holds only the last two (notes/08).
+# text, and the year of its acquisition in four digits ("0996"); the dump holds only the last two.
 CREDIT_LINE_HOLDER = "Stiftung für Kunst, Kultur und Geschichte, Winterthur"
 AAT_GIVEN, AAT_SURNAME, AAT_ORG = AAT + "300404651", AAT + "300404652", AAT + "300445020"
 ANON_ACTOR = "person/privateIndividual"
@@ -311,7 +311,7 @@ def year(value):
 
 
 # A side of a provenance period that SKKG leaves open is stored as this year or its negative,
-# beyond every year the search tools accept (notes/11).
+# beyond every year the search tools accept.
 OPEN_YEAR = 9999
 
 
@@ -1350,7 +1350,7 @@ def load_groups(src, db):
 
 # Of the links to objects (the columns the DDL declares REFERENCES objects(id)), those whose rows
 # are dropped when the object is not in the database, or the link is NULL: a period's chain is its
-# objects. The links of the other columns to missing objects are counted and kept (notes/09).
+# objects. The links of the other columns to missing objects are counted and kept.
 DROPPED_LINKS = {("provenance_objects", "object_id")}
 
 
@@ -1360,7 +1360,7 @@ def object_links(db):
     return [(t, fk[3]) for t in tables for fk in db.execute(f"PRAGMA foreign_key_list({t})") if fk[2] == "objects"]
 
 
-# A period with one date (notes/11). The qualifier of the dated side either opens the other side
+# A period with one date. The qualifier of the dated side either opens the other side
 # (a begin "seit": held from that date on; an end "bis": held until then) or qualifies the date
 # itself ("um", "vmtl.", "spätestens", "vor", "nach"), so the date is one event, e.g. an auction
 # day. SKKG writes an unknown other side as the qualifier "o. D." with a bound of 9999-12-31 or
@@ -1463,7 +1463,7 @@ UNLINKED_MULTIMEDIA = ("NOT EXISTS (SELECT 1 FROM object_multimedia x WHERE x.mu
 def drop_unlinked_multimedia(db):
     """Drop the multimedia records that no object or exhibition links. SKKG's website shows an image only on
     the page of its object or exhibition, and these are mostly covers of library books named by shelf mark,
-    whose number can equal an object's inventory number (notes/08, "Images linked to no record")."""
+    whose number can equal an object's inventory number."""
     records, published = db.execute(f"SELECT COUNT(*), COUNT(iiif_service) FROM multimedia WHERE {UNLINKED_MULTIMEDIA}").fetchone()
     db.execute(f"DELETE FROM multimedia WHERE {UNLINKED_MULTIMEDIA}")
     return {"records": records, "with_iiif_image": published}
@@ -1661,11 +1661,11 @@ def _group(cursor):
 # ---------------------------------------------------------------- private names in text
 
 REDACTED = "Privatperson"
-# Fields the website does not show, where a protected name is replaced (notes/09).
+# Fields the website does not show, where a protected name is replaced.
 REDACT_FIELDS = (("object_identifiers", "value"), ("object_conditions", "note"), ("object_relations", "label"),
                  ("terms", "label"), ("terms", "label_de"), ("terms", "label_en"), ("terms", "label_fr"),
                  ("term_labels", "label"))
-# Fields the website shows whole, names included, so they keep them (notes/09). A protected name
+# Fields the website shows whole, names included, so they keep them. A protected name
 # anywhere else fails the build, so a field that starts to carry one gets a decision first.
 NAMES_SHOWN = {("acquisitions", "note"), ("object_dates", "note"), ("exhibitions", "label"), ("exhibitions", "title")}
 
@@ -1739,7 +1739,7 @@ class Names:
 
 
 def protected_names(src):
-    """Full names of private address persons that no SKKG person record carries (notes/09), with
+    """Full names of private address persons that no SKKG person record carries, with
     each person's organisation. Read only to find the names in text; they are never written."""
     q = lambda query: src.q("address", query)
     parts = defaultdict(lambda: defaultdict(list))

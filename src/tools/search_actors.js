@@ -220,7 +220,7 @@ function fromSql(c, kinds) {
 function actorRow(db, id, lang) {
   const a = stmt(db, 'SELECT * FROM actors WHERE id = ?').get(id);
   const roles = roleCounts(db, id);
-  // The website's "produced by" filter lists the objects of both relations (notes/08).
+  // The website's "produced by" filter lists the objects of both relations.
   const works = roles.some((r) => r.as === 'creator' || r.as === 'influence');
   return prune({
     id,

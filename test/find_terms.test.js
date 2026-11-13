@@ -317,7 +317,7 @@ test('skkg_find_terms against the fixture database', { skip: FIXTURE_DB.skip }, 
       const offered = tools.find((x) => x.name === NAME).inputSchema.properties.vocabulary.enum.filter((v) => v !== 'all');
       const db = new DatabaseSync(FIXTURE_DB.path, { readOnly: true });
       try {
-        // location is withheld: SKKG's API and website publish no current locations (notes/08).
+        // location is withheld: SKKG's API and website publish no current locations.
         const built = db.prepare("SELECT DISTINCT facet FROM terms WHERE facet IS NOT NULL AND facet != 'location'").all().map((r) => r.facet);
         assert.deepEqual([...offered].sort(), built.sort());
       } finally {

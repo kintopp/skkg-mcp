@@ -55,7 +55,7 @@ export const CANCELLED_VENUE = 'type/26127/149040';
 // More actors than this for one name filter is refused rather than OR-ed together.
 export const MAX_NAME_MATCHES = 25;
 // Vocabularies the server never returns. SKKG's API and website publish no object's current
-// location, and its export replaces storage positions with "Depot" (notes/08). The database
+// location, and its export replaces storage positions with "Depot". The database
 // keeps the locations on purpose: this switch withholds them until SKKG says whether they
 // may be published. An exception to "the build enforces the rules", decided 4 November 2026.
 export const WITHHELD_FACETS = Object.freeze(['location']);
@@ -63,14 +63,14 @@ export const WITHHELD_FACETS = Object.freeze(['location']);
 export const LANGS = Object.freeze(['de', 'en', 'fr']);
 
 // SKKG_CHANNEL_PROBE=1 registers skkg_channel_probe, which shows which result channel a host
-// passes to the model (notes/05, "Which channel reaches the model"). Off in normal use.
+// passes to the model. Off in normal use.
 export const CHANNEL_PROBE_ENV = 'SKKG_CHANNEL_PROBE';
 
 export const DATA_BASE = 'https://data.skkg.ch/';
 export const WEBSITE_BASE = 'https://digital.skkg.ch/de/';
 export const IIIF_IMAGE_BASE = 'https://iiif.digital.skkg.ch/iiif/3/';
 
-// skkg_inspect_image asks for the size the model sees (notes/11, tool 10). A vision encoder
+// skkg_inspect_image asks for the size the model sees. A vision encoder
 // counts one token per 28×28 patch. The edge cap is 71 patches: a request with more than 20
 // images caps every image near 2000 px, and an image over it fails the whole request, again on
 // every later turn. As 1988 is a whole number of patches, an edge within it stays within it padded.
@@ -84,7 +84,7 @@ export const MAX_IMAGE_BYTES = 3_700_000;
 export const IIIF_TIMEOUT_MS = posIntEnv('SKKG_IIIF_TIMEOUT_MS', 30_000, { min: 1000, max: 600_000 });
 export const USER_AGENT = `${SERVER_NAME}/${SERVER_VERSION}`;
 
-// `live: true` of skkg_get_object: one RetrieveObject request (notes/08, "Rights in RetrieveObject").
+// `live: true` of skkg_get_object: one RetrieveObject request.
 export const API_DATA_BASE = 'https://api.digital.skkg.ch/api/v1/graphs/skkg/data/';
 export const API_TIMEOUT_MS = posIntEnv('SKKG_API_TIMEOUT_MS', 30_000, { min: 1000, max: 600_000 });
 export const API_MAX_BYTES = 5_000_000;

@@ -48,3 +48,6 @@ data/
 *.sqlite.tmp
 
 plugin/
+
+# Research notes (local only, not for publication)
+notes/

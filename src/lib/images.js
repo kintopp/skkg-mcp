@@ -1,5 +1,5 @@
 // Published images: their order on an object, and fetching a region of one from SKKG's IIIF
-// server at the size a vision model takes without shrinking it (notes/11, tool 10).
+// server at the size a vision model takes without shrinking it.
 
 import { stmt } from './sql.js';
 import { ToolError } from './errors.js';

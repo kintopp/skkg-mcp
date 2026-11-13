@@ -607,7 +607,7 @@ export function getRecord(db, meta, input) {
   if (past) warnings.push(past);
   const stale = staleWarning(meta);
   if (stale) warnings.push(stale);
-  // The website's "produced by" filter lists the objects of both relations (notes/08).
+  // The website's "produced by" filter lists the objects of both relations.
   const works = body.summary.roles?.some((r) => r.as === 'creator' || r.as === 'influence') ?? false;
   const result = prune({
     id: resolved.id, type, label: body.label, website_url: websiteUrl(resolved.id, { works }), ...body, warnings, data_as_of: meta.data_as_of,

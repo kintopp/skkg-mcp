@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 import { withClient } from './helpers.js';
 import { estimate, toApiTool } from '../scripts/footprint.mjs';
 
-// About 10% above the estimate when set; raise one only in a commit that says why (notes/11).
+// About 10% above the estimate when set; raise one only in a commit that says why.
 const CATALOGUE_BUDGET = 13_000;
 const TOOL_BUDGET = 2_500;
 const INSTRUCTIONS_BUDGET_CHARS = 1_000;
