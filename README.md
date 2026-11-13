@@ -4,7 +4,7 @@
 
 skkg-mcp is a [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [*SKKG Sammlung digital*](https://digital.skkg.ch), the collection of the Stiftung für Kunst, Kultur und Geschichte (SKKG) in Winterthur. Bruno Stefanini founded the collection, which holds about 64,000 objects, including Swiss paintings of the 19th and 20th centuries, works on paper, furniture, arms, coins, and everyday objects. Its records include images, provenance chains, literature, exhibitions, and SKKG's own acquisitions with their prices.
 
-With the server, a researcher can search the collection in natural language, count and cross-tabulate its objects, follow an object's provenance, and look at its images. The metadata is in German, so the model translates the user's search terms where needed and searches with German words and SKKG's vocabulary labels. Every result that contains an object or an image reports both kinds of rights, the licence of the photograph and the copyright status of the object.
+With the server, a researcher can search the collection in natural language, count and cross-tabulate its objects, follow an object's provenance, and look at its images. The server reads a dated snapshot of the data that SKKG publishes, so it does not include changes that SKKG made after that date. The metadata is in German, so the model translates the user's search terms where needed and searches with German words and SKKG's vocabulary labels. Every result that contains an object or an image reports both kinds of rights, the licence of the photograph and the copyright status of the object.
 
 The [Research and Infrastructure Support](https://rise.unibas.ch/en/) (RISE) group at the University of Basel developed this server. We want to explore the research opportunities, the methodological risks, and the technical problems of retrieving and analysing data with large language models. If you would like to collaborate with us on this, please [get in touch](mailto:rise@unibas.ch).
 
@@ -12,7 +12,27 @@ The [Research and Infrastructure Support](https://rise.unibas.ch/en/) (RISE) gro
 
 ### Hosted (Streamable HTTP)
 
-We have set up a hosted instance for testing, but its URL is not public yet. To host your own instance, see [docs/deploy.md](docs/deploy.md).
+The easiest way to start is with [claude.ai](https://claude.ai) or [Claude Desktop](https://claude.com/download). Add the hosted server to Claude as a [custom connector](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp) with this URL:
+
+```
+https://skkg-mcp-production.up.railway.app/mcp
+```
+
+1. Go to _Customize_ → _Connectors_ → _Add custom connector_.
+2. Give the connector a name, such as "SKKG", and paste the URL into the _Remote MCP Server URL_ field. The server needs no authentication, so leave those settings empty.
+3. If you like, set the permissions for its tools, for example to "Always allow". All tools are read only.
+
+Anthropic's [instructions](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp) give more details.
+
+Other clients that support remote MCP servers use the same URL:
+
+- **Claude Code:** `claude mcp add --transport http skkg https://skkg-mcp-production.up.railway.app/mcp`
+- **ChatGPT desktop app and Codex:** add a `[mcp_servers.skkg]` table with `url = "https://skkg-mcp-production.up.railway.app/mcp"` to `~/.codex/config.toml`.
+- **ChatGPT chats:** currently (November 2026), ChatGPT connects a custom MCP server in a chat only through a plugin. See OpenAI's documentation.
+
+For other clients, see their documentation. The image viewer of `skkg_view_image` appears only in clients that support MCP Apps. In other clients, the model links to the object's page on SKKG's website instead.
+
+The hosted server needs no account. Searches and counts run on the server's own database, and only the image tools and `live: true` fetch data from SKKG's servers. To host your own instance, see [docs/deploy.md](docs/deploy.md).
 
 ### Local (stdio)
 
