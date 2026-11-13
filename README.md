@@ -4,7 +4,7 @@
 
 skkg-mcp is a [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [*SKKG Sammlung digital*](https://digital.skkg.ch), the collection of the Stiftung für Kunst, Kultur und Geschichte (SKKG) in Winterthur. Bruno Stefanini founded the collection, which holds about 64,000 objects, including Swiss paintings of the 19th and 20th centuries, works on paper, furniture, arms, coins, and everyday objects. Its records include images, provenance chains, literature, exhibitions, and SKKG's own acquisitions with their prices.
 
-With the server, a researcher can search the collection in natural language, count and cross-tabulate its objects, follow an object's provenance, and look at its images. The server reads a dated snapshot of the data that SKKG publishes, so it does not include changes that SKKG made after that date. The metadata is in German, so the model translates the user's search terms where needed and searches with German words and SKKG's vocabulary labels. Every result that contains an object or an image reports both kinds of rights, the licence of the photograph and the copyright status of the object.
+With the server, a researcher can search the collection in natural language, count and cross-tabulate its objects, follow an object's provenance, and look at its images. The metadata is in German, so the model translates the user's search terms where needed and searches with German words and SKKG's vocabulary labels. Every result that contains an object or an image reports both kinds of rights, the licence of the photograph and the copyright status of the object. Note: Currently, skkg-mcp reads a snapshot of the data published by the SKKG on 28 October 2026, so it will not include changes made after that date.
 
 The [Research and Infrastructure Support](https://rise.unibas.ch/en/) (RISE) group at the University of Basel developed this server. We want to explore the research opportunities, the methodological risks, and the technical problems of retrieving and analysing data with large language models. If you would like to collaborate with us on this, please [get in touch](mailto:rise@unibas.ch).
 
@@ -18,7 +18,7 @@ The easiest way to start is with [claude.ai](https://claude.ai) or [Claude Deskt
 https://skkg-mcp-production.up.railway.app/mcp
 ```
 
-1. Go to _Customize_ → _Connectors_ → _Add custom connector_.
+1. Go to _Settings_ → _Customize_ → _Connectors_ → _Add custom connector_.
 2. Give the connector a name, such as "SKKG", and paste the URL into the _Remote MCP Server URL_ field. The server needs no authentication, so leave those settings empty.
 3. If you like, set the permissions for its tools, for example to "Always allow". All tools are read only.
 

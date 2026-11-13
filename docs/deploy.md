@@ -60,7 +60,7 @@ For a new database, upload it under its own name beside the old one, check its c
 
 ## Add it to claude.ai
 
-Settings, Connectors, Add custom connector. Use the URL `https://<domain>/mcp` and no authentication.
+Settings, Customize, Connectors, Add custom connector. Use the URL `https://<domain>/mcp` and no authentication.
 
 ## Limits
 
