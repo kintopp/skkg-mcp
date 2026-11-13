@@ -4,8 +4,8 @@ description: Sends the model to the research guidance of the skkg server (skkg_g
 license: MIT
 compatibility: Requires the skkg-mcp MCP server and its local SKKG database file (SKKG_DB_PATH). Image and live rights calls need network access.
 metadata:
-  version: "0.1.0"
-  last_updated: "2026-11-06"
+  version: "0.5.0"
+  last_updated: "2026-11-13"
 ---
 
 # SKKG Sammlung digital
