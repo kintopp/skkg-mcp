@@ -11,6 +11,8 @@ The working tree also holds the research behind the server:
 - `notes/` (local only, gitignored): findings about the data, the API and the terms. Read `notes/README.md` first and `notes/05-open-questions.md` for what is still unchecked. `notes/11-mcp-tool-list.md` is the tool spec. The notes are the source of truth for findings: update them when one changes. Never quote the names of private address records in them.
 - `scripts/`: the Python data pipeline (`load_oxigraph.py`, `build_db.py`) and one-off analyses in `scripts/analysis/`. Use `uv`.
 - `data/` (gitignored, never committed): `raw/` dumps, `oxigraph/` store, `db/` built databases, `derived/` census files, `reference/` (`skkg-app/fieldDefinitions.yml`).
+- `docs/`: `deploy.md` and `database-schema.md`. The schema doc describes the downloadable database, a release asset kept outside git. It names one file and its SHA-256, so update both when a new database is published.
+- `plugin/` (gitignored): the agent plugin bundle for the hosted URL. It has its own version, not `package.json`'s.
 
 ## Commands
 
@@ -32,6 +34,8 @@ The working tree also holds the research behind the server:
 | Inspector | `SKKG_DB_PATH=… npm run inspector` |
 | Rebuild the viewer page `src/apps/image-viewer.html` (committed; `test/viewer_build.test.js` fails when it is stale) | `npm run build:viewer` |
 | Viewer preview in a browser, with a sample result | `npm run dev:viewer` |
+
+`20261028` is the date of the current dump. A rebuild changes it in every path here and in `src/CLAUDE.md` and `test/CLAUDE.md`.
 
 Data pipeline, run from the project root:
 
@@ -89,6 +93,8 @@ Summarized in `notes/02-open-data-policy-and-terms.md`. Metadata is free to reus
 ## Deployment
 
 The service `skkg-mcp` runs on Railway (`docs/deploy.md`). A push to `main` that touches `src/`, `package.json`, or `package-lock.json` redeploys it, so push only when the user asks. The database on its volume is uploaded by hand.
+
+A release bumps the version in `package.json`, `package-lock.json`, the README citation, and the frontmatter of `skill/skkg/SKILL.md` (`version`, `last_updated`).
 
 ## Common errors
 
