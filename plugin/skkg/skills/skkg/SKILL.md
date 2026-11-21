@@ -10,13 +10,8 @@ metadata:
 
 # SKKG Sammlung digital
 
-Before the first `skkg_*` search, read the guide with `skkg_guide`: start with its default
-topic, then read the topics the question needs; each result names the others.
-The guide comes from the skkg server, so it always matches the server's tools. This skill
-holds no guidance of its own, so it does not go out of date when the server is updated.
+Before the first `skkg_*` search, read the guide with `skkg_guide`: start with its default topic, then read the topics the question needs; each result names the others. The guide comes from the skkg server, so it always matches the server's tools.
 
 ## Your own notes
 
-None yet. Add your own preferences here, for example the parts of the collection you work
-on, how you want results cited, or the language of summaries. Do not copy the guide into
-this file: a copy goes stale when the server is updated.
+None yet. Edit this skill to give the AI assistant your own instructions for working with the SKKG collection, for example the parts of the collection you work on, how you want results cited, or the language of summaries. Don't copy the guide here: a copy goes stale when the server is updated.

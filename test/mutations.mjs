@@ -717,6 +717,7 @@ const MUTATIONS = [
   ["src/http.js", "    log('error', `database unavailable: ${err.message}`);\n", "", "health logs why the database is unavailable"],
   ["src/db.js", "    throw new ToolError('The SKKG database was not found.',", "    throw new ToolError(`The SKKG database was not found at ${path}.`,", "a missing database's path stays out of results"],
   ["src/db.js", "    console.error(JSON.stringify({ level: 'error', msg: 'database not found', path: resolve(path) }));\n", "", "the log names a missing database's path"],
+  ["skill/skkg/SKILL.md", "start with its default topic", "start with its default\ntopic", "skill paragraphs are one line"],
   // plugin/skkg/ (test/skill.test.js): the committed files a marketplace installs.
   ["plugin/skkg/skills/skkg/SKILL.md", "# SKKG Sammlung digital", "# SKKG Sammlung", "plugin: skill copy matches skill/skkg/"],
   ["plugin/skkg/.claude-plugin/plugin.json", "\"version\": \"", "\"version\": \"0.", "plugin: Claude manifest carries the version"],

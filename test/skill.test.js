@@ -8,6 +8,7 @@
 // - The skill gains guidance of its own, a copy that goes stale when the server's guide
 //   changes, or stops sending the model to skkg_guide.
 // - The skill names a topic of the guide, which an installed copy keeps after the guide renames it.
+// - SKILL.md hard-wraps a paragraph, which ChatGPT's skill page shows as broken lines.
 // - plugin/skkg/ goes stale: its skill copy differs from skill/skkg/, or a manifest keeps an old
 //   version, so installed plugins never update.
 // - A plugin MCP config points elsewhere, uses the other platform's transport name, carries a key
@@ -30,6 +31,15 @@ test('the skill holds no guidance and sends the model to skkg_guide', () => {
   const body = source.slice(source.indexOf('\n---\n', 4) + 5);
   assert.deepEqual([...body.matchAll(/^## (.+)$/gm)].map((m) => m[1]), ['Your own notes']);
   assert.match(body, /read the guide with `skkg_guide`/);
+});
+
+// ChatGPT's skill page keeps line breaks inside a paragraph; Claude joins them.
+test('each paragraph of the skill body is one line', () => {
+  const body = source.slice(source.indexOf('\n---\n', 4) + 5);
+  for (const block of body.trim().split(/\n\n+/)) {
+    if (/^[-*|]|^\d+\. /.test(block)) continue;
+    assert.ok(!block.includes('\n'), `a paragraph is wrapped: ${block.slice(0, 60)}`);
+  }
 });
 
 test('the skill names no topic of the guide', () => {
