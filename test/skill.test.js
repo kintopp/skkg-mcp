@@ -13,7 +13,8 @@
 // - A plugin MCP config points elsewhere, uses the other platform's transport name, carries a key
 //   the Agent Plugins schema rejects, or renames the connector, which makes every user reconnect.
 // - The plugin gains a top-level bin/, which claude.ai refuses.
-// - The display name differs between the manifests and the skill's agents/openai.yaml.
+// - The plugin loses its display name in a manifest, or ChatGPT shows the skill under a name
+//   other than SKKG (agents/openai.yaml).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -129,10 +130,13 @@ test('the plugin has no top-level bin/ directory, which claude.ai refuses', () =
   assert.ok(!existsSync(join(PLUGIN, 'bin')));
 });
 
-// ChatGPT otherwise title-cases the skill's name into "Skkg".
-test('the manifests and the skill\'s openai.yaml give the display name "SKKG Collection"', () => {
+test('both plugin manifests give the display name "SKKG Collection"', () => {
   assert.equal(readJson('.claude-plugin', 'plugin.json').displayName, 'SKKG Collection');
   assert.equal(readJson('plugin.json').extensions?.['com.openai']?.interface?.displayName, 'SKKG Collection');
+});
+
+// ChatGPT otherwise title-cases the skill's name into "Skkg".
+test('the skill gives ChatGPT the display name "SKKG"', () => {
   const yaml = readFileSync(join(ROOT, 'skill', 'skkg', 'agents', 'openai.yaml'), 'utf8');
-  assert.match(yaml, /^interface:\n {2}display_name: "SKKG Collection"$/m);
+  assert.match(yaml, /^interface:\n {2}display_name: "SKKG"$/m);
 });

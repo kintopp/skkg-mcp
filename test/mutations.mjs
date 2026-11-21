@@ -725,7 +725,7 @@ const MUTATIONS = [
   ["plugin/skkg/plugin.json", "schemas/1.0.0/plugin.schema.json", "schemas/0.9.0/plugin.schema.json", "plugin: Agent Plugins manifest schema"],
   ["plugin/skkg/.claude-plugin/plugin.json", "\"displayName\": \"SKKG Collection\"", "\"displayName\": \"SKKG\"", "plugin: Claude display name"],
   ["plugin/skkg/plugin.json", "\"displayName\": \"SKKG Collection\"", "\"displayName\": \"SKKG\"", "plugin: ChatGPT display name"],
-  ["skill/skkg/agents/openai.yaml", "display_name: \"SKKG Collection\"", "display_name: \"SKKG\"", "plugin: skill display name for ChatGPT"],
+  ["skill/skkg/agents/openai.yaml", "display_name: \"SKKG\"", "display_name: \"Skkg\"", "plugin: skill display name for ChatGPT"],
   ["plugin/skkg/.mcp.json", "\"type\": \"http\"", "\"type\": \"streamable-http\"", "plugin: Claude transport is http"],
   ["plugin/skkg/.mcp.json", "\"SKKG\": {", "\"skkg\": {", "plugin: connector key SKKG"],
   ["plugin/skkg/mcp.json", "\"url\": \"https://skkg-mcp-production.up.railway.app/mcp\"", "\"url\": \"https://skkg-mcp-production.up.railway.app/mcp\",\n      \"headers\": {}", "plugin: no extra server keys"],
