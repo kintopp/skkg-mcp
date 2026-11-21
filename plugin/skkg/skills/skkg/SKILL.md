@@ -14,4 +14,4 @@ Before the first `skkg_*` search, read the guide with `skkg_guide`: start with i
 
 ## Your own notes
 
-None yet. Edit this skill to give the AI assistant your own instructions for working with the SKKG collection, for example the parts of the collection you work on, how you want results cited, or the language of summaries. Don't copy the guide here: a copy goes stale when the server is updated.
+_Edit this skill to give the AI assistant your own instructions for working with the SKKG collection, for example the parts of the collection you work on, how you want results cited, or the language of summaries._
