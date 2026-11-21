@@ -1,0 +1,3 @@
+interface:
+  display_name: "SKKG Collection"
+  short_description: "Sends the model to the SKKG server's research guide"

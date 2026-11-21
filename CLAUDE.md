@@ -12,7 +12,7 @@ The working tree also holds the research behind the server:
 - `scripts/`: the Python data pipeline (`load_oxigraph.py`, `build_db.py`) and one-off analyses in `scripts/analysis/`. Use `uv`.
 - `data/` (gitignored, never committed): `raw/` dumps, `oxigraph/` store, `db/` built databases, `derived/` census files, `reference/` (`skkg-app/fieldDefinitions.yml`).
 - `docs/`: `deploy.md` and `database-schema.md`. The schema doc describes the downloadable database, a release asset kept outside git. It names one file and its SHA-256, so update both when a new database is published.
-- `plugin/` (gitignored): the agent plugin bundle for the hosted URL. It has its own version, not `package.json`'s.
+- `plugin/skkg/`: the plugin for Claude and ChatGPT (hosted connector plus skill) that the `kintopp/kintopp-plugins` marketplace installs. `npm run build:skill` writes its skill copy and `package.json`'s version into both manifests; don't edit those by hand.
 
 ## Commands
 
@@ -32,6 +32,7 @@ The working tree also holds the research behind the server:
 | Streamable HTTP on port 3000 (`PORT`), `POST /mcp` and `GET /health` | `SKKG_DB_PATH=data/db/skkg-20261028.sqlite npm run serve` |
 | Preview the Railway configuration (`.railway/railway.ts`, read only; `docs/deploy.md`) | `railway config plan` |
 | Inspector | `SKKG_DB_PATH=… npm run inspector` |
+| Copy `skill/skkg/` into `plugin/skkg/` and write the version into its manifests (`test/skill.test.js` fails when they are stale) | `npm run build:skill` |
 | Rebuild the viewer page `src/apps/image-viewer.html` (committed; `test/viewer_build.test.js` fails when it is stale) | `npm run build:viewer` |
 | Viewer preview in a browser, with a sample result | `npm run dev:viewer` |
 
@@ -94,7 +95,7 @@ Summarized in `notes/02-open-data-policy-and-terms.md`. Metadata is free to reus
 
 The service `skkg-mcp` runs on Railway (`docs/deploy.md`). A push to `main` that touches `src/`, `package.json`, or `package-lock.json` redeploys it, so push only when the user asks. The database on its volume is uploaded by hand.
 
-A release bumps the version in `package.json`, `package-lock.json`, the README citation, and the frontmatter of `skill/skkg/SKILL.md` (`version`, `last_updated`).
+A release bumps the version in `package.json`, `package-lock.json`, the README citation, and the frontmatter of `skill/skkg/SKILL.md` (`version`, `last_updated`), then runs `npm run build:skill`. Installed plugins update only when the version changes.
 
 ## Common errors
 

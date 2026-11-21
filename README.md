@@ -28,6 +28,17 @@ For other LLM clients, please see their respective documentation. The image view
 
 The hosted server needs no account. Searches and counts run on the server's own database, and only the image tools and `live: true` fetch data from SKKG's servers. To host your own instance, see [docs/deploy.md](docs/deploy.md).
 
+### Plugin (connector and skill)
+
+The SKKG Collection plugin installs the hosted connector and the [skill](#skill) together. It is listed in the [kintopp-plugins](https://github.com/kintopp/kintopp-plugins) marketplace.
+
+- **claude.ai or Claude Desktop:** go to _Customize_ → _Plugins_ → _Add_ → _Add marketplace_ and enter `kintopp/kintopp-plugins`. Add the plugin, then connect its connector on the plugin's _Connectors_ tab.
+- **Claude Code:** `claude plugin marketplace add kintopp/kintopp-plugins`, then `claude plugin install skkg@kintopp-plugins`.
+- **ChatGPT desktop app:** go to _Plugins_ → _Add plugin marketplace_, enter `kintopp/kintopp-plugins` as the Source, and leave Git ref and Sparse paths empty. Then install the plugin from the plugin browser. The plugin runs only in Codex mode, not in ordinary ChatGPT chats. ChatGPT on the web (chatgpt.com) can't add a marketplace.
+- **Codex CLI:** `codex plugin marketplace add kintopp/kintopp-plugins`, then `codex plugin add skkg@kintopp-plugins`.
+
+Whether the image viewer appears when the connector comes from the plugin has not been tested yet. For the viewer, add the hosted server as a custom connector, as described above.
+
 ### Local (stdio)
 
 Requirements: Node.js ≥ 24.22.1 < 25 (no native dependencies), and the server's SQLite database (see [Building the database](#building-the-database)).
@@ -60,7 +71,7 @@ To check the install without a client, run `npm test`, which uses a small test d
 
 ### Skill
 
-The model's guidance is part of the server, which serves it with `skkg_guide` one topic at a time, so the guidance always matches the tools. The skill in [skill/skkg/](skill/skkg/) is a short file that sends the model to `skkg_guide` and leaves room for your own notes. Installing it is optional. To install it in Claude, zip the `skkg` folder and follow [these instructions](https://claude.com/resources/tutorials/teach-claude-your-way-of-working-using-skills). For other clients, please see their respective documentation.
+The model's guidance is part of the server, which serves it with `skkg_guide` one topic at a time, so the guidance always matches the tools. The skill in [skill/skkg/](skill/skkg/) is a short file that sends the model to `skkg_guide` and leaves room for your own notes. Installing it is optional. The [plugin](#plugin-connector-and-skill) installs it with the connector. To install it in Claude on its own, zip the `skkg` folder and follow [these instructions](https://claude.com/resources/tutorials/teach-claude-your-way-of-working-using-skills). For other clients, please see their respective documentation.
 
 ## Tools
 

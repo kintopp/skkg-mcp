@@ -717,6 +717,24 @@ const MUTATIONS = [
   ["src/http.js", "    log('error', `database unavailable: ${err.message}`);\n", "", "health logs why the database is unavailable"],
   ["src/db.js", "    throw new ToolError('The SKKG database was not found.',", "    throw new ToolError(`The SKKG database was not found at ${path}.`,", "a missing database's path stays out of results"],
   ["src/db.js", "    console.error(JSON.stringify({ level: 'error', msg: 'database not found', path: resolve(path) }));\n", "", "the log names a missing database's path"],
+  // plugin/skkg/ (test/skill.test.js): the committed files a marketplace installs.
+  ["plugin/skkg/skills/skkg/SKILL.md", "# SKKG Sammlung digital", "# SKKG Sammlung", "plugin: skill copy matches skill/skkg/"],
+  ["plugin/skkg/.claude-plugin/plugin.json", "\"version\": \"", "\"version\": \"0.", "plugin: Claude manifest carries the version"],
+  ["plugin/skkg/plugin.json", "\"version\": \"", "\"version\": \"0.", "plugin: Agent Plugins manifest carries the version"],
+  ["plugin/skkg/.claude-plugin/plugin.json", "\"name\": \"skkg\",", "\"name\": \"skkg-collection\",", "plugin: Claude manifest names the plugin"],
+  ["plugin/skkg/plugin.json", "schemas/1.0.0/plugin.schema.json", "schemas/0.9.0/plugin.schema.json", "plugin: Agent Plugins manifest schema"],
+  ["plugin/skkg/.claude-plugin/plugin.json", "\"displayName\": \"SKKG Collection\"", "\"displayName\": \"SKKG\"", "plugin: Claude display name"],
+  ["plugin/skkg/plugin.json", "\"displayName\": \"SKKG Collection\"", "\"displayName\": \"SKKG\"", "plugin: ChatGPT display name"],
+  ["skill/skkg/agents/openai.yaml", "display_name: \"SKKG Collection\"", "display_name: \"SKKG\"", "plugin: skill display name for ChatGPT"],
+  ["plugin/skkg/.mcp.json", "\"type\": \"http\"", "\"type\": \"streamable-http\"", "plugin: Claude transport is http"],
+  ["plugin/skkg/.mcp.json", "\"SKKG\": {", "\"skkg\": {", "plugin: connector key SKKG"],
+  ["plugin/skkg/mcp.json", "\"url\": \"https://skkg-mcp-production.up.railway.app/mcp\"", "\"url\": \"https://skkg-mcp-production.up.railway.app/mcp\",\n      \"headers\": {}", "plugin: no extra server keys"],
+  ["plugin/skkg/mcp.json", "skkg-mcp-production.up", "skkg-mcp-beta.up", "plugin: ChatGPT config on the hosted URL"],
+  ["plugin/skkg/plugin.json", "\"name\": \"skkg\",", "\"name\": \"skkg-collection\",", "plugin: Agent Plugins manifest names the plugin"],
+  ["plugin/skkg/.mcp.json", "skkg-mcp-production.up", "skkg-mcp-beta.up", "plugin: Claude config on the hosted URL"],
+  ["plugin/skkg/mcp.json", "\"SKKG\": {", "\"skkg\": {", "plugin: ChatGPT connector key SKKG"],
+  ["plugin/skkg/mcp.json", "\"type\": \"streamable-http\"", "\"type\": \"http\"", "plugin: ChatGPT transport is streamable-http"],
+  ["plugin/skkg/mcp.json", "schemas/1.0.0/mcp.schema.json", "schemas/0.9.0/mcp.schema.json", "plugin: Agent Plugins MCP config schema"],
 ];
 
 // The cache key changes with the entry, so an edited entry has no record and is selected.
