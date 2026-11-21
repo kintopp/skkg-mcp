@@ -15,7 +15,7 @@
 //   the Agent Plugins schema rejects, or renames the connector, which makes every user reconnect.
 // - The plugin gains a top-level bin/, which claude.ai refuses.
 // - The plugin loses its display name in a manifest, or ChatGPT shows the skill under a name
-//   other than SKKG (agents/openai.yaml).
+//   other than Custom SKKG (agents/openai.yaml).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -146,7 +146,7 @@ test('both plugin manifests give the display name "SKKG Collection"', () => {
 });
 
 // ChatGPT otherwise title-cases the skill's name into "Skkg".
-test('the skill gives ChatGPT the display name "SKKG"', () => {
+test('the skill gives ChatGPT the display name "Custom SKKG"', () => {
   const yaml = readFileSync(join(ROOT, 'skill', 'skkg', 'agents', 'openai.yaml'), 'utf8');
-  assert.match(yaml, /^interface:\n {2}display_name: "SKKG"$/m);
+  assert.match(yaml, /^interface:\n {2}display_name: "Custom SKKG"$/m);
 });
