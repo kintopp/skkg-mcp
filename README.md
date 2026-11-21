@@ -71,7 +71,7 @@ To check the install without a client, run `npm test`, which uses a small test d
 
 ### Skill
 
-The model's guidance is part of the server, which serves it with `skkg_guide` one topic at a time, so the guidance always matches the tools. The skill in [skill/skkg/](skill/skkg/) is a short file that sends the model to `skkg_guide` and leaves room for your own notes. Installing it is optional. The [plugin](#plugin-connector-and-skill) installs it with the connector. To install it in Claude on its own, zip the `skkg` folder and follow [these instructions](https://claude.com/resources/tutorials/teach-claude-your-way-of-working-using-skills). For other clients, please see their respective documentation.
+The model's guidance is part of the server, which serves it with `skkg_guide` one topic at a time, so the guidance always matches the tools. The skill in [skill/skkg/](skill/skkg/) is a short file that sends the model to `skkg_guide`. Installing it is optional. To give the model your own instructions for the collection, such as how to cite results, put them in a second skill or in your project's instructions rather than in this skill, so that an update of the skill doesn't overwrite them. The [plugin](#plugin-connector-and-skill) installs it with the connector. To install it in Claude on its own, zip the `skkg` folder and follow [these instructions](https://claude.com/resources/tutorials/teach-claude-your-way-of-working-using-skills). For other clients, please see their respective documentation.
 
 ## Tools
 

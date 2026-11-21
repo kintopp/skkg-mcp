@@ -15,7 +15,7 @@
 //   the Agent Plugins schema rejects, or renames the connector, which makes every user reconnect.
 // - The plugin gains a top-level bin/, which claude.ai refuses.
 // - The plugin loses its display name in a manifest, or ChatGPT shows the skill under a name
-//   other than Custom SKKG (agents/openai.yaml).
+//   other than SKKG (agents/openai.yaml).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -26,10 +26,11 @@ import { ROOT } from './helpers.js';
 const source = readFileSync(join(ROOT, 'skill', 'skkg', 'SKILL.md'), 'utf8');
 const frontLines = source.split('\n').slice(1, source.split('\n').indexOf('---', 1));
 
-// The guide lives only in src/guide.md; the skill points to it and leaves room for the user's notes.
+// The guide lives only in src/guide.md; the skill points to it and has no sections of its own.
+// Users who want their own instructions add a second skill or project instructions.
 test('the skill holds no guidance and sends the model to skkg_guide', () => {
   const body = source.slice(source.indexOf('\n---\n', 4) + 5);
-  assert.deepEqual([...body.matchAll(/^## (.+)$/gm)].map((m) => m[1]), ['Your own notes']);
+  assert.deepEqual([...body.matchAll(/^## (.+)$/gm)].map((m) => m[1]), []);
   assert.match(body, /read the guide with `skkg_guide`/);
 });
 
@@ -146,7 +147,7 @@ test('both plugin manifests give the display name "SKKG Collection"', () => {
 });
 
 // ChatGPT otherwise title-cases the skill's name into "Skkg".
-test('the skill gives ChatGPT the display name "Custom SKKG"', () => {
+test('the skill gives ChatGPT the display name "SKKG"', () => {
   const yaml = readFileSync(join(ROOT, 'skill', 'skkg', 'agents', 'openai.yaml'), 'utf8');
-  assert.match(yaml, /^interface:\n {2}display_name: "Custom SKKG"$/m);
+  assert.match(yaml, /^interface:\n {2}display_name: "SKKG"$/m);
 });
