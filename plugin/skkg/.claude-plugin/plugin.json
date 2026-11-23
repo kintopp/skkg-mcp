@@ -2,7 +2,7 @@
   "name": "skkg",
   "displayName": "SKKG Collection",
   "version": "0.5.0",
-  "description": "Search the collection of the Stiftung für Kunst, Kultur und Geschichte (SKKG, Winterthur): about 64,000 objects with German metadata, provenance, acquisitions, literature, exhibitions and images.",
+  "description": "Search and view the collection of the Stiftung für Kunst, Kultur und Geschichte (SKKG) in Winterthur: about 64,000 objects with German metadata, provenance, acquisitions, literature, exhibitions and images.",
   "author": {
     "name": "RISE (University of Basel)",
     "url": "https://rise.unibas.ch"

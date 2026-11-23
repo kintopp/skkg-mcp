@@ -733,6 +733,13 @@ const MUTATIONS = [
   ["plugin/skkg/mcp.json", "\"url\": \"https://skkg-mcp-production.up.railway.app/mcp\"", "\"url\": \"https://skkg-mcp-production.up.railway.app/mcp\",\n      \"headers\": {}", "plugin: no extra server keys"],
   ["plugin/skkg/mcp.json", "skkg-mcp-production.up", "skkg-mcp-beta.up", "plugin: ChatGPT config on the hosted URL"],
   ["plugin/skkg/plugin.json", "\"name\": \"skkg\",", "\"name\": \"skkg-collection\",", "plugin: Agent Plugins manifest names the plugin"],
+  ["plugin/skkg/plugin.json", "\"shortDescription\": \"Search the SKKG collection in Winterthur\"", "\"shortDescription\": \"Search the SKKG collection in Winterthur, with provenance!\"", "plugin: ChatGPT shortDescription at most 57 characters"],
+  // plugin/skkg-*.zip (test/skill.test.js): the upload zips, rebuilt by scripts/build-skill.mjs.
+  ["plugin/skkg/.claude-plugin/plugin.json", "\"museum\"", "\"museums\"", "zip: Claude zip matches the plugin folder"],
+  ["plugin/skkg/plugin.json", "\"category\": \"Productivity\"", "\"category\": \"Research\"", "zip: ChatGPT zip matches the plugin folder"],
+  ["scripts/build-skill.mjs", "...skillPaths.filter((p) => !p.startsWith('skills/skkg/agents/'))", "...skillPaths", "zip: Claude zip leaves out openai.yaml"],
+  ["scripts/build-skill.mjs", "zip(['plugin.json', 'mcp.json', ...skillPaths])", "zip(['.claude-plugin/plugin.json', 'plugin.json', 'mcp.json', ...skillPaths])", "zip: ChatGPT zip has one plugin.json"],
+  ["scripts/build-skill.mjs", "    date,\n  );", "    date + 1,\n  );", "zip: date from SKILL.md's last_updated"],
   ["plugin/skkg/.mcp.json", "skkg-mcp-production.up", "skkg-mcp-beta.up", "plugin: Claude config on the hosted URL"],
   ["plugin/skkg/mcp.json", "\"SKKG\": {", "\"skkg\": {", "plugin: ChatGPT connector key SKKG"],
   ["plugin/skkg/mcp.json", "\"type\": \"streamable-http\"", "\"type\": \"http\"", "plugin: ChatGPT transport is streamable-http"],

@@ -12,7 +12,7 @@ The working tree also holds the research behind the server:
 - `scripts/`: the Python data pipeline (`load_oxigraph.py`, `build_db.py`) and one-off analyses in `scripts/analysis/`. Use `uv`.
 - `data/` (gitignored, never committed): `raw/` dumps, `oxigraph/` store, `db/` built databases, `derived/` census files, `reference/` (`skkg-app/fieldDefinitions.yml`).
 - `docs/`: `deploy.md` and `database-schema.md`. The schema doc describes the downloadable database, a release asset kept outside git. It names one file and its SHA-256, so update both when a new database is published.
-- `plugin/skkg/`: the plugin for Claude and ChatGPT (hosted connector plus skill) that the `kintopp/kintopp-plugins` marketplace installs. `npm run build:skill` writes its skill copy and `package.json`'s version into both manifests; don't edit those by hand.
+- `plugin/skkg/`: the plugin for Claude and ChatGPT (hosted connector plus skill) that the `kintopp/kintopp-plugins` marketplace installs. `npm run build:skill` writes its skill copy and `package.json`'s version into both manifests, and packs the upload zips `plugin/skkg-claude.zip` and `plugin/skkg-chatgpt.zip` (committed, byte-reproducible); don't edit those by hand. Each zip holds only its platform's files at the root, because Claude refuses an archive with two `plugin.json`. `claude plugin validate` can't read a zip: validate the extracted folder.
 
 ## Commands
 
@@ -32,7 +32,7 @@ The working tree also holds the research behind the server:
 | Streamable HTTP on port 3000 (`PORT`), `POST /mcp` and `GET /health` | `SKKG_DB_PATH=data/db/skkg-20261028.sqlite npm run serve` |
 | Preview the Railway configuration (`.railway/railway.ts`, read only; `docs/deploy.md`) | `railway config plan` |
 | Inspector | `SKKG_DB_PATH=… npm run inspector` |
-| Copy `skill/skkg/` into `plugin/skkg/` and write the version into its manifests (`test/skill.test.js` fails when they are stale) | `npm run build:skill` |
+| Copy `skill/skkg/` into `plugin/skkg/`, write the version into its manifests, and pack the two upload zips (`test/skill.test.js` fails when they are stale; `node scripts/build-skill.mjs --check` only checks) | `npm run build:skill` |
 | Rebuild the viewer page `src/apps/image-viewer.html` (committed; `test/viewer_build.test.js` fails when it is stale) | `npm run build:viewer` |
 | Viewer preview in a browser, with a sample result | `npm run dev:viewer` |
 

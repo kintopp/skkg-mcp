@@ -16,10 +16,15 @@
 // - The plugin gains a top-level bin/, which claude.ai refuses.
 // - The plugin loses its display name in a manifest, or ChatGPT shows the skill under a name
 //   other than SKKG (agents/openai.yaml).
+// - ChatGPT's shortDescription grows past 57 characters, where ChatGPT cuts it off.
+// - An upload zip is stale, nests its files in a folder, or carries the other platform's
+//   files: Claude refuses an archive with more than one plugin.json.
+// - The build stops being byte-reproducible, so its --check reports a fresh rebuild as stale.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join, sep } from 'node:path';
 import { ROOT } from './helpers.js';
 
@@ -150,4 +155,55 @@ test('both plugin manifests give the display name "SKKG Collection"', () => {
 test('the skill gives ChatGPT the display name "SKKG"', () => {
   const yaml = readFileSync(join(ROOT, 'skill', 'skkg', 'agents', 'openai.yaml'), 'utf8');
   assert.match(yaml, /^interface:\n {2}display_name: "SKKG"$/m);
+});
+
+test('ChatGPT\'s shortDescription is at most 57 characters', () => {
+  const short = readJson('plugin.json').extensions?.['com.openai']?.interface?.shortDescription ?? '';
+  assert.ok(short.length >= 1 && [...short].length <= 57, `shortDescription is ${[...short].length} characters`);
+});
+
+// --- plugin/skkg-claude.zip and plugin/skkg-chatgpt.zip: the files users upload by hand ---
+
+// Reads the central directory of a zip of STORED entries.
+function readZip(buf) {
+  const end = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  assert.notEqual(end, -1, 'no end-of-central-directory record');
+  const entries = new Map();
+  let at = buf.readUInt32LE(end + 16);
+  for (let i = 0; i < buf.readUInt16LE(end + 10); i++) {
+    assert.equal(buf.readUInt32LE(at), 0x02014b50, `bad central header at entry ${i}`);
+    assert.equal(buf.readUInt16LE(at + 10), 0, 'entries are STORED');
+    const size = buf.readUInt32LE(at + 20);
+    const nameLen = buf.readUInt16LE(at + 28);
+    const localAt = buf.readUInt32LE(at + 42);
+    const name = buf.toString('utf8', at + 46, at + 46 + nameLen);
+    const dataAt = localAt + 30 + buf.readUInt16LE(localAt + 26) + buf.readUInt16LE(localAt + 28);
+    entries.set(name, buf.subarray(dataAt, dataAt + size));
+    at += 46 + nameLen + buf.readUInt16LE(at + 30) + buf.readUInt16LE(at + 32);
+  }
+  return entries;
+}
+
+const UPLOADS = {
+  claude: ['.claude-plugin/plugin.json', '.mcp.json', 'skills/skkg/SKILL.md'],
+  chatgpt: ['mcp.json', 'plugin.json', 'skills/skkg/SKILL.md', 'skills/skkg/agents/openai.yaml'],
+};
+
+for (const [platform, expected] of Object.entries(UPLOADS)) {
+  test(`the ${platform} zip holds exactly its platform's files, at the root`, () => {
+    const names = [...readZip(readFileSync(join(ROOT, 'plugin', `skkg-${platform}.zip`))).keys()].sort();
+    assert.deepEqual(names, [...expected].sort());
+  });
+
+  test(`the ${platform} zip matches the plugin folder`, () => {
+    const zip = readZip(readFileSync(join(ROOT, 'plugin', `skkg-${platform}.zip`)));
+    for (const name of expected) {
+      assert.ok(zip.get(name)?.equals(readFileSync(join(PLUGIN, name))), `${name} is stale: run npm run build:skill and commit the result`);
+    }
+  });
+}
+
+test('the committed plugin files and zips are a rebuild of skill/skkg/', () => {
+  const run = spawnSync(process.execPath, [join(ROOT, 'scripts', 'build-skill.mjs'), '--check'], { encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr.trim());
 });
