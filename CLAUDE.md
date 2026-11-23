@@ -12,7 +12,7 @@ The working tree also holds the research behind the server:
 - `scripts/`: the Python data pipeline (`load_oxigraph.py`, `build_db.py`) and one-off analyses in `scripts/analysis/`. Use `uv`.
 - `data/` (gitignored, never committed): `raw/` dumps, `oxigraph/` store, `db/` built databases, `derived/` census files, `reference/` (`skkg-app/fieldDefinitions.yml`).
 - `docs/`: `deploy.md` and `database-schema.md`. The schema doc describes the downloadable database, a release asset kept outside git. It names one file and its SHA-256, so update both when a new database is published.
-- `plugin/skkg/`: the plugin for Claude and ChatGPT (hosted connector plus skill) that the `kintopp/kintopp-plugins` marketplace installs. `npm run build:skill` writes its skill copy and `package.json`'s version into both manifests, and packs the upload zips `plugin/skkg-claude.zip` and `plugin/skkg-chatgpt.zip` (committed, byte-reproducible); don't edit those by hand. Each zip holds only its platform's files at the root, because Claude refuses an archive with two `plugin.json`. `claude plugin validate` can't read a zip: validate the extracted folder.
+- `plugin/skkg/`: the plugin for Claude and ChatGPT (hosted connector plus skill), the source of the two upload zips beside it; it is not listed in any marketplace. `npm run build:skill` writes its skill copy and `package.json`'s version into both manifests, and packs the upload zips `plugin/skkg-claude.zip` and `plugin/skkg-chatgpt.zip` (committed, byte-reproducible); don't edit those by hand. Each zip holds only its platform's files at the root, because Claude refuses an archive with two `plugin.json`. `claude plugin validate` can't read a zip: validate the extracted folder.
 
 ## Commands
 

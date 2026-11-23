@@ -30,12 +30,7 @@ The hosted server needs no account. Searches and counts run on the server's own 
 
 ### Plugin (connector and skill)
 
-The SKKG Collection plugin installs the hosted connector and the [skill](#skill) together. It is listed in the [kintopp-plugins](https://github.com/kintopp/kintopp-plugins) marketplace.
-
-- **claude.ai or Claude Desktop:** go to _Customize_ → _Plugins_ → _Add_ → _Add marketplace_ and enter `kintopp/kintopp-plugins`. Add the plugin, then connect its connector on the plugin's _Connectors_ tab.
-- **Claude Code:** `claude plugin marketplace add kintopp/kintopp-plugins`, then `claude plugin install skkg@kintopp-plugins`.
-- **ChatGPT desktop app:** go to _Plugins_ → _Add plugin marketplace_, enter `kintopp/kintopp-plugins` as the Source, and leave Git ref and Sparse paths empty. Then install the plugin from the plugin browser. The plugin runs only in Codex mode, not in ordinary ChatGPT chats. ChatGPT on the web (chatgpt.com) can't add a marketplace.
-- **Codex CLI:** `codex plugin marketplace add kintopp/kintopp-plugins`, then `codex plugin add skkg@kintopp-plugins`.
+The SKKG Collection plugin installs the hosted connector and the [skill](#skill) together. It comes as two zip files, one for each platform: [plugin/skkg-claude.zip](plugin/skkg-claude.zip) for Claude and [plugin/skkg-chatgpt.zip](plugin/skkg-chatgpt.zip) for ChatGPT. Upload the one for your app as a plugin.
 
 Whether the image viewer appears when the connector comes from the plugin has not been tested yet. For the viewer, add the hosted server as a custom connector, as described above.
 
